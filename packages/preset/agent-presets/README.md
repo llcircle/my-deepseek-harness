@@ -55,6 +55,10 @@ The plugin needs a `default` preset id and scans `roots` for presets:
 | `includeShippedRoot` | `true` | Prepend the package's bundled presets as a `system` root before every configured root |
 | `includeUserRoot` | `true` | Append `<dshHome>/.agent-presets` as a `user` root, after every configured root |
 
+### Project-owned override
+
+A project can pin its own default: the first non-empty line of `<projectRoot>/.dsh/agent-preset` (the project root is the nearest ancestor containing `.git`) overrides the configured default for NEW sessions created in that workspace. An explicit caller-named preset still wins, resume keeps a session's recorded preset, and an override naming an unknown preset fails the creation loudly. Projects without the file keep the deployment or user default.
+
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-presets) is the exhaustive source for every accepted field and its JSDoc.
 
 The shipped root is prepended before every configured root, so the built-in set remains available and wins duplicate ids even when a patch replaces the roster configuration. `includeShippedRoot: false` drops that built-in set for deployments that supply all presets themselves. `includeUserRoot: false` drops the derived writable root; tests that pin an exact roster disable both derived roots.

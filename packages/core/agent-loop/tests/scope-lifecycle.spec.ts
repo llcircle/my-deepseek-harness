@@ -263,7 +263,15 @@ describe('agent scope lifecycle', () => {
     const ctx = await harness()
     const handle = await ctx.agents.create({ sessionId: SessionId('s1'), agentOptions: { provider: 'mock', model: 'mock' } })
     const { agent } = handle
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    expect(assembleContextFor(agent).cwd).toBe(agent.session.header.cwd)
+    agent.ctx.systemPrompt.section({ name: 'deployment:persona', order: 0, text: 'You run tests.' })
+=======
     agent.ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'You run tests.' })
+>>>>>>> theirs
     agent.ctx.tools.register(defineContentToolFixture({
       name: 'mine', description: 'scoped', parameters: {},
       execute: () => Promise.resolve(text('ran')),

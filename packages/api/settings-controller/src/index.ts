@@ -21,11 +21,23 @@ import type { SettingsDescriptor, SettingsPathOp, SettingsProvider } from '@deep
 import type {
   SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-settings/types'
+import {
+  parseReflectionDocument,
+  readErrorReflections,
+  readToolErrorJournal,
+  replaceReflectionBlocks,
+  resolveToolErrorDocuments,
+  writeErrorReflections,
+  type ToolErrorDocumentPaths,
+} from '@deepseek-ai/dsh-tool-error-journal'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { z } from 'zod'
 import { CredentialsController } from './credentials.ts'
-import type { AgentPresetDirectoryOpenValue, SettingsDocumentOpenValue } from './types.ts'
+import type {
+  AgentPresetDirectoryOpenValue, PromptSectionView, ReflectionBlockView, SettingsDocumentOpenValue,
+  ToolErrorView,
+} from './types.ts'
 
 export { CredentialsController } from './credentials.ts'
 export type * from './types.ts'
@@ -36,6 +48,13 @@ const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /**
+   * 工具失败三份文档所在的目录（默认 Harness home）。
+   *
+   * 失败日志插件可以用它的 `path` 把日志搬到别处，三份文档随之同行；那种部署
+   * 必须把这里指到同一个目录，否则本界面会诚实地读到"没有记录到失败"。
+   */
+  readonly toolErrorDirectory?: string
 }
 
 /** Read abort state afresh after an awaited provider or opener call. */
@@ -86,11 +105,15 @@ declare module '@deepseek-ai/cordis' {
  * `settings/conflict` or `settings/rejected` with the service's message.
  */
 export class SettingsController extends TypertRemoteService {
-  static Config: Schema<Config> = Schema.object({ nativeOpen: Schema.boolean() })
+  static Config: Schema<Config> = Schema.object({
+    nativeOpen: Schema.boolean(),
+    toolErrorDirectory: Schema.string(),
+  })
 
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly openTextFile: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
+  private readonly toolErrorDirectory: string | undefined
 
   /**
    * Register the settings namespace and mount the credentials namespace beside
@@ -104,6 +127,7 @@ export class SettingsController extends TypertRemoteService {
     this.openTextFile = internals.openTextFile ?? openNativeTextFile
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
+    this.toolErrorDirectory = config.toolErrorDirectory
     ctx.plugin(CredentialsController)
   }
 
@@ -121,6 +145,69 @@ export class SettingsController extends TypertRemoteService {
       hasDocument: settings.documentPath !== undefined,
       namespaces: settings.describe({ redactSecrets: true }).map(namespaceView),
     }
+  }
+
+  /**
+   * Project prompt sections for the Web prompt editor.
+   * @param cwd - session workspace whose per-session prompt file supplies the
+   * Chinese column; omitted reads leave that column empty.
+   * @returns current section text and whether each section accepts replacement.
+   */
+  @Remote
+  async readPromptSections(cwd?: string): Promise<PromptSectionView[]> {
+    const systemPrompt = this.ctx.get('systemPrompt') as
+      | { sectionTexts?: (cwd?: string) => Promise<PromptSectionView[]> }
+      | undefined
+    return await systemPrompt?.sectionTexts?.(cwd) ?? []
+  }
+
+  /** Resolve the three tool-failure documents this surface reads and writes. */
+  private documents(): ToolErrorDocumentPaths {
+    return resolveToolErrorDocuments(this.toolErrorDirectory)
+  }
+
+  /**
+   * Read the journaled tool and MCP failures.
+   * @returns newest failures in file order; empty when no journal exists.
+   */
+  @Remote
+  async readToolErrors(): Promise<ToolErrorView[]> {
+    return await readToolErrorJournal(this.documents().log)
+  }
+
+  /**
+   * Read the subject-sectioned lessons of the system-level reflection document.
+   *
+   * 只返回确实有内容的主题：没有经验的主题不必在界面上占一行空输入框，界面会
+   * 把"这次装配里有哪些能力"和这份清单取并集。
+   *
+   * @returns one entry per subject with recorded lessons; empty when the document
+   * does not exist. Text that names no subject belongs to the document's global
+   * part and is intentionally not projected here.
+   */
+  @Remote
+  async readReflections(): Promise<ReflectionBlockView[]> {
+    const document = parseReflectionDocument(await readErrorReflections(this.documents().reflections))
+    return [...document.subjects]
+      .filter(([, text]) => text !== '')
+      .map(([subject, text]) => ({ subject, text }))
+      .sort((a, b) => a.subject.localeCompare(b.subject))
+  }
+
+  /**
+   * Rewrite the given subjects' lessons, leaving every other part of the
+   * document untouched.
+   *
+   * 读改写而不是"用界面上的内容重建整份文档"：文档里还有认不出主题的历史小节
+   * 与用户备注，界面从来没显示过它们，也就没有资格删掉它们。
+   *
+   * @param blocks - subjects to write; an empty `text` removes that subject.
+   */
+  @Remote
+  async writeReflections(blocks: ReflectionBlockView[]): Promise<void> {
+    const path = this.documents().reflections
+    const raw = await readErrorReflections(path)
+    await writeErrorReflections(path, replaceReflectionBlocks(raw, blocks))
   }
 
   /**

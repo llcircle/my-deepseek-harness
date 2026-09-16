@@ -217,6 +217,20 @@ export class ScopedLayers<L extends ScopeLayer> {
   }
 
   /**
+   * Every existing scoped overlay, in creation order — the global layer is not
+   * included, it is {@link global}.
+   *
+   * 给"这个部署里注册了什么"这类**跨作用域**的读提问用。只读全局层会漏掉全部
+   * 注册在作用域里的贡献（例如各工具包在 agent 作用域注册的提示词分段），从而
+   * 把"有，但注册在某个作用域"错答成"没有"。作用域层是按需创建的，所以在任何人
+   * 注册之前这里是空的。
+   * @returns the created overlays; empty before any scoped registration.
+   */
+  overlays(): L[] {
+    return [...this.scoped.values()]
+  }
+
+  /**
    * Attach one synchronous layer mutation to its registration context.
    * @param ctx - context that determines both scope visibility and effect ownership.
    * @param action - atomic mutation returning its synchronous undo.

@@ -1,12 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+<<<<<<< ours
+import { inspectRequestPrompt, promptSectionChanges } from '../src/client/contract/request-inspection.ts'
+import type { ConversationPromptSection } from '../src/client/contract/request-inspection.ts'
+=======
+<<<<<<< ours
+import { inspectRequestPrompt, promptSectionChanges } from '../src/client/contract/request-inspection.ts'
+import type { ConversationPromptSection } from '../src/client/contract/request-inspection.ts'
+=======
 import type { SystemPromptNode } from '../src/client/contract/request-inspection.ts'
 import { inspectRequestPrompt } from '../src/client/contract/request-inspection.ts'
+>>>>>>> theirs
+>>>>>>> theirs
 
 const CONFIG = { provider: 'test', model: 'test' }
 const READ_TOOL = { name: 'read', description: 'Read a file', parameters: { type: 'object' } }
 const WRITE_TOOL = { name: 'write', description: 'Write', parameters: { type: 'object' } }
+
+function sections(...entries: readonly (readonly [string, string])[]): ConversationPromptSection[] {
+  return entries.map(([name, text]) => ({ name, text }))
+}
+
+function sections(...entries: readonly (readonly [string, string])[]): ConversationPromptSection[] {
+  return entries.map(([name, text]) => ({ name, text }))
+}
 
 function header(
   seq: SessionSeq,
@@ -127,5 +145,68 @@ describe('inspectRequestPrompt', () => {
     }), systemNode(1, 'same'))).toEqual({
       prompt: { config: { ...CONFIG, maxTokens: 1_024 }, system: 'same', tools: [] },
     })
+  })
+
+  it('attaches the sections a mid-session system change moved', () => {
+    const previous = inspectRequestPrompt(undefined, header(SessionSeq(1), 'initial', {
+      config: CONFIG,
+      system: 'a',
+      systemSections: sections(['tool:read', 'v1']),
+    })).prompt
+
+    const inspected = inspectRequestPrompt(previous, header(SessionSeq(2), 'change', {
+      config: CONFIG,
+      system: 'b',
+      systemSections: sections(['tool:read', 'v2'], ['computer:policy', 'policy']),
+    }))
+
+    expect(inspected.change?.changedSections).toEqual([
+      { name: 'tool:read', text: 'v2', change: 'updated' },
+      { name: 'computer:policy', text: 'policy', change: 'added' },
+    ])
+  })
+
+  it('leaves a tool-only change without moved sections', () => {
+    const previous = inspectRequestPrompt(undefined, header(SessionSeq(1), 'initial', {
+      config: CONFIG,
+      system: 'a',
+      systemSections: sections(['tool:read', 'v1']),
+      tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+    })).prompt
+
+    const inspected = inspectRequestPrompt(previous, header(SessionSeq(2), 'change', {
+      config: CONFIG,
+      system: 'a',
+      systemSections: sections(['tool:read', 'v1']),
+      tools: [],
+    }))
+
+    expect(inspected.change?.kind).toBe('tools')
+    expect(inspected.change?.changedSections).toBeUndefined()
+  })
+})
+
+describe('promptSectionChanges', () => {
+  it('names added, updated, and removed sections with the current prompt first', () => {
+    expect(promptSectionChanges(
+      sections(['tool:read', 'v1'], ['tool:write', 'w'], ['mcp:gone', 'o']),
+      sections(['tool:read', 'v2'], ['tool:write', 'w'], ['computer:policy', 'p']),
+    )).toEqual([
+      { name: 'tool:read', text: 'v2', change: 'updated' },
+      { name: 'computer:policy', text: 'p', change: 'added' },
+      { name: 'mcp:gone', text: '', change: 'removed' },
+    ])
+  })
+
+  it('reports no difference for identical snapshots', () => {
+    const same = sections(['tool:read', 'v1'])
+    expect(promptSectionChanges(same, same)).toEqual([])
+  })
+
+  it('refuses to diff when a snapshot carries no source sections', () => {
+    // An older header recorded the rendered text alone; "no difference" would be
+    // a claim about an unknown, so the caller must fall back to the whole prompt.
+    expect(promptSectionChanges(undefined, sections(['tool:read', 'v1']))).toBeUndefined()
+    expect(promptSectionChanges(sections(['tool:read', 'v1']), undefined)).toBeUndefined()
   })
 })

@@ -20,6 +20,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
@@ -27,6 +29,9 @@ import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
+import { SkillTriggerCard } from './SkillTriggerCard.tsx'
+import { LlmRetryCard } from './LlmRetryCard.tsx'
+import { PromptOverridesCard } from './PromptOverridesCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
@@ -34,6 +39,13 @@ import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
+import {
+  SKILL_FILESYSTEM_NS, SkillTriggerCardController,
+} from './skill-trigger-card-controller.ts'
+import { LLM_DEEPSEEK_NS, LlmRetryCardController } from './llm-retry-card-controller.ts'
+import {
+  SYSTEM_PROMPT_OVERRIDES_NS, PromptOverridesCardController,
+} from './prompt-overrides-card-controller.ts'
 import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
@@ -52,9 +64,18 @@ export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-co
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
-/** Required services (cordis fiber inject). */
+/**
+ * Required services (cordis fiber inject).
+ *
+ * `remote.commands` 必须显式声明，即使 `remote` 已经在列表里：远端命名空间是
+ * 各自独立的 Cordis 服务（`remote.<namespace>`），反射代理按**完整服务名**判定
+ * 注入，少写一个就在读取的那一刻抛「cannot get property … without inject」。
+ * 这里曾经漏掉它——"总结错误经验"按钮直接报无法运行——而 `remote` 这一项看起来
+ * 又像是已经覆盖了所有远端调用，所以这类漏项在 review 里很不容易被看见。
+ */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.commands', 'remote.credentials', 'remote.session',
+  'remote.skills', 'remote.settings', 'sessions', 'settingsScope',
 ]
 
 /**
@@ -69,6 +90,93 @@ export function apply(ctx: ClientContext): void {
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(
     ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx)
+  const currentSessionId = (): SessionId | undefined => {
+    const snapshot = ctx.sessions.list.getSnapshot()
+    if (snapshot.current !== undefined) return snapshot.current
+    return snapshot.ids?.find(id => snapshot.byId?.[id]?.origin !== 'subagent')
+  }
+  const currentWorkspace = (): string | undefined => {
+    const snapshot = ctx.sessions.list.getSnapshot()
+    const sessionId = currentSessionId()
+    return sessionId === undefined ? undefined : snapshot.byId[sessionId]?.cwd
+  }
+  const skillTrigger = new SkillTriggerCardController(
+    ctx.settingsScope.bind({ namespace: SKILL_FILESYSTEM_NS }),
+    {
+      loadSkills: async (sessionId) => {
+        const locale = ctx.locale.getSnapshot?.()?.active
+        const result = await ctx.remote.skills.list({
+          sessionId,
+          ...(locale === undefined ? {} : { locale }),
+        })
+        if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+        return result.value.skills
+      },
+      workspace: () => {
+        const snapshot = ctx.sessions.list.getSnapshot()
+        const sessionId = currentSessionId()
+        return sessionId === undefined ? undefined : snapshot.byId[sessionId]?.cwd
+      },
+      sessionId: currentSessionId,
+    },
+  )
+  ctx.effect(() => {
+    const dispose = ctx.sessions.list.subscribe(() => { skillTrigger.refresh() })
+    skillTrigger.refresh()
+    return dispose
+  }, 'ui-settings-plugins: skill catalog session sync')
+  const llmRetry = new LlmRetryCardController(ctx.settingsScope.bind({ namespace: LLM_DEEPSEEK_NS }))
+  const promptOverrides = new PromptOverridesCardController(
+    ctx.settingsScope.bind({ namespace: SYSTEM_PROMPT_OVERRIDES_NS }),
+    {
+      workspace: currentWorkspace,
+      readPromptSections: async (workspace) => {
+        // 参数必须显式传：远端方法按位置对账实参个数，省略可选参数会被当成
+        // "少传了一个"。传 `undefined` 正是"没有工作区"的约定写法。
+        const response = await ctx.remote.settings.readPromptSections(workspace)
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`)
+        return response.value
+      },
+      readToolErrors: async () => {
+        const response = await ctx.remote.settings.readToolErrors()
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`)
+        return response.value
+      },
+      readReflections: async () => {
+        const response = await ctx.remote.settings.readReflections()
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`)
+        return response.value
+      },
+      writeReflections: async (blocks) => {
+        // 控制器交出来的是只读快照；RPC 参数是可变的，复制一层再送出去。
+        const response = await ctx.remote.settings.writeReflections([...blocks])
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`)
+      },
+      // "总结错误经验"不在这里实现：仓库已有的 `/correct-errors` 命令负责融合、
+      // 归档（只追加）与清空，这里只把它送进当前会话——两个入口维护同一份文档
+      // 迟早会漂移，所以按钮只做"按下"。
+      canRunCorrection: () => currentSessionId() !== undefined,
+      runCorrection: async () => {
+        const sessionId = currentSessionId()
+        if (sessionId === undefined) throw new Error('no session is open to run /correct-errors in')
+        // 必须走命令通道 `commands/execute`。曾用 `session.prompt` 把
+        // "/correct-errors" 当普通消息发出去，结果它只是被当成聊天内容送进模型，
+        // 命令一次都没执行（模型对着这行字白跑了好几轮工具调用）。
+        const response = await ctx.remote.commands.execute(sessionId, '/correct-errors', [])
+        if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`)
+        const execution = response.value
+        if (execution === undefined) throw new Error('/correct-errors is not available in this session')
+        if (execution.result.kind === 'error') throw new Error(execution.result.text)
+        // 命令自己的回执（"没有可纠正的错误" / "子代理已启动"）交给卡片原样显示。
+        return execution.result.text
+      },
+    },
+  )
+  ctx.effect(() => {
+    const dispose = ctx.sessions.list.subscribe(() => { void promptOverrides.refresh() })
+    void promptOverrides.refresh()
+    return dispose
+  }, 'ui-settings-plugins: prompt section session sync')
   const subagentModelSelection = new SubagentModelSelectionCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
     ctx,
@@ -189,5 +297,23 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => webSearch.inject(),
     }, WebSearchCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SKILL_FILESYSTEM_NS,
+      locale: NS,
+      inject: () => skillTrigger.inject(),
+    }, SkillTriggerCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: LLM_DEEPSEEK_NS,
+      locale: NS,
+      inject: () => llmRetry.inject(),
+    }, LlmRetryCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SYSTEM_PROMPT_OVERRIDES_NS,
+      locale: NS,
+      inject: () => promptOverrides.inject(),
+    }, PromptOverridesCard)
   })
 }

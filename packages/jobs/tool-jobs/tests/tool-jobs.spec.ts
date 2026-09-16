@@ -505,6 +505,127 @@ describe('tool-owned UI presentation (presentCall)', () => {
   })
 })
 
+describe('merged job tool shape', () => {
+  it('registers one job tool, no split names, and the merged section', async () => {
+    const { ctx, toolsFiber } = await setup({ toolShape: 'merged' })
+    expect(ctx.tools.get('job')?.name).toBe('job')
+    for (const name of ['job_output', 'job_list', 'job_kill']) {
+      expect(ctx.tools.get(name)).toBeUndefined()
+    }
+    const section = (await ctx.systemPrompt.assemble()).sections.find(item => item.name === 'tool:jobs:merged')
+    expect(section?.text).toContain('action list')
+    expect(section?.text).toContain('action output')
+    expect(section?.text).toContain('action kill')
+
+    await toolsFiber.dispose()
+    expect(ctx.tools.get('job')).toBeUndefined()
+  })
+
+  it('declares every action in one enum and checks the ref at execution', async () => {
+    const { ctx } = await setup({ toolShape: 'merged' })
+    const schema = ctx.tools.schemas().find(item => item.name === 'job')
+    const parameters = schema?.parameters as
+      | { properties?: Record<string, { enum?: string[]; required?: boolean }>; required?: string[] }
+      | undefined
+    expect(parameters?.properties?.['action']?.enum).toEqual(['list', 'output', 'kill'])
+    expect(parameters?.required).toEqual(['action'])
+    for (const field of ['job_id', 'wait', 'timeout_ms', 'reason']) {
+      expect(parameters?.properties?.[field]?.required).toBeUndefined()
+    }
+
+    // The merged schema cannot mark `job_id` required for two of three actions,
+    // so execution owns the check rather than trusting the model's types.
+    const missing = await call(ctx, 'job', { action: 'output' })
+    expect(missing.isError).toBe(true)
+    expect(text(missing)).toContain('invalid job_id')
+  })
+
+  it('routes list, output, and kill through the shared operations', async () => {
+    const { ctx } = await setup({ toolShape: 'merged' })
+    expect(text(await call(ctx, 'job', { action: 'list' }))).toBe('(no background jobs)')
+
+    const chunks = ['line one\n', '']
+    const p = producer({ readOutput: () => chunks.shift() ?? '' })
+    ctx.jobs.start(p.spec)
+
+    const read = await call(ctx, 'job', { action: 'output', job_id: 'bash-1' })
+    if (read.isError) throw new Error('expected merged job_output success')
+    expect(read.value).toMatchObject({
+      text: 'line one\n',
+      job: { id: 'bash-1', kind: 'bash', label: 'sleep 60', status: 'running' },
+    })
+    expect(text(read)).toBe('line one\n[status: running]')
+    expect(text(await call(ctx, 'job', { action: 'output', job_id: 'bash-1' })))
+      .toBe('(no new output)\n[status: running]')
+
+    expect(text(await call(ctx, 'job', { action: 'list' })))
+      .toBe('bash-1 [bash] running — sleep 60')
+
+    const killed = await call(ctx, 'job', { action: 'kill', job_id: 'bash-1', reason: 'superseded' })
+    expect(killed.value).toMatchObject({
+      outcome: 'cancellation-requested',
+      job: { id: 'bash-1', status: 'stopping' },
+    })
+    expect(text(killed)).toBe('requested cancellation of job bash-1')
+    expect(p.cancels).toEqual(['superseded'])
+  })
+
+  it('applies the producer output limit to merged reads and cancellations', async () => {
+    const { ctx } = await setup({ toolShape: 'merged' })
+    ctx.jobs.start(producer({ outputLimitBytes: 8 }).spec)
+    expect(Buffer.byteLength(text(await call(ctx, 'job', { action: 'kill', job_id: 'bash-1' }))))
+      .toBeLessThanOrEqual(8)
+
+    ctx.jobs.start(producer({ outputLimitBytes: 48, readOutput: () => '界'.repeat(100) }).spec)
+    const read = text(await call(ctx, 'job', { action: 'output', job_id: 'bash-2' }))
+    expect(Buffer.byteLength(read)).toBeLessThanOrEqual(48)
+    expect(read).toContain('[status: running]')
+  })
+
+  it('wait: true blocks until settlement under the configured cap', async () => {
+    const { ctx } = await setup({ toolShape: 'merged', waitTimeoutMs: 50 })
+    const p = producer()
+    ctx.jobs.start(p.spec)
+    const waiting = call(ctx, 'job', { action: 'output', job_id: 'bash-1', wait: true })
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    expect(text(await waiting)).toBe('(no new output)\n[status: completed, exit code: 0]')
+  })
+
+  it('rejects the arguments a chosen action does not take', async () => {
+    const { ctx } = await setup({ toolShape: 'merged' })
+    const codeOf = async (args: Record<string, unknown>): Promise<string> =>
+      text(await call(ctx, 'job', args))
+
+    expect(await codeOf({ action: 'list', job_id: 'bash-1' })).toContain('action list takes no other arguments')
+    expect(await codeOf({ action: 'list', wait: true })).toContain('action list takes no other arguments')
+    expect(await codeOf({ action: 'output', job_id: 'bash-1', reason: 'nope' }))
+      .toContain('reason is valid only with action kill')
+    expect(await codeOf({ action: 'kill', job_id: 'bash-1', wait: true }))
+      .toContain('wait and timeout_ms are valid only with action output')
+  })
+
+  it('renders one generic card per action', async () => {
+    const { ctx } = await setup({ toolShape: 'merged' })
+    expect(ctx.tools.get('job')?.presentCall?.({ action: 'list' }))
+      .toEqual({ card: 'generic', title: 'List background jobs', kind: 'read' })
+    expect(ctx.tools.get('job')?.presentCall?.({ action: 'output', job_id: 'bash-1' }))
+      .toEqual({ card: 'generic', title: 'Read output from background job bash-1', kind: 'read', rawInput: 'bash-1' })
+    expect(ctx.tools.get('job')?.presentCall?.({ action: 'kill', job_id: 'subagent-2' }))
+      .toEqual({ card: 'generic', title: 'Kill background job subagent-2', kind: 'execute', rawInput: 'subagent-2' })
+  })
+
+  it('rejects an unknown tool shape before registering anything', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(LocalJobRegistry)
+    expect(() => ToolTasks.apply(ctx, { toolShape: 'both' as 'split' }))
+      .toThrow('toolShape must be "split" or "merged"')
+    expect(ctx.tools.get('job')).toBeUndefined()
+    expect(ctx.tools.get('job_list')).toBeUndefined()
+  })
+})
+
 describe('completion notices across scoped mounts', () => {
   /**
    * Two agent presets mounting `tool-jobs` over ONE host registry: each mount

@@ -171,6 +171,30 @@ describe('ScopedLayers', () => {
     await scope.dispose()
   })
 
+  it('enumerates every created overlay without the global layer, and never creates one', async () => {
+    const ctx = new Context()
+    const first = await mintScope(ctx, {})
+    const second = await mintScope(ctx, {})
+    const layers = new ScopedLayers(
+      scope => new TestLayer(scope),
+      vi.fn(),
+    )
+
+    // 无人注册时是空的——作用域层按需创建，这个读取不能把它们造出来。
+    expect(layers.overlays()).toEqual([])
+
+    layers.effect(first.ctx, layer => layer.named.insert('a', 1), { label: 'test.first', notify: false })
+    layers.effect(second.ctx, layer => layer.named.insert('b', 2), { label: 'test.second', notify: false })
+    layers.global.named.insert('g', 0)
+
+    // 全局层不在里面（它是 `global`），每个覆盖层各出现一次，按创建顺序。
+    expect(layers.overlays()).toHaveLength(2)
+    expect(layers.overlays().map(layer => [...layer.named.values()])).toEqual([[1], [2]])
+
+    await first.dispose()
+    await second.dispose()
+  })
+
   it('runs action, notification, undo, and disposal notification in order with Cordis idempotence and labels', async () => {
     const ctx = new Context()
     const events: string[] = []

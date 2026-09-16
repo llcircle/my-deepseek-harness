@@ -44,6 +44,7 @@ interface BenchOptions {
   execute?: (payload: { sessionId: SessionId; line: string }) => Promise<ExecuteValue>
   translate?: (namespace: string, key: string, params?: Record<string, unknown>) => string
   addressed?: SessionId
+  locale?: string
 }
 
 /**
@@ -102,8 +103,16 @@ async function bench(opts: BenchOptions = {}) {
   // Deterministic key-echo translator: notice assertions read `key{json}`.
   ctx.provide('locale', {
     bind: (ns: string) => (key: string, params?: Record<string, unknown>) =>
+<<<<<<< ours
+      `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
+    getSnapshot: () => ({ active: opts.locale ?? 'zh' }),
+<<<<<<< ours
+=======
+=======
       opts.translate?.(ns, key, params)
       ?? `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
+>>>>>>> theirs
+>>>>>>> theirs
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()
@@ -222,7 +231,18 @@ describe('candidates', () => {
     const { source, listCalls } = await bench()
     const list = await source.candidates(proj('s1'), req('g'))
     expect(listCalls).toEqual([{ sessionId: sid('s1') }])
-    expect(list).toEqual([{ name: 'goal', description: 'leadingInput kind', hint: 'goal text' }])
+    expect(list).toEqual([{ name: 'goal', description: '设置或查看长期任务目标', hint: 'goal text', section: '默认指令' }])
+  })
+
+  it('groups default and added commands and localizes added command descriptions', async () => {
+    const { source } = await bench({ locale: 'zh-CN', commands: async () => ({ commands: [
+      { name: 'correct-errors', description: 'original description' },
+      { name: 'compact', description: 'original compact' },
+    ] }) })
+    await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([
+      { name: 'compact', description: '压缩较早的对话历史', section: '默认指令' },
+      { name: 'correct-errors', description: '融合工具错误日志与既有经验，归档失败记录并清空当前日志', section: '新增指令' },
+    ])
   })
 
   it('ranks rows through the shared name ranker: prefixes first, then alignment, then source order', async () => {

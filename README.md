@@ -40,6 +40,14 @@ pnpm dsh web
 
 `pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
 
+On Windows, double-click `start-web.cmd` in the repository root, or run:
+
+```sh
+pnpm run start:web
+```
+
+The script installs dependencies when `node_modules` is absent and starts the `web` profile. Extra arguments are forwarded to `dsh`.
+
 ## Community and support
 
 - Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).

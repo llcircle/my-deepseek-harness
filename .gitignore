@@ -43,4 +43,25 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+
+# CodeGraph MCP index cache
+.codegraph/
+
+# Standalone reference checkouts kept beside the workspace for study; they are
+# independent repositories, not part of this one, and are never committed here.
+claudecode/
+codex-rust/
+
+# Local scratch used by ad-hoc verification harnesses.
+.tmp-cu/
+.e2e/
+<<<<<<< ours
+=======
+=======
 native/system/test/bin/
+>>>>>>> theirs
+>>>>>>> theirs

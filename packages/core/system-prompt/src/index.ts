@@ -9,6 +9,15 @@ import z from '@deepseek-ai/schemastery'
 import { AnonymousEntries, NamedEntries, ScopedLayers, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey, ScopeLayer, Scoped } from '@deepseek-ai/dsh-scope'
 import type { ContextSnapshotSection, ToolSchema } from '@deepseek-ai/dsh-llm'
+import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
+import { localizedSectionText } from './localized-sections.ts'
+
+export {
+  localizedSectionNames, localizedSectionText, LOCALIZED_SECTIONS,
+  type LocalizedSectionEntry, type LocalizedSections,
+} from './localized-sections.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,6 +47,39 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** 系统提示词的可选语言。 */
+export type PromptLocale = 'zh' | 'en'
+
+/**
+ * 语言设置来源的取值。`auto` 表示跟随用户在设置里选择的界面语言；
+ * `zh`/`en` 由部署显式锁定，不再跟随设置。
+ */
+export type PromptLocalePreference = 'auto' | PromptLocale
+
+/** 全部可选语言，用于 Schema 与穷举检查。 */
+export const PROMPT_LOCALES = ['zh', 'en'] as const
+
+/** 语言偏好的全部取值，用于 Schema。 */
+export const PROMPT_LOCALE_PREFERENCES = ['auto', 'zh', 'en'] as const
+
+/**
+ * 把界面语言标签归一到系统提示词认识的语言。
+ *
+ * 界面语言是开放的 BCP 47 标签（`zh`、`zh-CN`、`zh-Hans-CN`…），而提示词只有
+ * 两套成品文案，所以这里只看主子标签：任何 `zh*` 都是中文，其余一律英文。
+ * 归一放在这里而不是要求调用方传规范值，是因为设置里存的是用户浏览器写的原样标签。
+ *
+ * @param preference - 界面语言标签或语言偏好；空值与未知值都回落到 `en`。
+ * @returns `zh` 或 `en`。
+ */
+export function normalizePromptLocale(preference: string | undefined): PromptLocale {
+  if (preference === undefined) return 'en'
+  const trimmed = preference.trim()
+  if (trimmed === '') return 'en'
+  const primary = trimmed.split('-')[0]?.toLowerCase()
+  return primary === 'zh' ? 'zh' : 'en'
+}
+
 /** Merge-extensible context for one prompt assembly. */
 export interface AssembleContext {
   /**
@@ -45,8 +87,15 @@ export interface AssembleContext {
    * only global providers and subject-less listeners participate.
    */
   scope?: ScopeKey
+  /** Session workspace used to resolve per-session prompt file configuration. */
+  cwd?: string
   /** Explicit control signal for the turn that requested this assembly, when any. */
   signal?: AbortSignal
+  /**
+   * 本次装配生效的语言。由注册表解析后写入，分段与上下文提供者据此选文案；
+   * 调用方不需要、也不应该自己传。
+   */
+  locale?: PromptLocale
 }
 
 /** One contributed section of the system prompt (registry input). */
@@ -120,6 +169,11 @@ export interface PromptAssembly {
   contexts: AssembledContext[]
   tools: ToolSchema[]
   variables: Record<string, string | undefined>
+  /**
+   * 本次装配生效的语言。渲染函数靠它选框架文案；手工构造的装配（测试、
+   * 离线渲染）省略时按 `zh` 处理，与该函数既有行为一致。
+   */
+  locale?: PromptLocale
 }
 
 const SECTION_ORDERS = {
@@ -148,15 +202,40 @@ const SECTION_ORDERS = {
   TOOL_RALPH: 2700,
   TOOL_SUBAGENT: 2800,
   TOOL_REPORT: 2900,
+<<<<<<< ours
+  // 按需工具的索引紧跟在全部工具用法之后：它是一句"上面还差几个"的补充，
+  // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
+  TOOLS_ON_DEMAND: 2950,
+=======
+<<<<<<< ours
+  // 按需工具的索引紧跟在全部工具用法之后：它是一句"上面还差几个"的补充，
+  // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
+  TOOLS_ON_DEMAND: 2950,
+=======
   TOOL_COMPUTER_USE: 3000,
   MCP_SERVERS: 3100,
+>>>>>>> theirs
+>>>>>>> theirs
   TOOLS_SDK: 5000,
   DELIVERABLE_FILE_REFERENCES: 9000,
+  MCP_INTRO: 9050,
+  // 电脑操作策略紧挨 MCP 介绍：两者都是"本会话额外装配进来的能力说明"，
+  // 放在提示词尾部可以让身份、人格与工具用法保持在前，不被这段长文挤开。
+  COMPUTER_USE_POLICY: 9060,
+  ERROR_LESSONS: 9100,
   STRUCTURED_OUTPUT: 9900,
+<<<<<<< ours
+  SKILL_CATALOG: 10000,
+=======
+<<<<<<< ours
+  SKILL_CATALOG: 10000,
+=======
   // Local paths and endpoints follow reusable instructions.
   HARNESS_SOURCE: 10000,
   WEB_SURFACE: 10100,
   DEPLOYMENT_PERSONA_SUFFIX: 10200,
+>>>>>>> theirs
+>>>>>>> theirs
 } as const
 
 /** Name of a centrally allocated prompt-section position. */
@@ -190,6 +269,225 @@ const GROUP_AT = /^\{\{([^{}]*)\}\}/
 
 /** Reserved {@link Config.toolOrder} marker for unlisted tools. */
 export const TOOL_ORDER_REST = '<unlisted-tools>'
+/** Default per-session translation-only prompt from `/translate-system-prompt`. */
+const DEFAULT_TRANSLATED_PROMPT_FILE = '.dsh/system-prompt.zh.prompt.md'
+
+/** Settings namespace for UI-authored system-prompt replacements. */
+export const SYSTEM_PROMPT_OVERRIDES_SETTINGS_NAMESPACE = 'system-prompt-overrides'
+
+/** One section's language-separated replacement. */
+export interface PromptLocaleOverride {
+  /** Simplified Chinese replacement; empty keeps the provider text. */
+  readonly zh: string
+  /** English replacement; empty keeps the provider text. */
+  readonly en: string
+}
+
+/**
+ * Runtime-editable system-prompt section replacements.
+ *
+ * 这里没有"当前语言"字段：替换文本送哪一种语言，由界面语言设置
+ * (`locale.preference`) 经 {@link SystemPrompt.activeLocale} 决定，与装配出的
+ * 其他分段同源。让设置里再存一个语言开关，就会出现"提示词按 A 语言装配、
+ * 覆盖按 B 语言应用"的半中半英结果。
+ *
+ * 也没有 MCP 介绍专属字段：每个 MCP 服务器是一个普通分段（`mcp:<serverName>`，
+ * 由挂载它的 mcp-client 实例注册），和其余分段一样通过 {@link sections} 覆盖，
+ * 不再有第二条写入路径。
+ */
+export interface PromptOverridesSettings {
+  /** Section names offered by the editing UI. */
+  readonly sectionCatalog: readonly string[]
+  /** Per-section replacements keyed by the original section name. */
+  readonly sections: Readonly<Record<string, PromptLocaleOverride>>
+}
+
+/**
+ * 逐分段的"经验追加"来源：给定分段名，返回要追加到该分段正文之后的一段文本。
+ *
+ * 有了它，工具失败反思才能落在它真正属于的地方——`tool:read` 的教训接在 `read`
+ * 的用法说明后面，而不是挤在一节全局的"过往教训"里让模型自己去对号入座。返回
+ * `undefined` 或空白表示这个分段没有经验可加。
+ *
+ * 追加发生在用户覆盖之后、可选分段判空之前：覆盖改的是"介绍"，反思是独立的一
+ * 层，两者互不吞掉对方；而"介绍为空的分段不追加"这一条保证了未启用的能力不会
+ * 因为文档里还留着它的旧经验就被重新拉回提示词。
+ */
+export type PromptReflectionSource = (sectionName: string) => string | undefined
+
+/** One prompt section projected for editing surfaces. */
+export interface PromptSectionView {
+  /** Stable section name. */
+  readonly name: string
+  /** Current English provider text; empty when unavailable. */
+  readonly en: string
+  /** Current Chinese text from the project archive; empty when unavailable. */
+  readonly zh: string
+  /** Whether the section accepts UI-authored text replacement. */
+  readonly editable: boolean
+}
+
+/** Schema for {@link PromptOverridesSettings}. */
+export const PromptOverridesSettingsSchema = z.object({
+  sectionCatalog: z.array(z.string()).default([]),
+  sections: z.dict(z.object({
+    zh: z.string().default(''),
+    en: z.string().default(''),
+  })).default({}),
+})
+
+const DEFAULT_PROMPT_OVERRIDES: PromptOverridesSettings = {
+  sectionCatalog: [],
+  sections: {},
+}
+
+/** Editing UI catalog for first-party sections; custom names can still be added. */
+const DEFAULT_SECTION_CATALOG = [
+  'harness:identity',
+  'harness:source',
+  'app:web-surface',
+  'deployment:persona',
+  'deployment:error-lessons',
+  'context:file-reference',
+  'tool:pwsh',
+  'tool:read',
+  'tool:write',
+  'tool:edit',
+  'tool:glob',
+  'tool:grep',
+  'tool:jobs',
+  'tool:web_search',
+  'tool:web_fetch',
+  'tool:goal',
+  'tool:goal:merged',
+  'tool:workflow',
+  'tool:ralph',
+  'tool:subagent',
+  'tool:subagent:merged',
+  'tool:subagent_fork',
+  'tool:jobs:merged',
+  'tools:on-demand',
+  'ui:deliverable-file-references',
+  'skills:catalog',
+]
+
+/**
+ * Sections whose provider text is dynamic and must not be replaced from Web.
+ *
+ * `computer:policy` 属于这里：它的正文是部署给出的安全边界（屏幕内容是证据不是指令、
+ * 不可逆操作必须先取得用户同意），不是一段可供润色的措辞。允许在界面上整体替换它，
+ * 等于给用户一个"把护栏改掉"的输入框；部署要定制措辞有 `policy` 配置这一层，
+ * 用户要写的是挂在它后面的**反思**。它作为能力的定位与 MCP 服务器一致：
+ * 介绍由部署给出，用户写的是挂在介绍后半页的经验。
+ */
+const NON_EDITABLE_SECTION_NAMES = new Set([
+  'deployment:error-lessons',
+  'skills:catalog',
+  'computer:policy',
+])
+
+/**
+ * 空文本即整段消失的分段。
+ *
+ * 名单刻意是显式的而不是"所有空分段都丢掉"：多数分段注册后即使暂时为空也
+ * 要留在装配结果里——`tool:subagent` 靠"存在但为空"表达"工具当前不可用，
+ * 这一节仍由它拥有"，消费方据此区分"没装载"与"装载了但没话说"。而这里的
+ * 分段恰恰相反：它们的内容完全由"这次装配里到底有没有这个能力"决定，留一个
+ * 空条目只会让提示词多出一节空壳。
+ *
+ * 注意这层防御与"未启用就没注册"是两件事，不要拿其中一个去替换另一个：
+ * `computer:policy` 现在由 tool-computer-use 在启用时才注册，正常情况下轮不到
+ * 这里过滤；但分段可以有多个注册方，判空兜住的是"注册了却决定自己没话可说"
+ * 这一情形（`deployment:error-lessons` 就是这种），不能因为主要路径已经不空
+ * 就把名单收窄。
+ */
+const OPTIONAL_SECTION_NAMES = new Set([
+  'computer:policy',
+  'deployment:error-lessons',
+])
+
+/**
+ * 每挂一个 MCP 服务器就多一个 `mcp:<serverName>` 分段，名字是运行期才知道的，
+ * 所以只能按前缀判——把它们一个个写进名单，等于要求名单跟着 cordis.yml 走。
+ * @param name - 分段名。
+ * @returns 该分段是否属于"空即消失"的那一类。
+ */
+function isOptionalSection(name: string): boolean {
+  return OPTIONAL_SECTION_NAMES.has(name) || name.startsWith('mcp:')
+}
+
+/**
+ * 把每个反思来源给出的文本追加到它认领的分段之后。
+ *
+ * **只追加到本身已有内容的分段上。** 这是"未启用的能力不显示介绍和反思"的落点。
+ * 能力的缺席通常由注册方表达（`computer:policy` 只在启用时注册，MCP 服务器只在
+ * 连上时注册），那时这里压根轮不到判空；这一层兜的是另一类情形——分段存在、但
+ * 本次装配它自己没话可说（例如 `deployment:error-lessons` 还没有任何经验）。
+ * 两种情况的结果一致且都必须成立：文档里哪怕还留着上一次的经验，也不该靠反思
+ * 把一节空壳拽回提示词。
+ *
+ * @param assembly - 已经应用过语言覆盖的装配结果。
+ * @param sources - 本次装配可见的反思来源，按注册顺序。
+ * @returns 追加后的装配；没有可追加内容时原样返回。
+ */
+function applyReflections(
+  assembly: PromptAssembly,
+  sources: readonly PromptReflectionSource[],
+): PromptAssembly {
+  if (sources.length === 0) return assembly
+  return {
+    ...assembly,
+    sections: assembly.sections.map((section) => {
+      if (section.text.trim() === '') return section
+      const appended = sources
+        .map(source => source(section.name))
+        .filter((text): text is string => text !== undefined && text.trim() !== '')
+      if (appended.length === 0) return section
+      return { ...section, text: [section.text, ...appended.map(text => text.trim())].join('\n\n') }
+    }),
+  }
+}
+
+/**
+ * 丢掉最终文本为空白、且属于 {@link OPTIONAL_SECTION_NAMES} 的分段。
+ *
+ * 判定用的是"覆盖之后"的文本：可选分段的注册文本可以是空的，它们在编辑界面里
+ * 被填上内容才算数。这个函数因此只能在 {@link SystemPrompt.applyOverrides} 之后
+ * 调用，顺序颠倒就会让用户刚写好的分段凭空消失。
+ *
+ * @param assembly - 已经应用过语言覆盖的装配结果。
+ * @returns 同一个装配，去掉空白的可选分段；没有可丢的条目时原样返回。
+ */
+function dropEmptyOptionalSections(assembly: PromptAssembly): PromptAssembly {
+  const sections = assembly.sections.filter(
+    section => section.text.trim() !== '' || !isOptionalSection(section.name),
+  )
+  return sections.length === assembly.sections.length ? assembly : { ...assembly, sections }
+}
+
+/** Minimal shape needed to install the optional runtime-editable overrides section. */
+export type PromptOverridesSettingsInstaller = {
+  installSection(
+    owner: Context,
+    ns: typeof SYSTEM_PROMPT_OVERRIDES_SETTINGS_NAMESPACE,
+    schema: typeof PromptOverridesSettingsSchema,
+    entry: PromptOverridesSettings,
+    hooks: {
+      setSource: (current: () => PromptOverridesSettings) => void
+      onChange: () => void
+    },
+  ): void
+  /**
+   * 读取另一个已注册命名空间的当前值；未注册时返回 `undefined`。
+   *
+   * 语言不在本插件自己的命名空间里，而在界面语言那一份设置中。注册表不该
+   * 为了读一个字段就去依赖设置服务，所以由装配方把这个只读能力递进来。
+   */
+  get?(ns: string): unknown
+}
+
+/** Section names whose provider output stays live instead of using the translated archive. */
+const DYNAMIC_SECTION_NAMES = new Set(['skills:catalog', 'deployment:error-lessons'])
 
 /**
  * Validate duplicate names and the required {@link TOOL_ORDER_REST} marker.
@@ -244,10 +542,115 @@ function compareToolNames(a: ToolSchema, b: ToolSchema): number {
   return compareNames(a.name, b.name)
 }
 
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+/**
+ * Split a translated archive into non-empty blank-line paragraphs.
+ * Sections are translated one paragraph at a time, so paragraphs are the
+ * smallest stable matching unit. Skill-catalog paragraphs are skipped because
+ * that section stays live; the live catalog owns the latest skill summaries.
+ */
+function translatedParagraphs(translated: string): string[] {
+  return translated.replaceAll(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map(paragraph => paragraph.trim())
+    .filter(paragraph => paragraph !== '' && !paragraph.includes('<available_skills>'))
+}
+
+/**
+ * Match source sections to translated paragraphs and produce one translated
+ * section per matched source, keyed by its original section name. Live
+ * catalog and lessons sections stay dynamic; complete sections own the entire
+ * prompt.
+ * @param sections - assembled source sections before replacement.
+ * @param translated - the complete translated archive text.
+ * @returns translated sections keyed by source section name.
+ */
+function mapTranslatedSections(
+  sections: ReadonlyArray<{ name: string; text: string; complete?: boolean }>,
+  translated: string,
+): Map<string, string> {
+  const paragraphs = translatedParagraphs(translated)
+  const translatedByName = new Map<string, string>()
+  const sourceParagraphs = sections.flatMap((section) => {
+    if (
+      DYNAMIC_SECTION_NAMES.has(section.name)
+      || section.complete === true
+      || section.text.trim() === ''
+    ) return []
+    return section.text.split('\n\n').map(paragraph => ({ name: section.name, paragraph }))
+  })
+  const count = Math.min(paragraphs.length, sourceParagraphs.length)
+  for (const [index, source] of sourceParagraphs.slice(0, count).entries()) {
+    const paragraph = paragraphs[index]
+    if (paragraph === undefined) continue
+    const previous = translatedByName.get(source.name)
+    translatedByName.set(source.name, previous === undefined ? paragraph : `${previous}\n\n${paragraph}`)
+  }
+  return translatedByName
+}
+
+/**
+ * 按语言替换一个分段的文案。
+ *
+ * 三处刻意保守的决定：
+ * 1. `complete` 分段与动态分段（`skills:catalog`、`deployment:error-lessons`）不碰——
+ *    前者整段就是提示词本身，后者的文本是运行期现算的，替换会盖掉最新内容。
+ * 2. 当前为空的分段保持为空。空是"这一节现在没有话要说"，不是"该说默认文案了"，
+ *    把空段填上会让"未启用"的能力看起来像是启用了。
+ * 3. 动态片段抽不出来时保留原文——见 {@link localizedSectionText}。
+ *
+ * @param section - 待本地化的分段。
+ * @param locale - 目标语言。
+ * @returns 本地化后的分段；无需改动时原样返回。
+ */
+function localizeSection(section: PromptSection, locale: PromptLocale): PromptSection {
+  if (section.complete === true) return section
+  if (DYNAMIC_SECTION_NAMES.has(section.name)) return section
+  const base = section.text
+  const source = typeof base === 'function' ? base : () => base
+  // 先求值一次只为判断"这一节有没有内容"，真正的替换发生在装配时。
+  const probe = typeof base === 'string' ? base : ''
+  if (typeof base === 'string') {
+    const localized = localizedSectionText(section.name, probe, locale)
+    if (localized === undefined || probe.trim() === '') return section
+    return { ...section, text: localized }
+  }
+  return {
+    ...section,
+    text: (context) => {
+      const original = source(context)
+      if (original.trim() === '') return ''
+      return localizedSectionText(section.name, original, locale) ?? original
+    },
+  }
+}
+
+/** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.persona} for its contract). */
+=======
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
+>>>>>>> theirs
 export interface Config {
   /** Include the fixed DeepSeek Harness identity before the deployment persona (default true). */
   includeHarnessIdentity?: boolean
+  /**
+   * Absolute path to a UTF-8 file whose whole content replaces the assembled
+   * system prompt sections (the tools, contexts, and variables still resolve).
+   * At construction a missing file means "not configured" — the standard
+   * assembly runs; any other read failure fails the plugin at load. Once
+   * active, the file is re-read per assembly and its disappearance fails that
+   * request loudly rather than silently downgrading the prompt.
+   */
+  completePromptFile?: string
+  /**
+   * Use the per-session translation-only prompt produced by
+   * `/translate-system-prompt` (default true). A relative
+   * {@link Config.translatedPromptFile} resolves against the assembling agent's
+   * session workspace; a missing file leaves the standard assembly untouched.
+   */
+  autoTranslatedPrompt?: boolean
   /** Include dynamic runtime-context snapshots in model history (default true). */
   includeRuntimeContext?: boolean
   /**
@@ -260,6 +663,34 @@ export interface Config {
    * section shadows it; `{{variable}}` references are strict. Defaults to empty.
    */
   personaSuffix?: string
+  /**
+   * Per-session translation-only prompt file. Relative paths resolve against
+   * the assembling agent's session workspace (default
+   * `.dsh/system-prompt.zh.prompt.md`, the `/translate-system-prompt` output).
+   */
+  translatedPromptFile?: string
+  /**
+   * 系统提示词语言（默认 `auto`）。`auto` 跟随用户在设置里选的界面语言；
+   * `zh`/`en` 由部署锁定，不再跟随设置——用于把某一路部署钉死在一种语言上。
+   *
+   * 只影响内置分段与技能目录的文案选择；用户在设置卡片里写的分段替换
+   * 始终按该卡片自己的语言生效，不受这里约束。
+   */
+  promptLocale?: PromptLocalePreference
+  /**
+   * Per-session translation-only prompt file. Relative paths resolve against
+   * the assembling agent's session workspace (default
+   * `.dsh/system-prompt.zh.prompt.md`, the `/translate-system-prompt` output).
+   */
+  translatedPromptFile?: string
+  /**
+   * 系统提示词语言（默认 `auto`）。`auto` 跟随用户在设置里选的界面语言；
+   * `zh`/`en` 由部署锁定，不再跟随设置——用于把某一路部署钉死在一种语言上。
+   *
+   * 只影响内置分段与技能目录的文案选择；用户在设置卡片里写的分段替换
+   * 始终按该卡片自己的语言生效，不受这里约束。
+   */
+  promptLocale?: PromptLocalePreference
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
@@ -277,10 +708,29 @@ export interface Config {
  * @param assembly - the assembly whose sections and variables to render.
  * @returns the rendered prompt, or `''` when all sections are empty.
  */
-export function renderPrompt(assembly: PromptAssembly): string {
+export function renderPromptSections(assembly: PromptAssembly): AssembledSection[] {
   return assembly.sections
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    .map(section => ({
+      name: section.name,
+      text: interpolate(section, assembly.variables, 'section'),
+    }))
+    .filter(section => section.text.length > 0)
+}
+
+export function renderPrompt(assembly: PromptAssembly): string {
+  return renderPromptSections(assembly)
+    .map(section => section.text)
+<<<<<<< ours
+=======
+=======
     .map(section => section.interpolate === false ? section.text : interpolate(section, assembly.variables, 'section'))
     .filter(text => text.length > 0)
+>>>>>>> theirs
+>>>>>>> theirs
     .join('\n\n')
 }
 
@@ -290,7 +740,7 @@ export function renderPrompt(assembly: PromptAssembly): string {
  * @returns the current full snapshot, or `''` when no context is active.
  */
 export function renderContextSnapshot(assembly: PromptAssembly): string {
-  return joinContextSections(renderContextSections(assembly))
+  return joinContextSections(renderContextSections(assembly), assembly.locale ?? 'zh')
 }
 
 /**
@@ -301,10 +751,22 @@ export function renderContextSnapshot(assembly: PromptAssembly): string {
  * @param sections - sections from {@link renderContextSections}.
  * @returns the current full snapshot, or `''` when no context is active.
  */
-export function joinContextSections(sections: readonly ContextSnapshotSection[]): string {
+/** 快照抬头。它与政策正文同属一条模型消息，语言必须一致。 */
+const CONTEXT_SNAPSHOT_HEADING: Record<PromptLocale, string> = {
+  zh: '当前运行时上下文。此快照取代较早的运行时上下文快照。',
+  en: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.',
+}
+
+export function joinContextSections(
+  sections: readonly ContextSnapshotSection[],
+  // 缺省中文 preserving 该函数既有行为：手工构造的装配（离线渲染、旧调用方）
+  // 不携带语言，而它们此前得到的就是中文抬头。装配产出的 assembly 一定有
+  // locale，所以真实路径永远是显式传入的。
+  locale: PromptLocale = 'zh',
+): string {
   const body = sections.map(section => section.text).join('\n\n')
   if (body.length === 0) return ''
-  return `Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n${body}`
+  return `${CONTEXT_SNAPSHOT_HEADING[locale]}\n\n${body}`
 }
 
 /**
@@ -373,7 +835,18 @@ class PromptLayer implements ScopeLayer {
   readonly sections: NamedEntries<PromptSection>
   readonly contexts: NamedEntries<PromptContext>
   readonly runtimeContextSuppressors = new AnonymousEntries<true>()
+  /**
+   * 被本层点名抑制的分段名。具名而不是匿名：抑制的作用对象就是分段名本身，
+   * 同一层里对同一个名字声明两次是重复声明，不是两个独立贡献相加——这与
+   * {@link sections} 的命名规则一致，也正是抑制需要的语义。
+   */
+  readonly suppressedSections: NamedEntries<true>
   readonly toolProviders = new AnonymousEntries<ToolProvider>()
+  /**
+   * 经验追加来源。匿名而不是具名：来源不拥有分段，只是往别人的分段上贴一段话，
+   * 所以两个来源共用一个名字是合法组合，让它们互斥没有意义。
+   */
+  readonly reflections = new AnonymousEntries<PromptReflectionSource>()
   readonly variables: NamedEntries<VariableProvider>
 
   /**
@@ -390,6 +863,9 @@ class PromptLayer implements ScopeLayer {
     this.variables = new NamedEntries(name => new Error(scope === undefined
       ? `prompt variable "${name}" is already registered (for a per-agent value, register through that agent's \`agent.ctx\` instead)`
       : `prompt variable "${name}" is already registered in this scope`))
+    this.suppressedSections = new NamedEntries(name => new Error(scope === undefined
+      ? `prompt section "${name}" is already suppressed (for a per-agent suppression, call \`agent.ctx.systemPrompt.suppressSection()\` instead)`
+      : `prompt section "${name}" is already suppressed in this scope`))
   }
 
   /** @returns whether this layer owns no prompt registrations. */
@@ -397,7 +873,9 @@ class PromptLayer implements ScopeLayer {
     return this.sections.isEmpty()
       && this.contexts.isEmpty()
       && this.runtimeContextSuppressors.isEmpty()
+      && this.suppressedSections.isEmpty()
       && this.toolProviders.isEmpty()
+      && this.reflections.isEmpty()
       && this.variables.isEmpty()
   }
 }
@@ -406,9 +884,20 @@ class PromptLayer implements ScopeLayer {
 export class SystemPrompt extends Service {
   static Config: z<Config> = z.object({
     includeHarnessIdentity: z.boolean().default(true),
+    completePromptFile: z.string().default(undefined as unknown as string),
+    autoTranslatedPrompt: z.boolean().default(true),
     includeRuntimeContext: z.boolean().default(true),
+<<<<<<< ours
+    persona: z.string().default(''),
+    translatedPromptFile: z.string().min(1).default(DEFAULT_TRANSLATED_PROMPT_FILE),
+    promptLocale: z.union(PROMPT_LOCALE_PREFERENCES).default('auto'),
+<<<<<<< ours
+=======
+=======
     personaPrefix: z.string().default(''),
     personaSuffix: z.string().default(''),
+>>>>>>> theirs
+>>>>>>> theirs
     // Preserve omission because an explicit empty order lacks the rest marker.
     toolOrder: z.array(z.string()).default(undefined as unknown as string[]),
   })
@@ -418,10 +907,52 @@ export class SystemPrompt extends Service {
     () => { this.ctx.emit('system-prompt/change') },
   )
   private readonly toolOrder: string[] | undefined
+  private readonly autoTranslatedPrompt: boolean
+  private readonly translatedPromptFile: string
+  private readonly hasCompletePromptFile: boolean
+  private readonly promptLocalePreference: PromptLocalePreference
+  private readonly overridesSource: { current: () => PromptOverridesSettings } = {
+    current: () => DEFAULT_PROMPT_OVERRIDES,
+  }
+  /**
+   * 界面语言的读取来源。由设置桥接注入；未注入时 `auto` 解析为 `en`，
+   * 也就是"没有设置服务的部署保持内置英文文案"。
+   */
+  private readonly localeSource: { current: () => string | undefined } = { current: () => undefined }
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'systemPrompt')
     this.toolOrder = validateToolOrder(config.toolOrder)
+    let completePromptFile = config.completePromptFile
+    if (completePromptFile !== undefined) {
+      if (!isAbsolute(completePromptFile)) {
+        throw new Error(`system-prompt: completePromptFile must be an absolute path (got "${completePromptFile}")`)
+      }
+      // Load-time probe: a missing file means "not configured" so deployments
+      // can toggle the override by deleting the file; other failures are real.
+      try {
+        readFileSync(completePromptFile, 'utf8')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') completePromptFile = undefined
+        else throw error
+      }
+    }
+    if (completePromptFile !== undefined) {
+      const file = completePromptFile
+      this.section({
+        name: 'deployment:complete-prompt',
+        order: this.getSectionOrder('DEPLOYMENT_PERSONA'),
+        complete: true,
+        text: () => {
+          try {
+            return readFileSync(file, 'utf8')
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException | null)?.code
+            throw new Error(`system-prompt: completePromptFile "${file}" became unreadable (${code ?? 'unknown'})`, { cause: error })
+          }
+        },
+      })
+    }
     // Keep harness-owned openers independent of the selected loop plugin.
     if (config.includeHarnessIdentity ?? true) {
       this.section({
@@ -442,6 +973,13 @@ export class SystemPrompt extends Service {
       text: config.personaSuffix ?? '',
     })
     if (!(config.includeRuntimeContext ?? true)) this.suppressRuntimeContext()
+    this.hasCompletePromptFile = completePromptFile !== undefined
+    this.promptLocalePreference = config.promptLocale ?? 'auto'
+    this.autoTranslatedPrompt = config.autoTranslatedPrompt ?? true
+    this.translatedPromptFile = config.translatedPromptFile ?? DEFAULT_TRANSLATED_PROMPT_FILE
+    // 这里不再有全局的 `mcp:intro`：介绍是按服务器来的（`mcp:<serverName>`，由
+    // 挂载它的 mcp-client 实例注册）。一份"所有 MCP 共用"的介绍没有主语——没挂
+    // 服务器时它照样能把提示词写满一页 MCP 用法，而那正是要避免的幻觉。
   }
 
   /**
@@ -470,6 +1008,145 @@ export class SystemPrompt extends Service {
    */
   getSectionOrder(name: PromptSectionOrderName): number {
     return SECTION_ORDERS[name]
+  }
+
+  /**
+   * List globally registered section names for prompt editing surfaces.
+   *
+   * 这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用
+   * {@link sectionTexts}，它连作用域一起算——两者覆盖的集合本来就不一样，
+   * 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。
+   * @returns sorted section names visible to unscoped assemblies.
+   */
+  sectionNames(): string[] {
+    return [...this.layers.global.sections.entries()].map(([name]) => name).sort(compareNames)
+  }
+
+  /**
+   * The sections an editor may address: the global layer plus every scope's own
+   * first-seen children. 具名分段的可见性是"最近的同名者胜"，所以作用域里已经
+   * 有同名分段时保留全局的那个——预览读的是全局文本，不替某个 agent 说话。
+   * @returns insertion-ordered name→section map spanning every layer.
+   */
+  private editorSections(): Map<string, PromptSection> {
+    const byName = new Map<string, PromptSection>(this.layers.global.sections.entries())
+    for (const layer of this.layers.overlays()) {
+      for (const [name, section] of layer.sections.entries()) {
+        if (!byName.has(name)) byName.set(name, section)
+      }
+    }
+    return byName
+  }
+
+  /**
+   * Project the sections a Web editor may address: the global layer plus every
+   * scope's own first-seen contribution, in one merged view. Static sections
+   * include their current text; dynamic sections stay visible but not editable.
+   *
+   * 作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>`
+   * 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误
+   * 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段，
+   * 所以作用域里的分段同样改得动。
+   * @param cwd - session workspace whose per-session prompt file supplies the
+   * Chinese column; omitted reads leave that column empty.
+   * @returns sorted section views for prompt editing.
+   */
+  async sectionTexts(cwd?: string): Promise<PromptSectionView[]> {
+    const sectionContext: AssembleContext = {}
+    if (cwd !== undefined) sectionContext.cwd = cwd
+    const variables = { model: 'selected', cwd: cwd ?? '' }
+    const sourceSections = [...this.editorSections()]
+      .sort(([, a], [, b]) => comparePromptSections(a, b))
+      .map(([name, section]) => {
+        const editable = !NON_EDITABLE_SECTION_NAMES.has(name)
+        let en = ''
+        let zh = ''
+        if (editable) {
+          let rawEn = ''
+          try {
+            rawEn = typeof section.text === 'function' ? section.text(sectionContext) : section.text
+          } catch {
+            // A context-dependent section has no meaningful global preview.
+            rawEn = ''
+          }
+          try {
+            en = interpolate({ name, text: rawEn }, variables, 'section')
+          } catch {
+            en = ''
+          }
+          // 中文栏预填内置译文，与装配时的优先级一致：内置资产 → 项目翻译存档 →
+          // 用户在编辑界面写入的覆盖。空段保持为空——"这一节现在没话说"不等于
+          // "该显示默认文案"，预填会让尚未启用的能力看起来像已经启用。
+          if (rawEn.trim() !== '') zh = localizedSectionText(name, rawEn, 'zh') ?? ''
+        }
+        return { name, en, zh, editable }
+      }) satisfies PromptSectionView[]
+    let translated: string | undefined
+    if (cwd !== undefined) translated = await this.readTranslatedPrompt({ cwd })
+    if (translated !== undefined) {
+      const translatedByName = mapTranslatedSections(sourceSections.map(row => ({ name: row.name, text: row.en })), translated)
+      // 存档只覆盖它确实收录了的分段；缺席不等于"这一节没有中文"。
+      for (const row of sourceSections) {
+        const fromArchive = translatedByName.get(row.name)
+        if (fromArchive !== undefined && fromArchive.trim() !== '') row.zh = fromArchive
+      }
+    }
+    const overrides = this.overridesSource.current().sections
+    for (const row of sourceSections) {
+      const override = overrides[row.name]
+      if (override === undefined) continue
+      if (override.en.trim() !== '') row.en = override.en
+      if (override.zh.trim() !== '') row.zh = override.zh
+    }
+    return sourceSections.sort((a, b) => compareNames(a.name, b.name))
+  }
+
+  /**
+   * Install runtime-editable section replacements when the deployment mounts settings.
+   * @param owner - consumer context used for section lifetime.
+   * @param settings - the optional settings provider to install into.
+   */
+  installOverrides(
+    owner: Context,
+    settings: PromptOverridesSettingsInstaller,
+  ): void {
+    settings.installSection(
+      owner,
+      SYSTEM_PROMPT_OVERRIDES_SETTINGS_NAMESPACE,
+      PromptOverridesSettingsSchema,
+      {
+        sectionCatalog: DEFAULT_SECTION_CATALOG,
+        sections: {},
+      },
+      {
+        setSource: (current) => { this.overridesSource.current = current },
+        onChange: () => { /* assembly reads the source per request. */ },
+      },
+    )
+  }
+
+  /**
+   * 接入界面语言的读取来源。
+   *
+   * 注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词
+   * 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以
+   * 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来，
+   * 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后
+   * 下一个请求就生效，不必重启。
+   *
+   * @param source - 读取当前界面语言标签的函数；返回空表示没有设置服务。
+   */
+  adoptLocaleSource(source: () => string | undefined): void {
+    this.localeSource.current = source
+  }
+
+  /**
+   * 当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。
+   * @returns `zh` 或 `en`。
+   */
+  activeLocale(): PromptLocale {
+    if (this.promptLocalePreference !== 'auto') return this.promptLocalePreference
+    return normalizePromptLocale(this.localeSource.current())
   }
 
   /**
@@ -513,6 +1190,30 @@ export class SystemPrompt extends Service {
   }
 
   /**
+   * Suppress one named prompt section in the calling context's scope: the name
+   * disappears from every assembly that scope takes part in, no matter which
+   * layer registered it — the global one, an ancestor scope, or this scope.
+   *
+   * 与 {@link section} 的同名遮蔽是两回事，不要互相替代：遮蔽要求你提供新的
+   * 正文，适合"换成自己的说法"；抑制表达的是"这一节在本作用域内不存在"，适合
+   * 一个功能单一的 agent 只想要提示词里很少的几段。两者都只影响装配，不注销
+   * 任何人的注册——被抑制的分段在父、兄弟作用域的装配里照旧出现。
+   *
+   * 作用范围是整条链：链上任一层声明抑制，本作用域的装配就看不到这一节，没有
+   * 反向的"取消抑制"语法。这与 {@link suppressRuntimeContext} 同源——都是
+   * "从本作用域起往下，这一块不存在"。
+   * @param name - the section name to suppress.
+   * @returns the exact Cordis effect disposer.
+   */
+  suppressSection(name: string): () => void {
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.suppressedSections.insert(name, true),
+      { label: 'systemPrompt.suppressSection()' },
+    )
+  }
+
+  /**
    * Register a tool-schema provider in the calling context's scope. Global and
    * matching scoped providers both contribute; returning the reserved
    * {@link TOOL_ORDER_REST} name makes assembly fail.
@@ -524,6 +1225,24 @@ export class SystemPrompt extends Service {
       this.ctx,
       layer => layer.toolProviders.append(provider),
       { label: 'systemPrompt.tools()' },
+    )
+  }
+
+  /**
+   * Register a per-section reflection source. Every source is consulted for
+   * every section; a non-blank answer is appended below that section's own
+   * text. Appending happens after user overrides and before empty optional
+   * sections are dropped, and it never resurrects a section whose own text is
+   * blank — an ability that is not composed in this assembly must not come back
+   * just because an old lesson about it is still on disk.
+   * @param source - consulted per section name on each assembly.
+   * @returns the exact Cordis effect disposer.
+   */
+  reflectionSource(source: PromptReflectionSource): () => void {
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.reflections.append(source),
+      { label: 'systemPrompt.reflectionSource()' },
     )
   }
 
@@ -547,6 +1266,64 @@ export class SystemPrompt extends Service {
   }
 
   /**
+   * Read the per-session translated prompt when auto selection is enabled.
+   * @param context - the assembly whose session workspace owns a relative path.
+   * @returns the translated prompt, or undefined when no file exists.
+   * @throws when the configured file exists but is empty or unreadable.
+   */
+  private async readTranslatedPrompt(context: AssembleContext): Promise<string | undefined> {
+    const cwd = context.cwd
+    if (cwd === undefined) return undefined
+    const file = isAbsolute(this.translatedPromptFile)
+      ? this.translatedPromptFile
+      : join(cwd, this.translatedPromptFile)
+    let text: string
+    try {
+      text = await readFile(file, 'utf8')
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code
+      if (code === 'ENOENT') return undefined
+      throw new Error(`system-prompt: translatedPromptFile "${file}" is unreadable (${code ?? 'unknown'})`, { cause: error })
+    }
+    if (text.trim() === '') {
+      throw new Error(`system-prompt: translatedPromptFile "${file}" is empty`)
+    }
+    return text
+  }
+
+  /**
+   * Resolve the replacement for one language, or empty when the section keeps its provider text.
+   * @param override - the stored per-language replacement, when one exists.
+   * @param locale - 本次装配生效的语言，来自 {@link activeLocale}。
+   * @returns 该语言下生效的替换文本；未提供或为空白时返回空串。
+   */
+  private localeOverrideText(
+    override: PromptLocaleOverride | undefined,
+    locale: PromptLocale,
+  ): string {
+    if (override === undefined) return ''
+    return (locale === 'en' ? override.en : override.zh).trim()
+  }
+
+  /**
+   * Replace assembled section texts with UI overrides for one language, preserving names and order.
+   * @param assembly - the post-waterfall assembly to overlay.
+   * @param locale - 本次装配生效的语言；显式传入而不重新解析，避免同一段文本
+   * 在装配与覆盖两处各判一次语言。
+   * @returns the assembly with overridden section texts.
+   */
+  private applyOverrides(assembly: PromptAssembly, locale: PromptLocale): PromptAssembly {
+    const overrides = this.overridesSource.current().sections
+    return {
+      ...assembly,
+      sections: assembly.sections.map((section) => {
+        const text = this.localeOverrideText(overrides[section.name], locale)
+        return text === '' ? section : { ...section, text }
+      }),
+    }
+  }
+
+  /**
    * Assemble global and scoped providers, detach tool parameters, apply
    * canonical ordering, then run the assembly waterfall. Scoped sections and
    * variables shadow globals. The returned waterfall value is authoritative
@@ -557,24 +1334,31 @@ export class SystemPrompt extends Service {
    */
   // Keep configuration failures on the declared asynchronous error path.
   async assemble(context: AssembleContext = {}): Promise<PromptAssembly> {
-    const scope = context.scope
+    // 语言在这里解析一次，之后所有分段与上下文提供者都从 enriched 里读同一个值：
+    // 装配内部不允许出现两处各自判断语言的地方，否则一次装配可能一半中文一半英文。
+    const locale = this.activeLocale()
+    const enriched: AssembleContext = context.locale === undefined ? { ...context, locale } : context
+    const scope = enriched.scope
     const scopeLayers = this.layers.chainLayers(scope)
     const runtimeContextSuppressed = !this.layers.global.runtimeContextSuppressors.isEmpty()
       || scopeLayers.some(layer => !layer.runtimeContextSuppressors.isEmpty())
     // Scoped variables shadow globals.
     const variables: Record<string, string | undefined> = {}
     for (const [name, provider] of this.layers.global.variables.entries()) {
-      variables[name] = provider(context)
+      variables[name] = provider(enriched)
     }
     // Scope-chain variables, farthest first, so the nearest scope wins a name.
     for (const layer of scopeLayers) {
       for (const [name, provider] of layer.variables.entries()) {
-        variables[name] = provider(context)
+        variables[name] = provider(enriched)
       }
     }
     // Scoped sections shadow globals before the deterministic order sort.
     const sectionByName = this.layers.merge(scope, layer => layer.sections)
     const contextByName = this.layers.merge(scope, layer => layer.contexts)
+    // 抑制名单与分段一样沿链合并，所以链上任一层的声明都生效；它必须在分段
+    // 定序之前生效，否则被抑制的分段会先占好位置再被抽走。
+    const suppressedSections = this.layers.merge(scope, layer => layer.suppressedSections)
     // Validate order against pre-restriction names while collecting visible schemas.
     const providers = [
       ...this.layers.global.toolProviders.values(),
@@ -583,7 +1367,7 @@ export class SystemPrompt extends Service {
     const collected: ToolSchema[] = []
     const knownNames = new Set<string>()
     for (const provider of providers) {
-      const result = provider(context)
+      const result = provider(enriched)
       const schemas = result.schemas.map(({ name, description, parameters }): ToolSchema => ({
         name,
         description,
@@ -593,7 +1377,34 @@ export class SystemPrompt extends Service {
       collected.push(...schemas)
       for (const name of acceptedKnownNames) knownNames.add(name)
     }
-    const sectionDefinitions = [...sectionByName.values()].sort(comparePromptSections)
+    let sectionDefinitions = [...sectionByName.values()]
+      .filter(section => !suppressedSections.has(section.name))
+      .sort(comparePromptSections)
+    // 内置双语资产先按语言替换第一方分段，随后才轮到项目翻译存档与用户覆盖——
+    // 顺序就是优先级，越靠后越能盖住前面的。
+    sectionDefinitions = sectionDefinitions.map(section => localizeSection(section, locale))
+    if (
+      this.autoTranslatedPrompt
+      && locale === 'zh'
+      && !this.hasCompletePromptFile
+      && !sectionDefinitions.some(section => section.complete === true)
+    ) {
+      const translated = await this.readTranslatedPrompt(enriched)
+      if (translated !== undefined) {
+        const preWaterfallSections: Array<{ name: string; text: string; complete?: boolean }> = sectionDefinitions
+          .map(section => ({
+            name: section.name,
+            text: typeof section.text === 'function' ? section.text(context) : section.text,
+            ...(section.complete === true ? { complete: true } : {}),
+          }))
+        const translations = mapTranslatedSections(preWaterfallSections, translated)
+        sectionDefinitions = sectionDefinitions.flatMap((section) => {
+          const text = translations.get(section.name)
+          if (text === undefined) return [section]
+          return [{ ...section, text }]
+        })
+      }
+    }
     const completeSections = sectionDefinitions.filter(section => section.complete === true)
     if (completeSections.length > 1) {
       throw new Error(`multiple complete prompt sections are active: ${completeSections.map(section => JSON.stringify(section.name)).join(', ')}`)
@@ -603,8 +1414,16 @@ export class SystemPrompt extends Service {
       .map((section) => {
         const assembled = {
           name: section.name,
+<<<<<<< ours
+          text: typeof section.text === 'function' ? section.text(enriched) : section.text,
+=======
+<<<<<<< ours
+          text: typeof section.text === 'function' ? section.text(enriched) : section.text,
+=======
           text: typeof section.text === 'function' ? section.text(context) : section.text,
           ...section.interpolate !== undefined ? { interpolate: section.interpolate } : {},
+>>>>>>> theirs
+>>>>>>> theirs
         }
         if (section.complete === true) completeSection = { ...assembled }
         return assembled
@@ -617,20 +1436,32 @@ export class SystemPrompt extends Service {
           .sort((a, b) => a.order - b.order)
           .map(entry => ({
             name: entry.name,
-            text: typeof entry.text === 'function' ? entry.text(context) : entry.text,
+            text: typeof entry.text === 'function' ? entry.text(enriched) : entry.text,
           })),
       tools: orderTools(collected, this.toolOrder, knownNames),
       variables,
+      locale,
     }
     const transformed = await this.ctx.waterfall(
-      scopeTarget(this, scope), 'system-prompt/assemble', assembly, context,
+      scopeTarget(this, scope), 'system-prompt/assemble', assembly, enriched,
       () => Promise.resolve(assembly),
     )
-    if (completeSection === undefined && !runtimeContextSuppressed) return transformed
+    const overridden = completeSection === undefined ? this.applyOverrides(transformed, locale) : transformed
+    // 反思追加排在覆盖之后：用户覆盖的是"介绍"，反思是独立的一层，两者互不吞掉。
+    const reflected = completeSection === undefined
+      ? applyReflections(overridden, [
+        ...this.layers.global.reflections.values(),
+        ...scopeLayers.flatMap(layer => [...layer.reflections.values()]),
+      ])
+      : overridden
+    // 可选分段的判空必须排在覆盖与反思之后：`mcp:<server>` 与 `computer:policy`
+    // 靠"这一节有没有话要说"决定去留，先过滤会把刚写好的内容静默丢掉。
+    const visible = completeSection === undefined ? dropEmptyOptionalSections(reflected) : reflected
+    if (completeSection === undefined && !runtimeContextSuppressed) return visible
     return {
-      ...transformed,
-      sections: completeSection === undefined ? transformed.sections : [completeSection],
-      contexts: runtimeContextSuppressed ? [] : transformed.contexts,
+      ...visible,
+      sections: completeSection === undefined ? visible.sections : [completeSection],
+      contexts: runtimeContextSuppressed ? [] : visible.contexts,
     }
   }
 }

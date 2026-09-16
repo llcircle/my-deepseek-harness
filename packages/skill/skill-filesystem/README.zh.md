@@ -37,7 +37,15 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 
 `disable-model-invocation: true` 会把 skill 从面向模型的目录和 loader 中排除；`user-invocable: false` 会把它从面向用户的命令中排除，省略的字段默认允许对应接口调用。这两个键接受 YAML 布尔值，以及不区分大小写的 `true`/`false`、`yes`/`no`、`on`/`off` 和 `1`/`0` 形式；被拒绝的拼写或非布尔值会让整个 skill 随警告一起被丢弃，而不会静默允许某个接口。
 
+<<<<<<< ours
+插件还接受运行时 `invocationOverrides` 映射（skill 名 → 触发状态）：`passive` 保留两个调用面，`active-only` 限制为仅用户显式调用，`ignored` 从所有目录中隐藏该 skill。已配置的状态会覆盖该 skill 的 frontmatter 策略；键必须是合法 skill 名，否则插件加载失败。运行时设置分节新增以工作区路径为键的 `projects` 记录，因此项目映射可按会话 cwd 覆盖全局映射。
+=======
+<<<<<<< ours
+插件还接受运行时 `invocationOverrides` 映射（skill 名 → 触发状态）：`passive` 保留两个调用面，`active-only` 限制为仅用户显式调用，`ignored` 从所有目录中隐藏该 skill。已配置的状态会覆盖该 skill 的 frontmatter 策略；键必须是合法 skill 名，否则插件加载失败。运行时设置分节新增以工作区路径为键的 `projects` 记录，因此项目映射可按会话 cwd 覆盖全局映射。
+=======
 目录条目和已加载 skill 提供解析后的指令文件路径，使符号链接目录和扁平文件都能作为普通文件预览。重新加载的定位信息和资源根保留发现时的路径，包括符号链接。
+>>>>>>> theirs
+>>>>>>> theirs
 
 目录与正文具有独立的生命周期：发现阶段把 frontmatter 解析进目录条目，每次加载都会重新读取当前文件，因此编辑 skill 正文无需版本化或缓存失效。
 
@@ -72,7 +80,16 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent 配置根目录 |
 | `customSkillDirs` | `[]` | 其他本地 skill 根目录，位于项目根之后、用户根之前 |
 | `watch` | `true` | 监视本地根，并在目录可能变化时使提供方失效 |
+<<<<<<< ours
+| `bundledSkillDir` | — | 配置后按 rank 600 扫描的内置 skill 根目录 |
+| `invocationOverrides` | `{}` | 覆盖 frontmatter 的全局每-skill 触发状态（`passive`、`active-only`、`ignored`） |
+| `SKILL_FILESYSTEM_SETTINGS_NAMESPACE` | `skill-filesystem` | 运行时设置分节；`projects.<cwd>.invocationOverrides` 按工作区覆盖全局映射 |
+<<<<<<< ours
+=======
+=======
 | `bundledSkillDir` | — | 配置后按 rank 600 扫描的随包提供的 skill 根目录 |
+>>>>>>> theirs
+>>>>>>> theirs
 
 其余 `watch*` 字段用于调节 Chokidar 行为——轮询、稳定窗口、间隔、项目上限与符号链接跟随。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill-filesystem)完整列出了所有字段，是这些字段的真源。
 

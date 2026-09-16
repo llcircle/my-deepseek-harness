@@ -14,7 +14,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
@@ -1467,5 +1467,138 @@ describe('depth budget configuration', () => {
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(requests[0]?.maxDepth).toBeUndefined()
     expect(requests[0]?.toolFilter).toBeUndefined()
+  })
+})
+
+describe('fork-as-parameter shape (forkProvider)', () => {
+  /** A context with the tool's injects but no providers, for load-time rejections. */
+  async function bareContext(): Promise<Context> {
+    const ctx = await projectedContext()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(SubagentRuntime)
+    return ctx
+  }
+
+  interface Captured {
+    readonly name: string
+    readonly requests: SubagentStartRequest[]
+  }
+
+  /**
+   * Mount the tool over two request-capturing providers so one call's route is
+   * observable — the whole point of the `fork` flag is which provider it
+   * reaches, not what the two providers happen to return.
+   */
+  async function forkSetup(
+    config: Partial<tool.Config> = {},
+    shape: { primaryInherits?: boolean; forkInherits?: boolean; continuable?: boolean } = {},
+  ): Promise<{ ctx: Context; captured: Captured[] }> {
+    const ctx = await bareContext()
+    const captured: Captured[] = []
+    const register = (name: string, inherits: boolean): void => {
+      const requests: SubagentStartRequest[] = []
+      captured.push({ name, requests })
+      ctx.subagents.registerProvider({
+        name,
+        capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+        inheritsParentContext: inherits,
+        start: async (request) => {
+          requests.push(request)
+          return {
+            id: SessionId(`${name}-child-${requests.length}`),
+            localAgent: undefined,
+            result: Promise.resolve({
+              output: [{ type: 'text', text: `${name} reply` }],
+              stopReason: 'completed' as const,
+            }),
+            dispose: async () => {},
+          }
+        },
+        // Mount-time capability check only; these tests never start the
+        // continuation manager, which owns the real preparation.
+        ...shape.continuable === true
+          ? { prepareContinuable: (() => { throw new Error('unreachable') }) as NonNullable<SubagentProvider['prepareContinuable']> }
+          : {},
+      })
+    }
+    register('plain', shape.primaryInherits ?? false)
+    register('inherits', shape.forkInherits ?? true)
+    await ctx.plugin(tool, { provider: 'plain', forkProvider: 'inherits', ...config })
+    return { ctx, captured }
+  }
+
+  /** The names of the providers each route reached, in call order. */
+  function reached(captured: Captured[]): string[] {
+    return captured.filter(entry => entry.requests.length > 0).map(entry => entry.name)
+  }
+
+  it('rejects a forkProvider that names the same provider as `provider`', async () => {
+    const ctx = await bareContext()
+    await expect(ctx.plugin(tool, { provider: 'plain', forkProvider: 'plain' }))
+      .rejects.toThrow('`forkProvider` must name a provider other than "plain"')
+  })
+
+  it('rejects an empty forkProvider', async () => {
+    const ctx = await bareContext()
+    await expect(ctx.plugin(tool, { provider: 'plain', forkProvider: '' }))
+      .rejects.toThrow('`forkProvider` must name a provider')
+  })
+
+  it('rejects a pairing whose fork side does not inherit the parent conversation', async () => {
+    await expect(forkSetup({}, { forkInherits: false }))
+      .rejects.toThrow(/`forkProvider` requires a "fork" side that inherits/)
+  })
+
+  it('rejects a pairing whose primary side already inherits', async () => {
+    await expect(forkSetup({}, { primaryInherits: true }))
+      .rejects.toThrow(/`forkProvider` requires a "fork" side that inherits/)
+  })
+
+  it('reaches both providers from one tool and keeps the primary the default', async () => {
+    const { ctx, captured } = await forkSetup({ enableRunInBackground: false })
+    expect(ctx.tools.get('subagent')).toBeDefined()
+    expect(ctx.tools.get('subagent_fork')).toBeUndefined()
+
+    const primary = await callSubagent(ctx, { description: 'd', prompt: 'p' })
+    const fork = await callSubagent(ctx, { description: 'd', prompt: 'p', fork: true })
+    expect(text(primary)).toBe('plain reply')
+    expect(text(fork)).toBe('inherits reply')
+    expect(reached(captured)).toEqual(['plain', 'inherits'])
+  })
+
+  it('advertises the fork parameter and both routes in the description and section', async () => {
+    const { ctx } = await forkSetup({ backgroundMode: 'continuable' }, { continuable: true })
+    const schema = ctx.tools.schemas().find(item => item.name === 'subagent')
+    const properties = (schema?.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+    expect(Object.keys(properties)).toContain('fork')
+    expect(schema?.description).toContain('Set `fork: true`')
+
+    const sections = (await ctx.systemPrompt.assemble()).sections
+    expect(sections.find(item => item.name === 'tool:subagent:merged')?.text)
+      .toContain('Set `fork: true`')
+    expect(sections.some(item => item.name === 'tool:subagent_fork')).toBe(false)
+  })
+
+  it('refuses `fork: true` when the instance has no forkProvider', async () => {
+    const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
+    const refused = await callSubagent(ctx, { description: 'd', prompt: 'p', fork: true })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('is not configured with a forkProvider')
+  })
+
+  it('refuses an explicit child model request on a fork call so the inherited prefix stays reusable', async () => {
+    const { ctx, captured } = await forkSetup({ enableRunInBackground: false })
+    const refused = await callSubagent(ctx, {
+      description: 'd',
+      prompt: 'p',
+      fork: true,
+      provider: 'alpha',
+      model: 'selected-model',
+    })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('keeps the parent route')
+    // Nothing was started on either route.
+    expect(reached(captured)).toEqual([])
   })
 })

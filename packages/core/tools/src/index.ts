@@ -676,6 +676,18 @@ export interface Config {
 }
 
 /**
+ * One on-demand tool as the fetch surface sees it: the registered definition
+ * (needed to render the schema a model must call it by) plus whether this
+ * scope has already fetched it.
+ */
+export interface DeferredTool {
+  /** The registered definition, carrying the full schema. */
+  readonly definition: ToolDefinition
+  /** Whether this scope already fetched it through `tool_search`. */
+  readonly loaded: boolean
+}
+
+/**
  * Per-scope filter over global tools. Restrictions intersect and do not affect
  * scoped registrations or the reserved PTC mode transport.
  */
@@ -723,8 +735,27 @@ class ToolLayer implements ScopeLayer {
    * "which form does the model see" is a contradiction, not a merge.
    */
   mode: ToolPresentationMode | undefined
+  /**
+   * Names whose SCHEMAS this scope withholds from the model until a
+   * `tool_search` call in it fetches them. Keyed by name rather than kept as
+   * one list, and separate from {@link loaded}, so the two declarations merge
+   * with different rules: withholding unions down the scope chain (any scope
+   * on it may hide a tool from everything nested inside) while a fetch in the
+   * nearest scope lifts every ancestor's claim.
+   */
+  readonly deferred = new NamedEntries<true>(name => new Error(this.scope === undefined
+    ? `tool "${name}" is already deferred (for a per-agent deferral, call \`ctx.tools.defer()\` through that agent's \`agent.ctx\` instead)`
+    : `tool "${name}" is already deferred in this scope`))
+  /**
+   * Names this scope has fetched through `tool_search`. Deliberately NOT
+   * collapsed into {@link deferred}: activations only ever add, and an agent
+   * whose composition was reloaded under it keeps whatever it already loaded.
+   */
+  readonly loaded = new NamedEntries<true>(name => new Error(this.scope === undefined
+    ? `tool "${name}" is already loaded (for a per-agent fetch, call \`ctx.tools.loadDeferred()\` through that agent's \`agent.ctx\` instead)`
+    : `tool "${name}" is already loaded in this scope`))
 
-  constructor(scope: ScopeKey | undefined) {
+  constructor(private readonly scope: ScopeKey | undefined) {
     this.tools = new NamedEntries(name => new Error(scope === undefined
       ? `tool "${name}" is already registered (for a per-agent variant, register through that agent's \`agent.ctx\` instead)`
       : `tool "${name}" is already registered in this scope`))
@@ -733,7 +764,7 @@ class ToolLayer implements ScopeLayer {
   /** Whether every contribution table in this aggregate layer is empty. */
   isEmpty(): boolean {
     return this.tools.isEmpty() && this.restrictions.isEmpty() && this.guards.isEmpty()
-      && this.mode === undefined
+      && this.mode === undefined && this.deferred.isEmpty() && this.loaded.isEmpty()
   }
 
   /** Whether every compiled restriction in this layer admits a global tool name. */
@@ -982,23 +1013,132 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * Move the SCHEMAS of `names` off the wire for every agent the calling
+   * scope covers, until a `tool_search` call in the agent's own scope fetches
+   * them back.
+   *
+   * Withholding narrows the request and nothing else: the tool stays
+   * registered, stays dispatchable, and stays a known name for `toolOrder`
+   * and `restrict`. That is the whole point — a model that learns the name
+   * and its schema from a `tool_search` result can call it immediately, and a
+   * tool description that names it stays truthful. See
+   * [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the
+   * fetching.
+   *
+   * Scoped only, like {@link presentAs}: whether a tool is resident is a
+   * property of the COMPOSITION, not of the tool, so the row that carries it
+   * is an agent preset's. The same `web_fetch` is a resident tool in one
+   * preset and an on-demand one in another, and a per-tool flag inside its own
+   * package could not express both.
+   *
+   * Names that are not registered are IGNORED, not rejected. A preset defers a
+   * capability group, and a group member whose row is absent or `disabled` in
+   * this deployment is a legitimate absence — indistinguishable, from the
+   * registry's side, from a name the preset no longer uses. A name deferred
+   * and never registered simply withholds nothing.
+   * @param names - tool names whose schemas stay off the wire until fetched.
+   * @returns the exact disposer that makes them resident again.
+   */
+  defer(names: readonly string[]): () => void {
+    return this.declare(names, layer => layer.deferred, 'tools.defer()')
+  }
+
+  /**
+   * Record that this scope has fetched `names` through `tool_search`, so their
+   * schemas join every later request. Scoped to the calling context, which for
+   * a fetch is the calling `<agent>.ctx` — so one agent's research does not
+   * spend another's budget, and the record unwinds with that agent.
+   * @param names - tool names whose schemas this scope now shows.
+   * @returns the exact disposer that withholds them again.
+   */
+  loadDeferred(names: readonly string[]): () => void {
+    return this.declare(names, layer => layer.loaded, 'tools.loadDeferred()')
+  }
+
+  /**
+   * Every tool this scope's composition declares on-demand, with its full
+   * definition, in name order. This is `tool_search`'s search space and what
+   * the on-demand index section lists: a declared name that is not registered
+   * in this scope — an absent or `disabled` row, or one a restriction masked —
+   * has nothing to fetch and is omitted.
+   * @param scope - the scope to read; omitted reads the deployment default.
+   * @returns the on-demand tools, each with whether this scope already loaded it.
+   */
+  deferredTools(scope?: ScopeKey): readonly DeferredTool[] {
+    const loaded = this.layers.merge(scope, layer => layer.loaded)
+    const view = this.view(scope)
+    const found: DeferredTool[] = []
+    for (const name of [...this.layers.merge(scope, layer => layer.deferred).keys()].sort()) {
+      const definition = view.visible.get(name)
+      if (definition !== undefined) found.push({ definition, loaded: loaded.has(name) })
+    }
+    return found
+  }
+
+  /** Shared implementation of the two symmetric per-scope name declarations. */
+  private declare(
+    names: readonly string[],
+    table: (layer: ToolLayer) => NamedEntries<true>,
+    label: string,
+  ): () => void {
+    const unique = [...new Set(names)]
+    return this.layers.effect(this.ctx, (layer) => {
+      const inserted = unique.map(name => table(layer).insert(name, true))
+      return () => {
+        for (const restore of inserted.reverse()) restore()
+      }
+    }, { label })
+  }
+
+  /**
+   * Names whose schemas this scope's model must not see yet. Withholding is
+   * a union down the scope chain and a fetch in any nearer scope lifts it, so
+   * an agent that loaded a tool keeps it even when a reload re-declares the
+   * deferral above it.
+   */
+  private withheldNames(scope?: ScopeKey): Set<string> {
+    const loaded = this.layers.merge(scope, layer => layer.loaded)
+    const withheld = new Set<string>()
+    for (const name of this.layers.merge(scope, layer => layer.deferred).keys()) {
+      if (!loaded.has(name)) withheld.add(name)
+    }
+    return withheld
+  }
+
+  /**
    * Build one scope's wire schemas and names for prompt-order validation.
    * Restrictions do not make known tools invalid, but a mode collapse does.
    */
   private wireSchemas(scope?: ScopeKey): ToolProviderResult {
     const view = this.view(scope)
     const mode = this.modeFor(scope)
+    // The wire surface is the ONE place withholding narrows what the model
+    // sees without narrowing what it can execute: a withheld tool stays
+    // registered and dispatchable, so a name the model learns from a
+    // `tool_search` result resolves normally. `knownNames` stays complete for
+    // the same reason — the name IS known, only its schema is withheld.
+    const withheld = this.withheldNames(scope)
+    const wire = (definitions: Iterable<ToolDefinition>): ToolSchema[] => [...definitions]
+      .filter(definition => !withheld.has(definition.name))
+      .map(definition => this.schemaOf(definition, false))
     if (mode === 'native') {
-      const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
-      return { schemas, knownNames: [...view.knownNames] }
+      return { schemas: wire(view.visible.values()), knownNames: [...view.knownNames] }
     }
     // Validate the runtime language BEFORE projecting schemas: schemaOf reads
     // run_code's language-aware description/parameters getters, whose own
     // flavor-table guard would otherwise surface first. This keeps the
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
+<<<<<<< ours
+    this.requireCodeRuntime(mode)
+    const schemas = wire(view.visible.values())
+<<<<<<< ours
+=======
+=======
     this.requirePtcRuntime(mode)
     const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
+>>>>>>> theirs
+>>>>>>> theirs
     if (mode === 'ptc') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),

@@ -1,5 +1,6 @@
 /** Session creation and adoption rules for Agent preset identity. */
 
+import { mkdir, writeFile } from 'node:fs/promises'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -81,7 +82,7 @@ async function harness(presets?: readonly string[]) {
     cwd,
   })
   if (presets !== undefined) ctx.sessionProjections.register(agentPresetProjectionDefinition)
-  return { ctx, remote }
+  return { ctx, remote, cwd }
 }
 
 describe('session.create Agent preset identity', () => {
@@ -179,5 +180,51 @@ describe('session.create Agent preset identity', () => {
     if (response.ok) throw new Error('unreachable')
     expect('existingPreset' in response.error.details).toBe(false)
     expect(response.error.message).toContain('records no agent preset')
+  })
+})
+
+describe('project-owned preset override', () => {
+  it('composes the project override when the caller names no preset', async () => {
+    const { ctx, remote, cwd } = await harness(['standard', 'minimal'])
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(join(cwd, '.dsh', 'agent-preset'), 'minimal\n')
+
+    const created = await remote.create({ sessionId: SessionId('s-project') })
+
+    expect(created.ok).toBe(true)
+    expect(ctx.sessions.get(SessionId('s-project'))?.header.agentPreset).toBe('minimal')
+  })
+
+  it('lets an explicit caller preset win over the project override', async () => {
+    const { ctx, remote, cwd } = await harness(['standard', 'minimal'])
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(join(cwd, '.dsh', 'agent-preset'), 'minimal\n')
+
+    const created = await remote.create({ sessionId: SessionId('s-explicit'), agentPreset: 'standard' })
+
+    expect(created.ok).toBe(true)
+    expect(ctx.sessions.get(SessionId('s-explicit'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('keeps the roster default when the override file is blank', async () => {
+    const { ctx, remote, cwd } = await harness(['standard'])
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(join(cwd, '.dsh', 'agent-preset'), '\n')
+
+    const created = await remote.create({ sessionId: SessionId('s-blank') })
+
+    expect(created.ok).toBe(true)
+    expect(ctx.sessions.get(SessionId('s-blank'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('fails loudly when the override names an unknown preset', async () => {
+    const { remote, cwd } = await harness(['standard'])
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(join(cwd, '.dsh', 'agent-preset'), 'ghost\n')
+
+    const created = await remote.create({ sessionId: SessionId('s-ghost') })
+
+    expect(created.ok).toBe(false)
+    if (!created.ok) expect(created.error.code).toBe('agent-preset/not-found')
   })
 })

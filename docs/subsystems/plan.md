@@ -23,10 +23,15 @@ The only append point while an agent is running is a prepended `agent/pre-step` 
 interface PlanModeConfig {
   /** Guidance rendered as the `plan:policy` prompt section while plan mode is active. */
   section: string
+  /**
+   * Create a durable goal from the plan on review approval. Requires the goal
+   * service; approval fails loudly when it is not mounted.
+   */
+  goalOnApprove?: boolean
 }
 ```
 
-A missing, blank, or non-string `section` and any unknown key fail at plugin load rather than being ignored. While plan mode is active, the exact `section` text renders as the `plan:policy` [system-prompt section](system-prompt.md) at order 50; inactive plan mode contributes no text.
+A missing, blank, or non-string `section` and any unknown key fail at plugin load rather than being ignored. While plan mode is active, the exact `section` text renders as the `plan:policy` [system-prompt section](system-prompt.md) at order 50; inactive plan mode contributes no text. With `goalOnApprove: true`, approval also creates a durable goal from the reviewed plan through the mounted goal service.
 
 ## The exit tool and the `/plan` command
 

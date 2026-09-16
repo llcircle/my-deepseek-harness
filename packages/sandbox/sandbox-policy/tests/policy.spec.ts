@@ -99,7 +99,52 @@ describe('SandboxPolicyService', () => {
     })
   })
 
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+  it('renders the policy context in Chinese when contextLocale is zh', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', contextLocale: 'zh' })
+
+    const text = await policyContext(ctx, session('sess-zh', '/projects/zh'))
+
+    expect(text).toContain('当前 DSH 文件策略：danger-full-access')
+    expect(text).not.toContain('The DSH file sandbox does not restrict')
+  })
+
+  it('follows the interface language when contextLocale is auto', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access' })
+    const text = await policyContext(ctx, session('sess-auto', '/projects/auto'))
+    // Without a settings-backed locale the assembly resolves to English.
+    expect(text).toContain('The DSH file sandbox does not restrict')
+
+    ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+    const chinese = await policyContext(ctx, session('sess-auto-2', '/projects/auto'))
+    expect(chinese).toContain('当前 DSH 文件策略：danger-full-access')
+    expect(chinese).not.toContain('The DSH file sandbox does not restrict')
+  })
+
+  it('lets an explicit contextLocale outrank the interface language', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', contextLocale: 'en' })
+    ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+    const text = await policyContext(ctx, session('sess-pinned', '/projects/pinned'))
+    expect(text).toContain('The DSH file sandbox does not restrict')
+    expect(text).not.toContain('当前 DSH 文件策略')
+  })
+
+  it.skipIf(process.platform === 'win32')('resolves a symlink-sensitive session cwd with POSIX component semantics', async () => {
+=======
   it.skipIf(process.platform === 'win32')('preserves symlink-sensitive session cwd for its enforcing provider', async () => {
+>>>>>>> theirs
     const root = mkdtempSync(join(tmpdir(), 'dsh-policy-cwd-'))
     try {
       const lexical = join(root, 'lexical')

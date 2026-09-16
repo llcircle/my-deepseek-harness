@@ -33,11 +33,51 @@ function fakeAgent(seed: Array<{ type: string }> = [{ type: 'turn/start' }, { ty
   return { agent, appended }
 }
 
-async function mounted(): Promise<Context> {
+async function mounted(config: { policy?: 'ask' | 'never'; contextLocale?: 'en' | 'zh' } = {}): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(ApprovalService)
+  await ctx.plugin(ApprovalService, config)
   return ctx
 }
+
+describe('approval context', () => {
+  it('renders the policy context in Chinese when contextLocale is zh', async () => {
+    const ctx = await mounted({ policy: 'never', contextLocale: 'zh' })
+    await ctx.plugin(SystemPrompt)
+    const { agent } = fakeAgent()
+
+    const text = (await ctx.systemPrompt.assemble({ agent }))
+      .contexts.find(context => context.name === 'approval:policy')?.text
+
+    expect(text).toContain('本会话已禁用审批提示')
+    expect(text).not.toContain('Approval prompts are disabled')
+  })
+
+  it('follows the interface language when contextLocale is auto', async () => {
+    const ctx = await mounted({ policy: 'never' })
+    await ctx.plugin(SystemPrompt)
+    const { agent } = fakeAgent()
+    // Without a settings-backed locale the assembly resolves to English.
+    expect((await ctx.systemPrompt.assemble({ agent }))
+      .contexts.find(context => context.name === 'approval:policy')?.text)
+      .toContain('Approval prompts are disabled')
+
+    ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+    expect((await ctx.systemPrompt.assemble({ agent }))
+      .contexts.find(context => context.name === 'approval:policy')?.text)
+      .toContain('本会话已禁用审批提示')
+  })
+
+  it('lets an explicit contextLocale outrank the interface language', async () => {
+    const ctx = await mounted({ policy: 'never', contextLocale: 'en' })
+    await ctx.plugin(SystemPrompt)
+    ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+    const { agent } = fakeAgent()
+    const text = (await ctx.systemPrompt.assemble({ agent }))
+      .contexts.find(context => context.name === 'approval:policy')?.text
+    expect(text).toContain('Approval prompts are disabled')
+    expect(text).not.toContain('本会话已禁用审批提示')
+  })
+})
 
 function requestOf(agent: Agent, overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
   return { agent, toolName: 'echo', ...overrides }

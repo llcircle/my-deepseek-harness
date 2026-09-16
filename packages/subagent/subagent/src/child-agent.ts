@@ -162,6 +162,14 @@ export interface ChildComposition {
   readonly persona?: string | undefined
   /** Per-child tool scoping. */
   readonly toolFilter?: ToolRestriction | undefined
+  /**
+   * Per-child keep-list: only these inherited tools stay visible. Translated
+   * here, in the child's own window, because only the child's view can say
+   * which names are actually restrictable on this deployment.
+   */
+  readonly allowTools?: readonly string[] | undefined
+  /** Per-child prompt sections to suppress by name. */
+  readonly omitSections?: readonly string[] | undefined
 }
 
 /**
@@ -193,9 +201,16 @@ export const SUBAGENT_DELEGATION_CONTEXT
  * no preset sees an empty tool registry and none of its parent's prompt
  * sections. Taking the parent as a parameter is what makes that omission
  * unrepresentable at the call sites.
+ *
+ * Order is load-bearing in two places. The join precedes every per-child
+ * registration, so a child's own persona or suppression beats the composed
+ * preset's same-named contribution. Within the registrations, the keep-list
+ * and the explicit filter come before nothing else and after the persona,
+ * because a narrow helper child is composed of all of them at once and a
+ * suppression must survive whatever the preset just contributed.
  * @param childCtx - the child agent's scoped creation context.
  * @param parent - the delegating parent whose composition the child joins.
- * @param composition - the per-child persona and tool filter to install.
+ * @param composition - the per-child persona, tool scoping, and suppressed prompt sections to install.
  */
 export function applyChildComposition(
   childCtx: Context,
@@ -215,7 +230,33 @@ export function applyChildComposition(
       text: composition.persona,
     })
   }
+  // 抑制排在人格注册之后：两者都能作用于 `deployment:persona`，而"这一节不存在"
+  // 是更强的意图，后注册者胜出正好让 `persona` 与 `omitSections` 同时命中时不打架。
+  for (const name of composition.omitSections ?? []) childCtx.systemPrompt.suppressSection(name)
+  if (composition.allowTools !== undefined) {
+    childCtx.tools.restrict({ deny: unlistedToolNames(childCtx, composition.allowTools) })
+  }
   if (composition.toolFilter !== undefined) childCtx.tools.restrict(composition.toolFilter)
+}
+
+/**
+ * Translate a keep-list into the removals that express it on THIS deployment.
+ *
+ * The translation has to happen against the child's own view: `tools.restrict`
+ * rejects any name the deployment does not register, so a caller-authored
+ * keep-list is a statement of intent, not a filter. Reading the visible tool
+ * names here — inside the child's creation window, before the child registers
+ * a single tool of its own — yields exactly the restrictable set, and a
+ * keep-list entry the deployment never had simply matches nothing.
+ * @param childCtx - the child's scoped context, already joined to its parent's composition.
+ * @param keep - the inherited tool names the child keeps.
+ * @returns the inherited names to remove; empty when the keep-list covers them all.
+ */
+function unlistedToolNames(childCtx: Context, keep: readonly string[]): string[] {
+  const kept = new Set(keep)
+  return childCtx.tools.schemas()
+    .map(schema => schema.name)
+    .filter(name => !kept.has(name))
 }
 
 /** Policy seeded onto a child session's log at the delegation boundary. */

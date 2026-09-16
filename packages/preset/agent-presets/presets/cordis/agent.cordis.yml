@@ -256,15 +256,23 @@
 # The composition-authoring skill travels with this preset rather than living
 # in the user's skill root: it documents THIS deployment's two planes, and a
 # preset is the unit that gets copied and edited. `baseUrl` is the preset's
-# own directory, so the root resolves wherever the preset is installed.
-# Both rows register into THIS preset's layer of the host skill registry, so
-# they need no realm; the agent's merged catalog also carries whatever the
-# deployment registered globally (repository plugins).
+# own directory, so the root below resolves wherever the preset is installed —
+# `copy()` brings `skills/` along and the copy's agent still finds it.
+#
+# This provider mounts ONLY that root. Which project and user skills an agent
+# sees stays the host `skill-filesystem` row's business: a read runs every
+# provider in the chain and merges by skill name, so this row adds to the host
+# one instead of replacing it, and no other preset inherits this skill.
+#
+# It names itself because a provider name is unique within a layer and the host
+# row already claims `filesystem`; `cordis-preset` also says which plane a
+# catalog entry came from.
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
-    customSkillDirs:
-      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+    providerName: cordis-preset
+    includeDefaultRoots: false
+    customSkillDirs: !!js "[new URL('skills', baseUrl).href]"
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'

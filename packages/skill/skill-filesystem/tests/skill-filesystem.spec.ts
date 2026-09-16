@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
+<<<<<<< ours
+import { link, mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+=======
+<<<<<<< ours
+import { link, mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+=======
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+>>>>>>> theirs
+>>>>>>> theirs
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import { FileSystem, FsError, FsVersion, type FsDirEntry, type FsEditOutcome, type FsEditRequest, type FsInfo, type FsPathInfo, type FsTarget, type FsWriteOutcome } from '@deepseek-ai/dsh-fs'
@@ -217,6 +226,27 @@ describe('FileSystemSkillProvider', () => {
     expect((await ctx.skills.list({ cwd: noGit })).map(skill => skill.name)).toContain('fallback-root')
   })
 
+  it('resolves a `file:` custom root, the shape a composition uses for its own directory', async () => {
+    // A preset names the `skills/` directory beside itself, and it can only do
+    // that as a URL: the loader's `baseUrl` is the composition's own directory
+    // as a `file:` URL, so the configured root is one too rather than a path
+    // this process would resolve against its cwd.
+    const home = await tempDir('skill-file-url-home')
+    const preset = await tempDir('skill-file-url-preset')
+    const root = join(preset, 'skills')
+    await writeSkill(root, 'preset-only', 'Travels with its preset')
+
+    const ctx = await setupLocal(home, {
+      includeDefaultRoots: false,
+      customSkillDirs: [pathToFileURL(root).href],
+    })
+
+    const skills = await ctx.skills.list({ cwd: preset })
+    expect(skills.map(skill => skill.name)).toEqual(['preset-only'])
+    expect(skills[0]?.source).toBe('custom')
+    expect((await ctx.skills.get('preset-only'))?.content).toBe('Use the skill.')
+  })
+
   it('lets project skills override runtime while runtime overrides custom and user skills', async () => {
     const home = await tempDir('skill-runtime-priority')
     const project = await tempDir('skill-runtime-project')
@@ -355,6 +385,51 @@ describe('FileSystemSkillProvider', () => {
     }
   })
 
+  it('applies configured trigger-state overrides over invocation frontmatter', async () => {
+    const home = await tempDir('skill-trigger-overrides')
+    const root = join(home, '.dsh/skills')
+    await mkdir(root, { recursive: true })
+    await writeSkill(root, 'passive-skill', 'Passive skill', 'Body.')
+    await writeSkill(root, 'active-only-skill', 'Active-only skill', 'Body.')
+    await writeSkill(root, 'ignored-skill', 'Ignored skill', 'Body.')
+
+    const ctx = await setupLocal(home, {
+      invocationOverrides: {
+        'active-only-skill': 'active-only',
+        'ignored-skill': 'ignored',
+      },
+    })
+
+    expect((await ctx.skills.get('passive-skill'))?.invocation).toEqual({
+      modelInvocable: true,
+      userInvocable: true,
+    })
+    expect((await ctx.skills.get('active-only-skill'))?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: true,
+    })
+    expect((await ctx.skills.get('ignored-skill'))?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: false,
+    })
+    const listed = await ctx.skills.list()
+    expect(listed.find(skill => skill.name === 'active-only-skill')?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: true,
+    })
+    expect(listed.find(skill => skill.name === 'ignored-skill')?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: false,
+    })
+  })
+
+  it('rejects invalid trigger-state override keys at plugin load', async () => {
+    const home = await tempDir('skill-trigger-invalid')
+    await expect(setupLocal(home, {
+      invocationOverrides: { Bad_Name: 'ignored' },
+    })).rejects.toThrow('skill-filesystem: global trigger override key "Bad_Name" is not a valid skill name')
+  })
+
   it('rejects legacy and invalid invocation frontmatter without hiding valid siblings', async () => {
     const home = await tempDir('skill-invalid-invocation')
     const root = join(home, '.dsh/skills')
@@ -423,11 +498,24 @@ describe('FileSystemSkillProvider', () => {
     const external = await tempDir('skill-symlink-external')
     await writeSkill(external, 'linked-dir', 'Linked directory')
     await writeFlatSkill(external, 'linked-flat', 'Linked flat')
-    await mkdir(join(home, '.dsh/skills'), { recursive: true })
-    await symlink(join(external, 'linked-dir'), join(home, '.dsh/skills/linked-dir'))
-    await symlink(join(external, 'linked-flat.md'), join(home, '.dsh/skills/linked-flat.md'))
-    await symlink(join(external, 'missing'), join(home, '.dsh/skills/broken-link'))
-    await symlink('/dev/null', join(home, '.dsh/skills/device-link'))
+    const root = join(home, '.dsh/skills')
+    await mkdir(root, { recursive: true })
+    // A junction is followed exactly like a symlink but needs no elevation on
+    // Windows, so both directory cases keep their coverage on every platform.
+    const directoryLink = process.platform === 'win32' ? 'junction' : 'dir'
+    await symlink(join(external, 'linked-dir'), join(root, 'linked-dir'), directoryLink)
+    if (process.platform === 'win32') {
+      // Windows cannot create a file symlink without elevation. A hard link
+      // puts the same flat file at the linked path, and a hard link is a plain
+      // file to the discovery walk — the link kind is not what this case tests.
+      await link(join(external, 'linked-flat.md'), join(root, 'linked-flat.md'))
+    } else {
+      await symlink(join(external, 'linked-flat.md'), join(root, 'linked-flat.md'))
+    }
+    await symlink(join(external, 'missing'), join(root, 'broken-link'), directoryLink)
+    // A character device has no Windows counterpart; the dangling link above
+    // already covers "a link that resolves to no skill" on that platform.
+    if (process.platform !== 'win32') await symlink('/dev/null', join(root, 'device-link'))
 
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
@@ -821,7 +909,11 @@ describe('FileSystemSkillProvider', () => {
     const root = join(home, '.dsh/skills')
     await writeSkill(external, 'linked-skill', 'First linked description')
     await mkdir(root, { recursive: true })
-    await symlink(join(external, 'linked-skill'), join(root, 'linked-skill'))
+    await symlink(
+      join(external, 'linked-skill'),
+      join(root, 'linked-skill'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {

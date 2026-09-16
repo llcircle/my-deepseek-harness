@@ -22,6 +22,12 @@ import { formatElapsedSeconds } from './trajectory-record.ts'
 import type { TrajectoryTranslate } from './locales.ts'
 import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
 
+function isLegacySkillCatalogNode(node: TrajectorySnapshot['eventNodes'][number]): boolean {
+  if (node.kind !== 'context') return false
+  const source = node.source
+  return typeof source === 'object' && source !== null && (source as Record<string, unknown>).kind === 'skill-catalog'
+}
+
 /** One Message or Step group inside a turn. */
 export interface TrajectoryGroupModel {
   title: string
@@ -157,8 +163,9 @@ export function deriveTrajectoryLayout(
   t: TrajectoryTranslate,
 ): readonly TrajectoryTurnModel[] {
   const {
-    nodes, eventLocations, partial, runningCalls, requests = [], callSchemas,
+    eventLocations, partial, runningCalls, requests = [], callSchemas,
   } = input
+  const nodes = input.nodes.filter(node => !isLegacySkillCatalogNode(node))
   const resultByCall = indexResults(nodes)
   const callById = new Map<string, ToolCallBlock>(resultByCall)
   for (const call of runningCalls) callById.set(call.callId, call)
@@ -724,11 +731,11 @@ function expandAssistant(
   const messageText = node.blocks
     .filter(block => block.kind === 'text' && (!streaming || block.text !== ''))
     .map(block => block.kind === 'text' ? block.text : '')
-    .join('\n\n')
+    .join('')
   const thinkingText = node.blocks
     .filter(block => block.kind === 'reasoning' && (!streaming || block.text !== ''))
     .map(block => block.kind === 'reasoning' ? block.text : '')
-    .join('\n\n')
+    .join('')
   const message: TrajectoryCellProps = {
     index: ++index,
     recordId: `assistant\u0000${node.turn}\u0000${node.step}`,
@@ -1107,7 +1114,7 @@ function detailResult(node: ToolResultNode, t: TrajectoryTranslate): string {
   const text = node.content
     .filter(block => block.type === 'text' && typeof block.text === 'string')
     .map(block => block.type === 'text' ? block.text : '')
-    .join('\n')
+    .join('')
   if (text !== '') return text
   const images = imageBlockCount(node.content)
   if (images > 0) return t('layout.imageOnly', { count: images })
@@ -1123,14 +1130,14 @@ function detailContent(content: readonly { type: string; text?: string }[]): str
   return content
     .filter(block => block.type === 'text' && typeof block.text === 'string')
     .map(block => block.text ?? '')
-    .join('\n')
+    .join('')
 }
 
 function detailReasoning(content: readonly { type: string; text?: string }[]): string {
   return content
     .filter(block => block.type === 'reasoning' && typeof block.text === 'string')
     .map(block => block.text ?? '')
-    .join('\n')
+    .join('')
 }
 
 function previewContent(

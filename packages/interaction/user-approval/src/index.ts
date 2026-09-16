@@ -62,10 +62,34 @@ export type ApprovalPolicy = 'ask' | 'never'
 /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
 export const APPROVAL_POLICIES: readonly ApprovalPolicy[] = ['ask', 'never']
 
-/** Model-facing statement for the deterministic `'never'` policy. */
-const NEVER_SENTENCE = 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).'
-/** Model-facing statement for an interactive policy that may still fail closed. */
-const ASK_SENTENCE = 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.'
+/**
+ * Locales for the approval context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
+const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
+export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
+
+/** A locale already resolved for rendering; `auto` never reaches the templates. */
+type ResolvedLocale = 'en' | 'zh'
+
+/** Resolve `auto` against the assembly's language, pinning `en`/`zh` as given. */
+function resolveContextLocale(preference: ContextLocale, assemblyLocale: string | undefined): ResolvedLocale {
+  if (preference !== 'auto') return preference
+  return assemblyLocale === 'zh' ? 'zh' : 'en'
+}
+
+/** Model-facing statement for one policy in one locale. */
+function approvalPolicySentence(policy: ApprovalPolicy, locale: ResolvedLocale): string {
+  if (locale === 'zh') {
+    return policy === 'never'
+      ? '本会话已禁用审批提示：需要审批的操作会被自动拒绝——不要请求沙箱升级（不要设置 `sandbox_permissions`）。'
+      : '审批策略：ask。需要审批的操作可能通过已配置的应答器发起询问；没有可用应答器时，请求按失败关闭处理。'
+  }
+  return policy === 'never'
+    ? 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).'
+    : 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.'
+}
 
 /**
  * Whether the log currently sits inside an open turn (a `turn/start` not yet
@@ -133,6 +157,13 @@ export interface Config {
    * prompting (the deterministic CI/unattended stance).
    */
   readonly policy?: ApprovalPolicy
+  /**
+   * Locale for the model-facing `approval:policy` context (default `auto`).
+   * `auto` follows the assembly language — the interface language the user
+   * picked in settings — and falls back to English when the assembly carries
+   * none. `en`/`zh` pin it regardless of the setting.
+   */
+  readonly contextLocale?: ContextLocale
 }
 
 /**
@@ -143,10 +174,12 @@ export interface Config {
 export class ApprovalService extends Service {
   static Config: z<Config> = z.object({
     policy: z.union(['ask', 'never'] as const).default('ask'),
+    contextLocale: z.union(CONTEXT_LOCALES).default('auto'),
   })
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'approval')
+    const contextLocale = config.contextLocale as ContextLocale
 
     const effective = (agent: Agent): ApprovalPolicy => this.effectivePolicy(agent.session)
 
@@ -161,7 +194,7 @@ export class ApprovalService extends Service {
           // A bare assemble() (tests, diagnostics) has no session to state.
           if (agent === undefined) return ''
           const policy = effective(agent)
-          return policy === 'never' ? NEVER_SENTENCE : ASK_SENTENCE
+          return approvalPolicySentence(policy, resolveContextLocale(contextLocale, context.locale))
         },
       })
     })

@@ -1698,7 +1698,9 @@ describe('dsh-subagent-acp', () => {
       outputSchema: false,
       depthLimit: false,
       toolFilter: false,
+      allowTools: false,
       persona: false,
+      omitSections: false,
     })
   })
 

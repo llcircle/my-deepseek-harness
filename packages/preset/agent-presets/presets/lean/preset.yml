@@ -1,0 +1,3 @@
+name: 精简模式
+description: 在标准模式基础上收敛工具目录：goal、job、subagent 各自合并为单个带 action 参数的工具，冷门工具改为按需取回，不提供 workflow 与 ralph。
+order: 2

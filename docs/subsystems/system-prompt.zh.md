@@ -18,6 +18,8 @@ interface AssembleContext {
    * only global providers and subject-less listeners participate.
    */
   scope?: ScopeKey
+  /** Session workspace used to resolve per-session prompt file configuration. */
+  cwd?: string
   /** Explicit control signal for the turn that requested this assembly, when any. */
   signal?: AbortSignal
 }
@@ -120,6 +122,57 @@ section(section: PromptSection): () => void
 getSectionOrder(name: PromptSectionOrderName): number
 
 /**
+ * List globally registered section names for prompt editing surfaces.
+ *
+ * 这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用
+ * {@link sectionTexts}，它连作用域一起算——两者覆盖的集合本来就不一样，
+ * 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。
+ * @returns sorted section names visible to unscoped assemblies.
+ */
+sectionNames(): string[]
+
+/**
+ * Project the sections a Web editor may address: the global layer plus every
+ * scope's own first-seen contribution, in one merged view. Static sections
+ * include their current text; dynamic sections stay visible but not editable.
+ *
+ * 作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>`
+ * 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误
+ * 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段，
+ * 所以作用域里的分段同样改得动。
+ * @param cwd - session workspace whose per-session prompt file supplies the
+ * Chinese column; omitted reads leave that column empty.
+ * @returns sorted section views for prompt editing.
+ */
+async sectionTexts(cwd?: string): Promise<PromptSectionView[]>
+
+/**
+ * Install runtime-editable section replacements when the deployment mounts settings.
+ * @param owner - consumer context used for section lifetime.
+ * @param settings - the optional settings provider to install into.
+ */
+installOverrides( owner: Context, settings: PromptOverridesSettingsInstaller, ): void
+
+/**
+ * 接入界面语言的读取来源。
+ *
+ * 注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词
+ * 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以
+ * 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来，
+ * 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后
+ * 下一个请求就生效，不必重启。
+ *
+ * @param source - 读取当前界面语言标签的函数；返回空表示没有设置服务。
+ */
+adoptLocaleSource(source: () => string | undefined): void
+
+/**
+ * 当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。
+ * @returns `zh` 或 `en`。
+ */
+activeLocale(): PromptLocale
+
+/**
  * Resolve the centrally owned placement of a repository runtime context.
  * @param name - stable context placement name.
  * @returns the context's numeric sort order.
@@ -150,6 +203,18 @@ suppressRuntimeContext(): () => void
  * @returns the exact Cordis effect disposer.
  */
 tools(provider: (context: AssembleContext) => ToolProviderResult): () => void
+
+/**
+ * Register a per-section reflection source. Every source is consulted for
+ * every section; a non-blank answer is appended below that section's own
+ * text. Appending happens after user overrides and before empty optional
+ * sections are dropped, and it never resurrects a section whose own text is
+ * blank — an ability that is not composed in this assembly must not come back
+ * just because an old lesson about it is still on disk.
+ * @param source - consulted per section name on each assembly.
+ * @returns the exact Cordis effect disposer.
+ */
+reflectionSource(source: PromptReflectionSource): () => void
 
 /**
  * Register a prompt variable in the calling context's scope. Scoped values

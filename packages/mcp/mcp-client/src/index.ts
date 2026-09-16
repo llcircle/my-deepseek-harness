@@ -22,6 +22,8 @@ import type { ReconnectConfig } from './connection.ts'
 import { registerServerContext } from './server-context.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
+// Type-only: pulls the ctx.systemPrompt merge used for the per-server section.
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export { createMcpToolDefinition } from './tools.ts'
 export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
@@ -38,6 +40,40 @@ const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
 
 /** Valid `serverName`, kept below the public tool-name budget. */
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
+
+/** Prompt section name carrying one server's introduction, i.e. `mcp:<serverName>`. */
+export function mcpServerSectionName(serverName: string): string {
+  return `mcp:${serverName}`
+}
+
+/**
+ * 一个 MCP 服务器在系统提示词里的介绍。
+ *
+ * 文本按装配语言现算，而不是查翻译表：服务器名和工具清单都是运行期事实，
+ * 分段名（`mcp:<serverName>`）也是动态的，双语资产那张按名字索引的表根本挂不上。
+ * 分段名里出现工具清单还有一个副作用是有用的——模型由此知道哪些工具是同一个
+ * 服务器的，而不是把它们当成散落的第一方工具。
+ *
+ * @param serverName - the instance's `serverName`.
+ * @param toolNames - public tool names the server currently owns.
+ * @param locale - assembly language; unknown values fall back to English.
+ * @returns the section text, never blank (a mounted server is always announced).
+ */
+export function mcpServerIntro(
+  serverName: string,
+  toolNames: readonly string[],
+  locale: string | undefined,
+): string {
+  const tools = [...toolNames].sort()
+  if (locale === 'zh') {
+    return tools.length === 0
+      ? `本会话装有 MCP 服务器 "${serverName}"，当前尚未同步到任何工具。`
+      : `本会话装有 MCP 服务器 "${serverName}"，它提供这些工具：${tools.join('、')}。`
+  }
+  return tools.length === 0
+    ? `This session has the MCP server "${serverName}" connected with no tools synchronized yet.`
+    : `This session has the MCP server "${serverName}" connected, providing: ${tools.join(', ')}.`
+}
 
 /**
  * Live `serverName` reservations per registration scope. Agent-scoped MCP
@@ -190,6 +226,30 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     return dispose()
   }, { global: true })
   ctx.effect(() => dispose, 'mcp-client.connection')
+
+  // 每个服务器一节 `mcp:<serverName>`：介绍按语言现算，反思由
+  // `error-reflection-prompt` 追加到同一节的后面。没挂载的服务器没有这一节，
+  // 于是它的介绍和反思都不会出现在提示词里——"未使用不显示"不靠过滤实现，
+  // 而是靠"根本没注册"。
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    promptCtx.systemPrompt.section({
+      name: mcpServerSectionName(config.serverName),
+      order: promptCtx.systemPrompt.getSectionOrder('MCP_INTRO'),
+      text: context => mcpServerIntro(config.serverName, connection.toolNames(), context.locale),
+    })
+  })
+
+  // 每个服务器一节 `mcp:<serverName>`：介绍按语言现算，反思由
+  // `error-reflection-prompt` 追加到同一节的后面。没挂载的服务器没有这一节，
+  // 于是它的介绍和反思都不会出现在提示词里——"未使用不显示"不靠过滤实现，
+  // 而是靠"根本没注册"。
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    promptCtx.systemPrompt.section({
+      name: mcpServerSectionName(config.serverName),
+      order: promptCtx.systemPrompt.getSectionOrder('MCP_INTRO'),
+      text: context => mcpServerIntro(config.serverName, connection.toolNames(), context.locale),
+    })
+  })
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

@@ -292,6 +292,43 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 @Remote describe(): SettingsDescribeValue
 
 /**
+ * Project prompt sections for the Web prompt editor.
+ * @param cwd - session workspace whose per-session prompt file supplies the
+ * Chinese column; omitted reads leave that column empty.
+ * @returns current section text and whether each section accepts replacement.
+ */
+@Remote async readPromptSections(cwd?: string): Promise<PromptSectionView[]>
+
+/**
+ * Read the journaled tool and MCP failures.
+ * @returns newest failures in file order; empty when no journal exists.
+ */
+@Remote async readToolErrors(): Promise<ToolErrorView[]>
+
+/**
+ * Read the subject-sectioned lessons of the system-level reflection document.
+ *
+ * 只返回确实有内容的主题：没有经验的主题不必在界面上占一行空输入框，界面会
+ * 把"这次装配里有哪些能力"和这份清单取并集。
+ *
+ * @returns one entry per subject with recorded lessons; empty when the document
+ * does not exist. Text that names no subject belongs to the document's global
+ * part and is intentionally not projected here.
+ */
+@Remote async readReflections(): Promise<ReflectionBlockView[]>
+
+/**
+ * Rewrite the given subjects' lessons, leaving every other part of the
+ * document untouched.
+ *
+ * 读改写而不是"用界面上的内容重建整份文档"：文档里还有认不出主题的历史小节
+ * 与用户备注，界面从来没显示过它们，也就没有资格删掉它们。
+ *
+ * @param blocks - subjects to write; an empty `text` removes that subject.
+ */
+@Remote async writeReflections(blocks: ReflectionBlockView[]): Promise<void>
+
+/**
  * Report whether this deployment can open an authored Agent preset directory natively.
  * @returns true when the matching open operation is available.
  */

@@ -1,7 +1,7 @@
 import type {
   AssistantBlock, AssistantMessageNode, CommandNode, CompactionSummaryNode,
-  ConversationLocation, ConversationViewNode, ModelRetryNode, RunningToolCall,
-  ToolCallBlock,
+  ConversationLocation, ConversationPromptSection, ConversationViewNode, ModelRetryNode,
+  RunningToolCall, ToolCallBlock,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 /** Final Chat render unit produced by a Chat business Definition. */
@@ -14,6 +14,18 @@ export interface ChatConversationViewNode extends ConversationViewNode {
 
 /** Merge-extensible payload registry keyed by final Chat renderer kind. */
 export interface ChatNodeDataMap {}
+
+/**
+ * One system-prompt row.
+ *
+ * `change` is present only when the row reports a mid-session difference rather
+ * than a section of the complete prompt; it is what tells a reader why this row
+ * is on screen at all.
+ */
+export interface SystemPromptSection extends ConversationPromptSection {
+  /** How this section moved, on a row that is part of a change list. */
+  readonly change?: 'added' | 'updated' | 'removed'
+}
 
 /** Renderer kinds contributed by the currently installed Chat business modules. */
 export type ChatNodeKind = Extract<keyof ChatNodeDataMap, string>

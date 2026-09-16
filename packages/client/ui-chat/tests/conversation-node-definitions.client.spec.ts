@@ -220,6 +220,19 @@ function toolResult(callId: string, text: string, isError = false) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('does not render historical skill catalogs after the user message', () => {
+    const value = assembler([
+      at(1, 'user/message', textMessage('user-1', '你好'), { surfaceOp: 'append' }),
+      at(2, 'user/message', {
+        id: 'catalog-1',
+        role: 'user',
+        content: [{ type: 'text', text: '<available_skills>...</available_skills>' }],
+        source: { kind: 'skill-catalog', form: 'catalog', entries: [] },
+      }, { surfaceOp: 'append' }),
+    ])
+
+    expect(snapshot(value).nodes.values().map(node => node.kind)).toEqual(['user'])
+  })
   it('rejects an unrelated event passed directly to the request-prompt start', () => {
     const input = at(1, 'turn/start', { turn: 1 })
     const invalidStart = {
@@ -1606,7 +1619,120 @@ describe('built-in conversation node Definitions', () => {
     expect(promptTexts(nodeless)).toEqual([{ text: '# Original prompt' }, { text: '# Original prompt' }])
   })
 
+<<<<<<< ours
+  it('replaces a mid-session system change with only the sections that moved', () => {
+    const base = [
+      { name: 'deployment:persona', text: '# Persona' },
+      { name: 'mcp:codegraph', text: 'graph tools' },
+    ]
+    const value = assembler([
+      at(1, 'request/header', {
+        reason: 'initial',
+        header: {
+          config: { provider: 'fake', model: 'fake' },
+          system: '# Persona\n\ngraph tools',
+          systemSections: base,
+          tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+        },
+      }),
+      at(2, 'request/header', {
+        reason: 'change',
+        header: {
+          config: { provider: 'fake', model: 'fake' },
+          system: '# Persona\n\ngraph tools\n\nclick things',
+          systemSections: [...base, { name: 'computer:policy', text: 'click things' }],
+          tools: [
+            { name: 'read', description: 'Read', parameters: { type: 'object' } },
+            { name: 'computer_click', description: 'Click', parameters: { type: 'object' } },
+          ],
+        },
+      }),
+    ])
+
+    const prompts = snapshot(value).order.flatMap((key) => {
+      const candidate = snapshot(value).nodes.get(key)
+      return candidate?.kind === 'system-prompt' ? [candidate.data] : []
+    })
+    expect(prompts).toEqual([
+      { text: '# Persona\n\ngraph tools', sections: base },
+      {
+        text: '# Persona\n\ngraph tools\n\nclick things',
+        sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
+      },
+    ])
+  })
+
+<<<<<<< ours
+  it('replaces a mid-session system change with only the sections that moved', () => {
+    const base = [
+      { name: 'deployment:persona', text: '# Persona' },
+      { name: 'mcp:codegraph', text: 'graph tools' },
+    ]
+    const value = assembler([
+      at(1, 'request/header', {
+        reason: 'initial',
+        header: {
+          config: { provider: 'fake', model: 'fake' },
+          system: '# Persona\n\ngraph tools',
+          systemSections: base,
+          tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+        },
+      }),
+      at(2, 'request/header', {
+        reason: 'change',
+        header: {
+          config: { provider: 'fake', model: 'fake' },
+          system: '# Persona\n\ngraph tools\n\nclick things',
+          systemSections: [...base, { name: 'computer:policy', text: 'click things' }],
+          tools: [
+            { name: 'read', description: 'Read', parameters: { type: 'object' } },
+            { name: 'computer_click', description: 'Click', parameters: { type: 'object' } },
+          ],
+        },
+      }),
+    ])
+
+    const prompts = snapshot(value).order.flatMap((key) => {
+      const candidate = snapshot(value).nodes.get(key)
+      return candidate?.kind === 'system-prompt' ? [candidate.data] : []
+    })
+    expect(prompts).toEqual([
+      { text: '# Persona\n\ngraph tools', sections: base },
+      {
+        text: '# Persona\n\ngraph tools\n\nclick things',
+        sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
+      },
+    ])
+  })
+
+=======
+>>>>>>> theirs
+  it('keeps the whole prompt when a change has no comparable source sections', () => {
+    // Headers recorded before source sections existed diff to nothing at all,
+    // and an empty list would read as "nothing changed"; the full prompt is the
+    // only honest account of a change that cannot be enumerated.
+    const value = assembler([
+      at(1, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# First' },
+      }),
+      at(2, 'request/header', {
+        reason: 'change',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Second' },
+      }),
+    ])
+
+    const prompts = snapshot(value).order.flatMap((key) => {
+      const candidate = snapshot(value).nodes.get(key)
+      return candidate?.kind === 'system-prompt' ? [candidate.data] : []
+    })
+    expect(prompts).toEqual([{ text: '# First' }, { text: '# Second' }])
+  })
+
+  it('orders the system field before the request messages while preserving message order', () => {
+=======
   it('shows the system node text as the request prompt card before the request messages', () => {
+>>>>>>> theirs
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),

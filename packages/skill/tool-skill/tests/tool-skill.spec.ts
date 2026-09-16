@@ -14,7 +14,15 @@ import AgentRegistry, { agentEvents, type Agent, type PreStepDecision } from '@d
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
+<<<<<<< ours
+import { catalogTranslationFiles, catalogUsesChinese, loadCatalogTranslations } from '@deepseek-ai/dsh-tool-skill'
+=======
+<<<<<<< ours
+import { catalogTranslationFiles, catalogUsesChinese, loadCatalogTranslations } from '@deepseek-ai/dsh-tool-skill'
+=======
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
+>>>>>>> theirs
+>>>>>>> theirs
 
 const testToolSignal = new AbortController().signal
 
@@ -330,6 +338,127 @@ describe('dsh-tool-skill', () => {
     const agent = agentForCwd('/workspace')
     expect(await composePrefixForAgent(ctx, agent)).toEqual([])
     expect(await composePrefixForAgent(ctx, agent)).toEqual([])
+  })
+
+  it('renders the whole catalog in Chinese from the translation archive by default', async () => {
+    const home = await tempDir('tool-zh-catalog')
+    const ctx = await setup(home)
+    ctx.skills.register({
+      name: 'a-skill',
+      description: 'English description.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: 'Body.',
+    })
+    ctx.skills.register({
+      name: 'untranslated-skill',
+      description: 'Untranslated description.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: 'Body.',
+    })
+    const cwd = await tempDir('tool-zh-cwd')
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(
+      join(cwd, '.dsh', 'skill-translations.zh.json'),
+      JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
+    )
+
+    const agent = agentForCwd(cwd)
+    const catalogMessage = (await composePrefixForAgent(ctx, agent))
+      .find(message => message.source.kind === 'skill-catalog')
+    const rendered = catalogMessage === undefined
+      ? ''
+      : catalogMessage.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+
+    expect(rendered).toContain('技能是一组可复用的任务专用指令。')
+    expect(rendered).toContain('中文描述。')
+    expect(rendered).toContain('Untranslated description.')
+    expect(rendered).not.toContain('English description.')
+    expect(rendered).not.toContain('A skill is a reusable set')
+    expect(catalogMessage?.source).toMatchObject({
+      entries: [
+        { name: 'a-skill', description: '中文描述。' },
+        { name: 'untranslated-skill', description: 'Untranslated description.' },
+      ],
+    })
+  })
+
+  it('keeps English when no archive exists or catalogLocale is en', async () => {
+    const home = await tempDir('tool-en-catalog')
+    const ctx = await setup(home, { catalogLocale: 'en' })
+    ctx.skills.register({
+      name: 'a-skill',
+      description: 'English description.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: 'Body.',
+    })
+    const cwd = await tempDir('tool-en-cwd')
+    const agent = agentForCwd(cwd)
+    const first = (await composePrefixForAgent(ctx, agent))
+      .find(message => message.source.kind === 'skill-catalog')
+    const firstText = first === undefined ? '' : first.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+    expect(firstText).toContain('A skill is a reusable set')
+
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(
+      join(cwd, '.dsh', 'skill-translations.zh.json'),
+      JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
+    )
+    const secondAgent = agentForCwd(cwd)
+    const second = (await composePrefixForAgent(ctx, secondAgent))
+      .find(message => message.source.kind === 'skill-catalog')
+    const secondText = second === undefined ? '' : second.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+    expect(secondText).toContain('A skill is a reusable set')
+    expect(secondText).not.toContain('中文描述。')
+  })
+
+  it('appends a Chinese replacement catalog after the translation archive appears', async () => {
+    const home = await tempDir('tool-zh-replace')
+    const ctx = await setup(home)
+    ctx.skills.register({
+      name: 'a-skill',
+      description: 'English description.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: 'Body.',
+    })
+    const cwd = await tempDir('tool-zh-replace-cwd')
+    const session = Session.create(SessionId('tool-zh-replace'), [], {
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId('tool-zh-replace'),
+      createdAt: 0,
+      cwd,
+      isSeeded: false,
+    })
+    const agent = sessionAgent(session)
+    openMessageTurn(session, 1)
+    await fireStep(ctx, agent, 1, 1)
+    expect(catalogMessages(session)).toHaveLength(1)
+    expect(catalogMessages(session)[0]?.data.source).toMatchObject({
+      entries: [{ name: 'a-skill', description: 'English description.' }],
+    })
+
+    await mkdir(join(cwd, '.dsh'), { recursive: true })
+    await writeFile(
+      join(cwd, '.dsh', 'skill-translations.zh.json'),
+      JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
+    )
+    openMessageTurn(session, 2)
+    await fireStep(ctx, agent, 2, 1)
+
+    const replacements = catalogMessages(session)
+    expect(replacements).toHaveLength(2)
+    expect(replacements[1]?.data.source).toMatchObject({
+      update: true,
+      entries: [{ name: 'a-skill', description: '中文描述。' }],
+    })
+    const rendered = replacements[1]!.data.content
+      .map(block => block.type === 'text' ? block.text : '')
+      .join('\n')
+    expect(rendered).toContain('可用技能目录已变化。')
+    expect(rendered).toContain('中文描述。')
   })
 
   it('omits an incomplete initial catalog and retries on a later request boundary', async () => {
@@ -1107,5 +1236,96 @@ describe('user-explicit invocation injection', () => {
       .filter(message => (message.source as { kind?: string }).kind === 'skill-invocation')
       .map(message => (message.source as { name: string }).name)
     expect(invoked).toEqual(['shared-skill'])
+  })
+})
+
+describe('catalogUsesChinese', () => {
+  it('follows the assembly language when the locale is auto', () => {
+    expect(catalogUsesChinese('auto', 'zh', false)).toBe(true)
+    expect(catalogUsesChinese('auto', 'en', true)).toBe(false)
+  })
+
+  it('lets an explicit catalogLocale outrank the assembly language', () => {
+    expect(catalogUsesChinese('zh', 'en', false)).toBe(true)
+    expect(catalogUsesChinese('en', 'zh', true)).toBe(false)
+  })
+
+  it('falls back to the archive heuristic only when no language is carried', () => {
+    // Offline renders and hand-built assemblies carry no locale; a project that
+    // bothered to archive translations is then read as wanting Chinese.
+    expect(catalogUsesChinese('auto', undefined, true)).toBe(true)
+    expect(catalogUsesChinese('auto', undefined, false)).toBe(false)
+  })
+})
+
+describe('catalogTranslationFiles', () => {
+  it('puts the workspace archive ahead of the shared harness-home one', async () => {
+    const workspace = await tempDir('translations-workspace')
+    const home = await tempDir('translations-home')
+    expect(catalogTranslationFiles(workspace, '.dsh/skill-translations.zh.json', home)).toEqual([
+      join(workspace, '.dsh/skill-translations.zh.json'),
+      join(home, 'skill-translations.zh.json'),
+    ])
+  })
+
+  it('keeps an absolute configured path and still appends the shared archive', async () => {
+    const workspace = await tempDir('translations-workspace')
+    const home = await tempDir('translations-home')
+    const configured = join(home, 'pinned', 'skill-translations.zh.json')
+    expect(catalogTranslationFiles(workspace, configured, home)).toEqual([
+      configured,
+      join(home, 'skill-translations.zh.json'),
+    ])
+  })
+
+  it('lists the shared archive once when the configured path already is it', async () => {
+    const workspace = await tempDir('translations-workspace')
+    const home = await tempDir('translations-home')
+    const shared = join(home, 'skill-translations.zh.json')
+    expect(catalogTranslationFiles(workspace, shared, home)).toEqual([shared])
+  })
+})
+
+describe('loadCatalogTranslations', () => {
+  it('covers a workspace that has no archive of its own from the shared one', async () => {
+    // The defect this guards: skills live in a shared registry, so a catalog
+    // translated for one project used to read as untranslated everywhere else.
+    const home = await tempDir('translations-home')
+    await writeFile(join(home, 'skill-translations.zh.json'), JSON.stringify({
+      tdd: { description: '测试驱动开发' },
+    }), 'utf8')
+    const workspace = await tempDir('translations-workspace')
+
+    const translations = await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)
+
+    expect(translations.get('tdd')).toBe('测试驱动开发')
+  })
+
+  it('lets a workspace entry override the shared entry of the same name', async () => {
+    const home = await tempDir('translations-home')
+    await writeFile(join(home, 'skill-translations.zh.json'), JSON.stringify({
+      tdd: { description: '共享译文' },
+      diagnose: { description: '共享诊断' },
+    }), 'utf8')
+    const workspace = await tempDir('translations-workspace')
+    await mkdir(join(workspace, '.dsh'), { recursive: true })
+    await writeFile(join(workspace, '.dsh', 'skill-translations.zh.json'), JSON.stringify({
+      tdd: { description: '本工作区译文' },
+    }), 'utf8')
+
+    const translations = await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)
+
+    expect(translations.get('tdd')).toBe('本工作区译文')
+    expect(translations.get('diagnose')).toBe('共享诊断')
+  })
+
+  it('stays empty when neither archive exists or the workspace one is malformed', async () => {
+    const home = await tempDir('translations-home')
+    const workspace = await tempDir('translations-workspace')
+    expect((await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)).size).toBe(0)
+
+    await mkdir(join(workspace, '.dsh'), { recursive: true })
+    await writeFile(join(workspace, '.dsh', 'skill-translations.zh.json'), '{ not json', 'utf8')
+    expect((await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)).size).toBe(0)
   })
 })

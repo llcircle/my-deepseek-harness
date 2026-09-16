@@ -45,7 +45,12 @@ The only required configuration is the guidance text the agent follows while pla
 
 | Field | Default | Meaning |
 |---|---|---|
-| `section` | required | Guidance rendered as the `plan:policy` prompt section while plan mode is active |
+| `section` | built-in guidance | Guidance rendered as the `plan:policy` prompt section while plan mode is active; omit it to use the package's default text |
+| `goalOnApprove` | `false` | Start a durable goal from the plan on review approval; requires the goal service |
+
+`section` is optional because a patch layer replaces an entry's whole `config` object instead of merging into it: a deployment that only flips `goalOnApprove` would otherwise have to repeat the entire guidance text, and one that forgot to would load a plan-mode entry with no guidance at all. A present-but-blank `section` is still rejected at load.
+
+Set `goalOnApprove: true` to start a durable goal from the plan when the review is approved: the approved plan text becomes the goal's objective, and an unfinished goal already on the session fails the approval instead of being replaced. The option requires the goal service; approving without one fails loudly, and a failed goal mutation leaves plan mode active with no half-applied transition. Keep the option off (the default) when plan approval should only leave plan mode. The shipped `standard` preset turns it on.
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-plan-mode) is the exhaustive source for every accepted field and its JSDoc.
 

@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import { chatNode } from './common.ts'
+import { isLegacySkillCatalogSource } from './event-projection.ts'
 
 declare module '../contract/chat-nodes.ts' {
   interface ChatNodeDataMap {
@@ -16,7 +17,9 @@ declare module '../contract/chat-nodes.ts' {
 export const unknownFallbackDefinition: ConversationNodeDefinition<UnknownSurfaceNode> = {
   kind: 'unknown-surface',
   target: 'chat',
-  match: event => event.type !== 'assistant/live-chunk' && isAppendSurfaceEvent(event)
+  match: event => event.type !== 'assistant/live-chunk'
+    && !(event.type === 'user/message' && isLegacySkillCatalogSource(event.data.source))
+    && isAppendSurfaceEvent(event)
     ? { id: String(event.seq), role: 'start' }
     : null,
   start: (_context, match) => ({

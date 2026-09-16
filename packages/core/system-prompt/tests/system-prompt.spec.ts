@@ -1,9 +1,18 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, {
   AssembleContext, PromptAssembly, renderContextSnapshot, renderPrompt,
+  LOCALIZED_SECTIONS, localizedSectionNames, normalizePromptLocale,
 } from '@deepseek-ai/dsh-system-prompt'
-import type { PromptContextOrderName, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
+import type {
+  PromptContextOrderName, PromptOverridesSettings, PromptSectionOrderName,
+} from '@deepseek-ai/dsh-system-prompt'
+// Relative import: the `./overrides` export maps to a built artifact, and this
+// spec exercises the source.
+import { apply as applyOverrides, readLocalePreference } from '../src/overrides.ts'
 
 /**
  * Every assembly carries the plugin's own built-ins — `harness:identity`
@@ -20,8 +29,18 @@ const SECTION_ORDER_NAMES = [
   'TOOL_GREP', 'TOOL_JOBS', 'TOOL_PTY', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH',
   'TOOL_LSP', 'TOOL_SESSION_QUERY', 'TOOL_GOAL', 'TOOL_CORDIS', 'TOOL_WORKFLOW',
   'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT', 'TOOLS_SDK',
+<<<<<<< ours
+  'DELIVERABLE_FILE_REFERENCES', 'MCP_INTRO', 'ERROR_LESSONS', 'STRUCTURED_OUTPUT',
+  'SKILL_CATALOG',
+=======
+<<<<<<< ours
+  'DELIVERABLE_FILE_REFERENCES', 'MCP_INTRO', 'ERROR_LESSONS', 'STRUCTURED_OUTPUT',
+  'SKILL_CATALOG',
+=======
   'DELIVERABLE_FILE_REFERENCES', 'STRUCTURED_OUTPUT',
   'HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX',
+>>>>>>> theirs
+>>>>>>> theirs
 ] as const satisfies readonly PromptSectionOrderName[]
 const CONTEXT_ORDER_NAMES = [
   'SANDBOX_POLICY', 'APPROVAL_POLICY', 'SUBAGENT_DELEGATION',
@@ -182,7 +201,10 @@ describe('SystemPrompt', () => {
     expect(assembly.tools).toEqual([{ name: 'echo', description: 'echo back', parameters: {} }])
     expect(assembly.variables).toEqual({})
     expect(renderPrompt(assembly)).toBe(`${IDENTITY}\n\nYou are DeepSeek Harness.\n\nBe precise.\n\ncwd: /tmp`)
-    expect(renderContextSnapshot(assembly)).toBe('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\ncontext 1\n\ncontext 2')
+    // No settings-backed locale, so the assembly resolves to English — the snapshot
+    // heading follows it rather than staying pinned to one language.
+    expect(renderContextSnapshot(assembly))
+      .toBe('Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\ncontext 1\n\ncontext 2')
   })
 
   it('breaks equal section orders by code-unit name regardless of registration order', async () => {
@@ -359,9 +381,25 @@ describe('SystemPrompt', () => {
 
     const passed: AssembleContext = {}
     const assembly = await ctx.systemPrompt.assemble(passed)
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    // Listeners see every registered section, empty optional ones included: the
+    // "empty optional disappears" rule is a projection of the final prompt, and
+    // it runs after the waterfall so a listener can still fill such a section.
+    expect(seen).toEqual([['harness:identity', 'deployment:persona', 'base', 'from-a']])
+    expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona', 'base', 'from-a'])
+    // The caller's context reaches listeners, carrying the locale the registry resolved.
+    expect(contexts[0]).toEqual({ ...passed, locale: 'en' })
+<<<<<<< ours
+=======
+=======
     expect(seen).toEqual([['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a']])
     expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a'])
     expect(contexts[0]).toBe(passed) // the caller's context reaches listeners
+>>>>>>> theirs
+>>>>>>> theirs
   })
 
   it('lets a waterfall listener short-circuit by not calling next()', async () => {
@@ -690,6 +728,526 @@ describe('SystemPrompt', () => {
         variables: { model: 'literal {{sneaky}} inside' },
       })
       expect(text).toBe('v = literal {{sneaky}} inside!')
+    })
+  })
+
+  describe('completePromptFile', () => {
+    it('rejects a relative path at construction', async () => {
+      const ctx = new Context()
+      await expect(ctx.plugin(SystemPrompt, { completePromptFile: 'relative.md' }))
+        .rejects.toThrow('completePromptFile must be an absolute path')
+    })
+
+    it('replaces every section with the file content when the file exists', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-complete-prompt-'))
+      const file = join(dir, 'prompt.md')
+      await writeFile(file, '你是 DeepSeek Harness 中文代理。', 'utf8')
+      try {
+        const ctx = new Context()
+        await ctx.plugin(SystemPrompt, { completePromptFile: file })
+
+        const assembly = await ctx.systemPrompt.assemble()
+        expect(assembly.sections.map(s => s.name)).toEqual(['deployment:complete-prompt'])
+        expect(renderPrompt(assembly)).toBe('你是 DeepSeek Harness 中文代理。')
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('falls back to the standard assembly when the file is missing', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { completePromptFile: 'Z:\\nonexistent\\prompt.md' })
+
+      const assembly = await ctx.systemPrompt.assemble()
+      expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona'])
+    })
+  })
+
+  describe('autoTranslatedPrompt', () => {
+    it('uses the per-session translation file after it exists', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-translated-prompt-'))
+      await mkdir(join(dir, '.dsh'), { recursive: true })
+      const file = join(dir, '.dsh', 'system-prompt.zh.prompt.md')
+      await writeFile(file, '你是 DeepSeek Harness 中文代理。', 'utf8')
+      try {
+        const ctx = new Context()
+        await ctx.plugin(SystemPrompt, { persona: 'English persona.' })
+
+        const assembly = await ctx.systemPrompt.assemble({ cwd: dir })
+        expect(assembly.sections.map(section => section.name)).toEqual(['harness:identity', 'deployment:persona'])
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('keeps the standard assembly when no translation exists or auto selection is disabled', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-untranslated-prompt-'))
+      const translated = new Context()
+      await translated.plugin(SystemPrompt, { persona: 'English persona.' })
+      const disabled = new Context()
+      await disabled.plugin(SystemPrompt, {
+        autoTranslatedPrompt: false,
+        persona: 'English persona.',
+      })
+      try {
+        expect((await translated.systemPrompt.assemble({ cwd: dir })).sections.map(section => section.name))
+          .toEqual(['harness:identity', 'deployment:persona'])
+
+        await mkdir(join(dir, '.dsh'), { recursive: true })
+        await writeFile(
+          join(dir, '.dsh', 'system-prompt.zh.prompt.md'),
+          '你是 DeepSeek Harness 中文代理。',
+          'utf8',
+        )
+        expect((await disabled.systemPrompt.assemble({ cwd: dir })).sections.map(section => section.name))
+          .toEqual(['harness:identity', 'deployment:persona'])
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('replaces matching static sections while retaining dynamic sections', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-translated-prompt-plugin-'))
+      await mkdir(join(dir, '.dsh'), { recursive: true })
+      await writeFile(
+        join(dir, '.dsh', 'system-prompt.zh.prompt.md'),
+        [
+          '翻译后的身份。',
+          '',
+          '翻译后的人设。',
+          '',
+          '翻译后的额外指引。',
+        ].join('\n'),
+        'utf8',
+      )
+      const ctx = new Context()
+      // The archive is Chinese, so it is only consulted under the Chinese locale.
+      await ctx.plugin(SystemPrompt, { persona: 'English persona.', promptLocale: 'zh' })
+      ctx.systemPrompt.section({ name: 'skills:catalog', order: 100, text: '<available_skills>...</available_skills>' })
+      ctx.systemPrompt.section({ name: 'deployment:error-lessons', order: 150, text: 'Live lessons.' })
+      ctx.systemPrompt.section({ name: 'plugin:extra', order: 200, text: 'Extra guidance.' })
+      try {
+        const assembly = await ctx.systemPrompt.assemble({ cwd: dir })
+        expect(assembly.sections.map(section => section.name)).toEqual([
+          'harness:identity',
+          'deployment:persona',
+          'skills:catalog',
+          'deployment:error-lessons',
+          'plugin:extra',
+        ])
+        expect(renderPrompt(assembly)).toBe('翻译后的身份。\n\n翻译后的人设。\n\n<available_skills>...</available_skills>\n\nLive lessons.\n\n翻译后的额外指引。')
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('rejects an empty translation file rather than sending a blank prompt', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-empty-translated-prompt-'))
+      await mkdir(join(dir, '.dsh'), { recursive: true })
+      await writeFile(join(dir, '.dsh', 'system-prompt.zh.prompt.md'), '   ', 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      try {
+        await expect(ctx.systemPrompt.assemble({ cwd: dir }))
+          .rejects.toThrow('is empty')
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('projects English and Chinese current text for the prompt editor', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-prompt-editor-languages-'))
+      await mkdir(join(dir, '.dsh'), { recursive: true })
+      await writeFile(
+        join(dir, '.dsh', 'system-prompt.zh.prompt.md'),
+        '中文身份。\n\n中文早期。\n\n中文后期。\n\n中文额外指引。',
+        'utf8',
+      )
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      // 字母序和提示词序不同，用于捕获先排序再匹配翻译档案的错误。
+      ctx.systemPrompt.section({ name: 'z-late', order: 100, text: 'Late source.' })
+      ctx.systemPrompt.section({ name: 'a-early', order: 200, text: 'Early source.' })
+      ctx.systemPrompt.section({ name: 'plugin:extra', order: 200, text: 'Extra guidance.' })
+      try {
+        const sections = await ctx.systemPrompt.sectionTexts(dir)
+        const identity = sections.find(section => section.name === 'harness:identity')
+        const extra = sections.find(section => section.name === 'plugin:extra')
+        expect(identity).toMatchObject({ en: IDENTITY, zh: '中文身份。', editable: true })
+        expect(sections.find(section => section.name === 'z-late'))
+          .toMatchObject({ en: 'Late source.', zh: '中文早期。', editable: true })
+        expect(sections.find(section => section.name === 'a-early'))
+          .toMatchObject({ en: 'Early source.', zh: '中文后期。', editable: true })
+        expect(extra).toMatchObject({ en: 'Extra guidance.', zh: '中文额外指引。', editable: true })
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('lets an explicit completePromptFile override the per-session translation', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-explicit-complete-prompt-'))
+      await mkdir(join(dir, '.dsh'), { recursive: true })
+      await writeFile(join(dir, '.dsh', 'system-prompt.zh.prompt.md'), '自动翻译。', 'utf8')
+      const explicit = join(dir, 'explicit.prompt.md')
+      await writeFile(explicit, '显式完整提示词。', 'utf8')
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { completePromptFile: explicit })
+      try {
+        const assembly = await ctx.systemPrompt.assemble({ cwd: dir })
+        expect(assembly.sections.map(section => section.name)).toEqual(['deployment:complete-prompt'])
+        expect(renderPrompt(assembly)).toBe('显式完整提示词。')
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('applies a UI section override in place while preserving the section name', async () => {
+      const ctx = new Context()
+      const settings = {
+        installSection: (
+          _owner: unknown,
+          _ns: string,
+          _schema: unknown,
+          _entry: unknown,
+          hooks: {
+            setSource: (current: () => PromptOverridesSettings) => void
+            onChange: () => void
+          },
+        ) => {
+          hooks.setSource(() => ({
+            sectionCatalog: [],
+            sections: { 'plugin:extra': { zh: '中文覆盖。', en: 'English override.' } },
+          }))
+          hooks.onChange()
+        },
+      }
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.installOverrides(ctx, settings)
+      ctx.systemPrompt.section({ name: 'plugin:extra', order: 200, text: 'English guidance.' })
+
+      // 替换文本的语言不由覆盖自己携带，而由本次装配的语言决定——没有语言来源
+      // 时是内置英文，界面语言写成中文时就换成中文那一栏。
+      ctx.systemPrompt.adoptLocaleSource(() => 'en')
+      const english = await ctx.systemPrompt.assemble()
+      expect(english.sections.map(section => section.name)).toContain('plugin:extra')
+      expect(english.sections.find(section => section.name === 'plugin:extra')?.text).toBe('English override.')
+
+      ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+      const chinese = await ctx.systemPrompt.assemble()
+      expect(chinese.sections.find(section => section.name === 'plugin:extra')?.text).toBe('中文覆盖。')
+    })
+
+    it('keeps a section override when the section registered no text of its own', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.adoptLocaleSource(() => 'en')
+      // `mcp:<server>` 注册文本是空的，覆盖就是它的全部内容——正是这条判空的
+      // 顺序要保护的情形。
+      ctx.systemPrompt.section({ name: 'mcp:demo', order: ctx.systemPrompt.getSectionOrder('MCP_INTRO'), text: '' })
+      ctx.systemPrompt.installOverrides(ctx, {
+        installSection: (
+          _owner: unknown,
+          _ns: string,
+          _schema: unknown,
+          _entry: unknown,
+          hooks: {
+            setSource: (current: () => PromptOverridesSettings) => void
+            onChange: () => void
+          },
+        ) => {
+          hooks.setSource(() => ({
+            sectionCatalog: [],
+            sections: { 'mcp:demo': { zh: '', en: 'MCP servers expose tools.' } },
+          }))
+          hooks.onChange()
+        },
+      })
+
+      // 可选分段的判空排在覆盖之后：`mcp:demo` 自己不带文本，覆盖就是它的全部
+      // 内容。判空先跑会把用户刚写好的一节静默丢掉。
+      const assembly = await ctx.systemPrompt.assemble()
+      expect(assembly.sections.find(section => section.name === 'mcp:demo')?.text)
+        .toBe('MCP servers expose tools.')
+
+      // 覆盖清空之后，这一节作为"没有话要说"整段消失，而不是留一个空壳。
+      ctx.systemPrompt.installOverrides(ctx, {
+        installSection: (
+          _owner: unknown,
+          _ns: string,
+          _schema: unknown,
+          _entry: unknown,
+          hooks: {
+            setSource: (current: () => PromptOverridesSettings) => void
+            onChange: () => void
+          },
+        ) => {
+          hooks.setSource(() => ({ sectionCatalog: [], sections: {} }))
+          hooks.onChange()
+        },
+      })
+      const emptied = await ctx.systemPrompt.assemble()
+      expect(emptied.sections.map(section => section.name)).not.toContain('mcp:demo')
+    })
+  })
+
+  describe('reflection sources', () => {
+    it('appends a source\'s text below the section it names', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.section({ name: 'tool:read', order: 10, text: 'Use the read tool.' })
+      ctx.systemPrompt.section({ name: 'tool:write', order: 11, text: 'Use the write tool.' })
+      ctx.systemPrompt.reflectionSource(name =>
+        name === 'tool:read' ? '别忘了 read 要先看行数。' : undefined)
+
+      const assembly = await ctx.systemPrompt.assemble()
+      const read = assembly.sections.find(section => section.name === 'tool:read')?.text
+      const write = assembly.sections.find(section => section.name === 'tool:write')?.text
+      // 介绍在前、经验在后——追加而不是替换，用户润色过的措辞不会被吞掉。
+      expect(read).toBe('Use the read tool.\n\n别忘了 read 要先看行数。')
+      expect(write).toBe('Use the write tool.')
+    })
+
+    it('never resurrects a section whose own text is blank', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      // 分段存在、但它自己没话可说：`computer:policy` 由 tool-computer-use
+      // 在启用时才注册，这里手工造出"注册了却空着"的形态来钉住判空这一层。
+      ctx.systemPrompt.section({ name: 'computer:policy', order: 1, text: '' })
+      ctx.systemPrompt.reflectionSource(name => name === 'computer:policy'
+        ? '上次点错了坐标。'
+        : undefined)
+
+      const assembly = await ctx.systemPrompt.assemble()
+      // 文档里还留着旧经验，不等于这项能力这一轮又回来了。
+      expect(assembly.sections.map(section => section.name)).not.toContain('computer:policy')
+    })
+
+    it('stops contributing once the source is disposed', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.section({ name: 'tool:read', order: 10, text: 'Use the read tool.' })
+      const dispose = ctx.systemPrompt.reflectionSource(() => '先看行数。')
+      expect((await ctx.systemPrompt.assemble()).sections.find(section => section.name === 'tool:read')?.text)
+        .toBe('Use the read tool.\n\n先看行数。')
+
+      dispose()
+      expect((await ctx.systemPrompt.assemble()).sections.find(section => section.name === 'tool:read')?.text)
+        .toBe('Use the read tool.')
+    })
+  })
+
+  describe('prompt locale', () => {
+    it('normalizes interface language tags onto the two prompt languages', () => {
+      expect(normalizePromptLocale('zh')).toBe('zh')
+      expect(normalizePromptLocale('zh-CN')).toBe('zh')
+      expect(normalizePromptLocale('zh-Hans-CN')).toBe('zh')
+      expect(normalizePromptLocale('ZH')).toBe('zh')
+      expect(normalizePromptLocale('en')).toBe('en')
+      expect(normalizePromptLocale('en-US')).toBe('en')
+      expect(normalizePromptLocale('fr')).toBe('en')
+      expect(normalizePromptLocale('')).toBe('en')
+      expect(normalizePromptLocale(undefined)).toBe('en')
+    })
+
+    it('follows the adopted locale source while the locale is auto', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      // A deployment with no settings service keeps the built-in English copy.
+      expect(ctx.systemPrompt.activeLocale()).toBe('en')
+      ctx.systemPrompt.adoptLocaleSource(() => 'zh-CN')
+      expect(ctx.systemPrompt.activeLocale()).toBe('zh')
+      ctx.systemPrompt.adoptLocaleSource(() => undefined)
+      expect(ctx.systemPrompt.activeLocale()).toBe('en')
+    })
+
+    it('lets a pinned promptLocale outrank the interface language', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'en' })
+      ctx.systemPrompt.adoptLocaleSource(() => 'zh')
+      expect(ctx.systemPrompt.activeLocale()).toBe('en')
+    })
+
+    it('hands one resolved locale to every section and context provider', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      const seen: Array<string | undefined> = []
+      ctx.systemPrompt.section({
+        name: 'probe', order: 1,
+        text: (context) => { seen.push(context.locale); return 'x' },
+      })
+      ctx.systemPrompt.context({
+        name: 'probe-ctx', order: 1,
+        text: (context) => { seen.push(context.locale); return 'y' },
+      })
+      await ctx.systemPrompt.assemble()
+      expect(seen).toEqual(['zh', 'zh'])
+    })
+
+    it('renders a first-party section in the assembly language', async () => {
+      const zh = new Context()
+      await zh.plugin(SystemPrompt, { promptLocale: 'zh' })
+      expect((await zh.systemPrompt.assemble()).sections
+        .find(section => section.name === 'harness:identity')?.text)
+        .toBe(LOCALIZED_SECTIONS['harness:identity']?.zh?.text)
+
+      const en = new Context()
+      await en.plugin(SystemPrompt)
+      expect((await en.systemPrompt.assemble()).sections
+        .find(section => section.name === 'harness:identity')?.text)
+        .toBe(IDENTITY)
+    })
+
+    it('never fills a section its provider left empty', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      // A section the owning plugin blanked means "not available now"; turning
+      // it back into prose would announce a capability that is not mounted.
+      ctx.systemPrompt.section({ name: 'tool:bash', order: 1, text: '' })
+      const assembly = await ctx.systemPrompt.assemble()
+      expect(assembly.sections.find(section => section.name === 'tool:bash')?.text).toBe('')
+    })
+
+    it('leaves dynamic sections to their providers', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      ctx.systemPrompt.section({ name: 'skills:catalog', order: 1, text: () => 'live catalog' })
+      const assembly = await ctx.systemPrompt.assemble()
+      expect(assembly.sections.find(section => section.name === 'skills:catalog')?.text).toBe('live catalog')
+    })
+
+    it('carries runtime fragments from the original into the translation', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      ctx.systemPrompt.section({
+        name: 'harness:source',
+        order: 1,
+        text: 'The DeepSeek Harness implementation checkout is at /srv/dsh. '
+          + 'The checkout location and current working directory are separate values.',
+      })
+      const text = (await ctx.systemPrompt.assemble()).sections
+        .find(section => section.name === 'harness:source')?.text ?? ''
+      expect(text).toContain('/srv/dsh')
+      expect(text).not.toContain('The DeepSeek Harness implementation')
+    })
+
+    it('keeps the original when the runtime fragment cannot be extracted', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      const original = 'Checkout lives somewhere else entirely.'
+      ctx.systemPrompt.section({ name: 'harness:source', order: 1, text: original })
+      // Losing the path would be worse than leaving this one section in English.
+      expect((await ctx.systemPrompt.assemble()).sections
+        .find(section => section.name === 'harness:source')?.text).toBe(original)
+    })
+
+    it('ships a translation for every section it names, in both directions where needed', () => {
+      expect(localizedSectionNames().length).toBeGreaterThan(10)
+      for (const name of localizedSectionNames()) {
+        const entry = LOCALIZED_SECTIONS[name]
+        expect(entry).toBeDefined()
+        for (const [locale, value] of Object.entries(entry ?? {})) {
+          expect(['zh', 'en']).toContain(locale)
+          expect(value?.text.trim()).not.toBe('')
+        }
+      }
+    })
+
+    it('ignores the Chinese translation archive under the English locale', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dsh-locale-archive-'))
+      try {
+        await mkdir(join(dir, '.dsh'), { recursive: true })
+        await writeFile(join(dir, '.dsh', 'system-prompt.zh.prompt.md'), '中文身份。', 'utf8')
+        const en = new Context()
+        await en.plugin(SystemPrompt)
+        expect(renderPrompt(await en.systemPrompt.assemble({ cwd: dir }))).toBe(IDENTITY)
+
+        const zh = new Context()
+        await zh.plugin(SystemPrompt, { promptLocale: 'zh' })
+        expect(renderPrompt(await zh.systemPrompt.assemble({ cwd: dir }))).toBe('中文身份。')
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('drops an empty optional section but keeps an empty ordinary one', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.section({ name: 'computer:policy', order: 1, text: '' })
+      ctx.systemPrompt.section({ name: 'mcp:demo', order: 2, text: '' })
+      ctx.systemPrompt.section({ name: 'tool:subagent', order: 3, text: '' })
+      const names = (await ctx.systemPrompt.assemble()).sections.map(section => section.name)
+      expect(names).not.toContain('computer:policy')
+      // Each mounted MCP server registers an `mcp:<server>` section; one that has
+      // nothing to say (no introspection and no lessons) must not leave a hole.
+      expect(names).not.toContain('mcp:demo')
+      // "Registered but silent" is a real state that consumers distinguish from
+      // "not mounted"; only the optional families may vanish.
+      expect(names).toContain('tool:subagent')
+    })
+
+    it('withholds the computer-use policy from the editable section list', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      ctx.systemPrompt.section({ name: 'computer:policy', order: 1, text: 'Touch the screen carefully.' })
+
+      const policy = (await ctx.systemPrompt.sectionTexts())
+        .find(row => row.name === 'computer:policy')
+
+      // 它的正文是部署给出的安全边界（屏幕内容是证据不是指令、不可逆操作先问用户），
+      // 不是一个可供润色的输入框；经验那一栏才是让用户写的地方。
+      expect(policy?.editable).toBe(false)
+      expect(policy?.en).toBe('')
+    })
+
+    it('places the computer-use policy beside the MCP intro, not at the top', () => {
+      const service = new SystemPrompt(new Context(), {})
+      const mcpIntro = service.getSectionOrder('MCP_INTRO')
+      const computer = service.getSectionOrder('COMPUTER_USE_POLICY')
+      const lessons = service.getSectionOrder('ERROR_LESSONS')
+      expect(computer).toBeGreaterThan(mcpIntro)
+      expect(computer).toBeLessThan(lessons)
+    })
+  })
+
+  describe('locale settings bridge', () => {
+    function settingsWith(locale: unknown) {
+      return {
+        installSection: (
+          _owner: unknown, _ns: string, _schema: unknown, _entry: unknown,
+          hooks: { setSource: (current: () => unknown) => void; onChange: () => void },
+        ) => {
+          hooks.setSource(() => ({
+            active: 'zh', sectionCatalog: [], sections: {}, mcpIntro: { zh: '', en: '' },
+          }))
+          hooks.onChange()
+        },
+        get: (ns: string) => (ns === 'locale' ? locale : undefined),
+      }
+    }
+
+    it('reads the interface language out of the settings document', () => {
+      const settings = settingsWith({ preference: 'zh' }) as never
+      expect(readLocalePreference(settings, 'locale', 'preference')).toBe('zh')
+      expect(readLocalePreference(settings, 'other', 'preference')).toBeUndefined()
+    })
+
+    it('treats an unreadable language as absent instead of failing', () => {
+      const settings = settingsWith(undefined) as never
+      expect(readLocalePreference(settings, 'locale', 'preference')).toBeUndefined()
+      const malformed = settingsWith({ preference: 7 }) as never
+      expect(readLocalePreference(malformed, 'locale', 'preference')).toBeUndefined()
+    })
+
+    it('drives assembly language from the stored interface language', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      Object.defineProperty(ctx, 'settings', { value: settingsWith({ preference: 'zh-CN' }) })
+      applyOverrides(ctx)
+      expect(ctx.systemPrompt.activeLocale()).toBe('zh')
+      const assembly = await ctx.systemPrompt.assemble()
+      expect(assembly.locale).toBe('zh')
+      expect(assembly.sections.find(section => section.name === 'harness:identity')?.text)
+        .toBe(LOCALIZED_SECTIONS['harness:identity']?.zh?.text)
     })
   })
 })

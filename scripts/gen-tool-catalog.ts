@@ -20,6 +20,7 @@ import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
+import * as ToolSearch from '@deepseek-ai/dsh-tools/search'
 import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
@@ -72,6 +73,8 @@ import WorkflowEngine from '@deepseek-ai/dsh-workflow'
 import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflow'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
+import ToolComputerUse, { COMPUTER_TOOL_NAMES } from '@deepseek-ai/dsh-tool-computer-use'
+import * as ToolErrorJournal from '@deepseek-ai/dsh-tool-error-journal'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -171,6 +174,15 @@ export interface ToolPackage {
   writes: string[]
   /** Additional model-visible names shipped by example/app config. */
   shippedNames?: string[]
+  /**
+   * 该包在默认装配下不产出任何模型可见工具，目录只登记不收割 schema。
+   *
+   * 两种情形：工具的注册本身是按需的——电脑操作只有用户显式要求时才装进
+   * agent 作用域，收割进程里没人要求，自然一个 schema 也没有；或者这个包
+   * 压根不给模型提供工具，只是旁路记录（错误日志）。这两种包仍然必须登记，
+   * 否则完整性守卫会漏掉一整类"模型看不到的能力"。
+   */
+  onDemandTools?: boolean
   /** Plug the injected seams + the tool plugin onto a context that already
    * carries `systemPrompt` + `tools`. */
   mount: (ctx: Context) => Promise<void>
@@ -252,6 +264,22 @@ const TOOL_PACKAGES: ToolPackage[] = [
     async mount() {},
     note:
       'Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). Under `ptc` it is the registry\'s only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tools/search',
+    dir: 'tools-search',
+    source: 'packages/core/tools/src/search.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'a calling Agent for per-agent load state'],
+    writes: ['tool/call', 'tool/result', 'the calling scope\'s set of loaded on-demand tools'],
+    async mount(ctx) {
+      // A `defer` entry keeps the entry itself honest: without one the row
+      // still registers `tool_search`, and the harvest would catalogue a fetch
+      // with nothing to fetch. `read` is a resident name in every shipped
+      // preset, so nothing else here depends on it being on demand.
+      await ctx.plugin(ToolSearch, { defer: ['read'] })
+    },
+    note:
+      'The fetch half of the two-category catalog: a composition names the tools it withholds via `defer`, their schemas stay off the wire until the model asks for them by name or keyword, and the `tools:on-demand` section lists what has not been fetched yet. The tool itself is never deferrable — it is the only way back — and fetching is per calling scope, so one agent\'s fetch cannot spend another\'s budget. Only `lean` mounts it; every other shipped preset keeps the whole catalog resident.',
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',
@@ -416,13 +444,14 @@ const TOOL_PACKAGES: ToolPackage[] = [
     source: 'packages/goal/tool-goal/src/index.ts',
     requires: ['ctx.tools', 'ctx.agents', 'ctx.goals', 'ctx.systemPrompt', 'a calling Agent in an authorized open turn'],
     writes: ['tool/call', 'goal/change for mutations', 'tool/result'],
+    shippedNames: ['goal'],
     async mount(ctx) {
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(GoalService)
       await ctx.plugin(ToolGoal)
     },
     note:
-      'create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds.',
+      'create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. `toolShape: merged` (the `lean` preset) registers the same operations as one `goal` tool with an `action` parameter instead of these three; the operations and the admission rules are shared, so only the spelling differs.',
   },
   {
     pkg: '@deepseek-ai/dsh-schedule',
@@ -522,7 +551,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       registerListSubagentModels(ctx, { routes: [{ provider: 'mock', model: 'mock' }] })
     },
     note:
-      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
+      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`. `forkProvider` (the `lean` preset) reaches the inheriting backend from the SAME tool through a `fork: true` argument instead of a second instance: the pairing is admitted only when the fork side inherits the parent conversation and the primary side does not, and an explicit child model request is refused on a fork call so the inherited prefix stays eligible for reuse.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',
@@ -551,12 +580,13 @@ const TOOL_PACKAGES: ToolPackage[] = [
     source: 'packages/jobs/tool-jobs/src/index.ts',
     requires: ['ctx.tools', 'ctx.jobs', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result', 'user/message via agent.inject() for background completion notices'],
+    shippedNames: ['job'],
     async mount(ctx) {
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(ToolJobs)
     },
     note:
-      'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`.',
+      'The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers\' `ctx.jobs.start()`. `toolShape: merged` (the `lean` preset) registers the same three operations as one `job` tool with an `action` parameter; the operations and their renderings are shared, so only the spelling differs.',
   },
   {
     pkg: '@deepseek-ai/dsh-experimental-tool-agent-team',
@@ -638,6 +668,36 @@ const TOOL_PACKAGES: ToolPackage[] = [
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
   },
+  {
+    pkg: '@deepseek-ai/dsh-tool-computer-use',
+    dir: 'tool-computer-use',
+    source: 'packages/computer/tool-computer-use/src/index.ts',
+    requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.sessionProjections', 'ctx.computer (execution time)'],
+    writes: ['tool/call', 'tool/result', 'computer/mode (每次启用与关闭)'],
+    onDemandTools: true,
+    shippedNames: [...COMPUTER_TOOL_NAMES],
+    async mount(ctx) {
+      await ctx.plugin(ToolComputerUse)
+    },
+    note:
+      '电脑操作是启用制：只有用户说"操作电脑"或用 /computer 显式要求，这九个工具才装进该 agent 的作用域，'
+      + '策略分节也才进入提示词。收割进程不会触发启用，因此这里只登记工具名——它们默认对模型不可见，'
+      + '这正是这项能力的设计前提（桌面控制权不该默认授予）。',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-error-journal',
+    dir: 'tool-error-journal',
+    source: 'packages/guard/tool-error-journal/src/index.ts',
+    requires: ['ctx.sessions（session/event 旁路）'],
+    writes: [] as string[],
+    onDemandTools: true,
+    async mount(ctx) {
+      await ctx.plugin(ToolErrorJournal)
+    },
+    note:
+      '只做旁路记录：它挂 session/event 把核心与 MCP 工具的失败写进 DSH home 下的 JSONL，'
+      + '不向模型暴露任何工具。目录登记它是为了不留下一类看不见的能力。',
+  },
 ]
 
 /** One package's contribution to the catalog: its schemas plus attribution. */
@@ -693,6 +753,8 @@ export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, 
  */
 export function assertToolsHarvested(entry: ToolPackage, harvested: number): void {
   if (harvested > 0) return
+  // A package whose tools only exist on demand has nothing to harvest by design.
+  if (entry.onDemandTools === true) return
   throw new Error(
     `gen-tool-catalog: ${entry.pkg} booted without registering a single tool. `
     + 'Its plugin is most likely PENDING on a service this manifest entry does not mount — '

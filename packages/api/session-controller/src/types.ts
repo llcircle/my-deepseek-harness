@@ -218,6 +218,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 
 /** Session-addressed request for the human-invocable skill catalog. */
 export interface SkillListRequest {
+  /** 当前界面语言；`zh` 或 `zh-*` 且存在归档时使用技能简介译文。 */
+  readonly locale?: string
   readonly sessionId: SessionId
 }
 

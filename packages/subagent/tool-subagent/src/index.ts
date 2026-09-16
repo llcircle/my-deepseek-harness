@@ -5,6 +5,12 @@
  * Background policy is selected by this plugin's configuration: one-shot
  * calls own a plain Task, while continuable calls use
  * `ctx.subagents.startContinuable()`.
+ *
+ * A second provider can be reached through a `fork` boolean instead of a
+ * second tool: setting `forkProvider` registers one tool whose `fork: true`
+ * routes there. The two paths share every precondition, so their wording is
+ * composed rather than duplicated, and the pair is only admitted when the
+ * `fork` provider is the one that inherits the parent conversation.
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
@@ -48,6 +54,19 @@ export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections
 export interface Config {
   /** The `ctx.subagents` provider name to start runs on (e.g. `spawn`, `acp`). */
   provider: string
+  /**
+   * A second provider reachable through one `fork` boolean instead of a second
+   * tool instance. Set it to the provider that inherits the parent
+   * conversation; `fork: true` then routes there and the omitted flag keeps
+   * {@link Config.provider}. Omit for the split shape: one plugin instance per
+   * provider, each with its own `toolName`.
+   *
+   * The pairing is admitted only when this provider inherits and `provider`
+   * does not — otherwise the flag would describe routes the two providers do
+   * not offer. An explicit child model request is rejected on `fork: true`, so
+   * the inherited conversation prefix stays eligible for reuse.
+   */
+  forkProvider?: string
   /**
    * Model-facing tool name (default `subagent`). Each loaded instance must use
    * a distinct name.
@@ -104,6 +123,7 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
+  forkProvider: z.string(),
   toolName: z.string().default('subagent'),
   modelSelectionSettings: z.boolean().default(false),
   enableRunInBackground: z.boolean().default(true),
@@ -279,6 +299,27 @@ interface DelegationRunRequest {
   readonly run_in_background?: boolean
 }
 
+/**
+ * The optional `fork` flag's wording, appended to the primary provider's own
+ * description when {@link Config.forkProvider} is configured. It is an addition
+ * rather than a replacement because one call may take either route.
+ */
+const FORK_DESCRIPTION =
+  ' Set `fork: true` to delegate to a subagent that inherits this conversation instead: a child agent '
+  + 'seeded with all completed turns so far (it does not see the current in-flight turn). Use that when the '
+  + 'subtask builds on this conversation\'s context — a follow-up analysis, a review, a continuation.'
+
+/** The `fork` parameter's own description, matching {@link FORK_DESCRIPTION}. */
+const FORK_PARAMETER_DESCRIPTION =
+  'Delegate to a subagent seeded with all completed turns so far (it does not see the current in-flight '
+  + 'turn) instead of a fresh one. Defaults to false. It keeps this conversation\'s route so the inherited '
+  + 'prefix stays reusable, so provider, model, and reasoning_effort cannot be combined with it.'
+
+/** Appended to the primary `prompt` description when `fork` is available. */
+const FORK_PROMPT_SUFFIX =
+  ' With `fork: true` the subagent already sees this conversation\'s completed turns, so build on them '
+  + 'freely and state only what is new.'
+
 interface DelegationRunSpec {
   readonly runInBackground: boolean
 }
@@ -321,6 +362,15 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
+  const forkProviderName = config.forkProvider
+  if (forkProviderName !== undefined) {
+    if (forkProviderName.length === 0) {
+      throw new Error('tool-subagent: `forkProvider` must name a provider; remove the key to register one tool per provider')
+    }
+    if (forkProviderName === config.provider) {
+      throw new Error(`tool-subagent: \`forkProvider\` must name a provider other than "${config.provider}"`)
+    }
+  }
 
   const modelSelectionCapable = config.modelSelectionSettings === true
   ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
@@ -349,24 +399,65 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
     }
   }
 
+  /**
+   * Admit the `forkProvider` pairing. The `fork` flag means "seed the child
+   * with this conversation's completed turns", so it is only meaningful when
+   * exactly one of the pair inherits the parent context and it is the fork
+   * side — otherwise the parameter would describe a difference neither
+   * provider has.
+   */
+  const assertForkProviderPairing = (primary: SubagentProvider, fork: SubagentProvider): void => {
+    if (primary.inheritsParentContext || !fork.inheritsParentContext) {
+      throw new Error(
+        'tool-subagent: `forkProvider` requires a "fork" side that inherits the parent conversation and a '
+        + `"provider" side that does not; "${primary.name}" inherits=${String(primary.inheritsParentContext)}, `
+        + `"${fork.name}" inherits=${String(fork.inheritsParentContext)}`,
+      )
+    }
+  }
+
   // Validate provider-owned config outside the optional LLM binding so an
   // invalid provider always rejects its registration or this plugin's load.
+  const ownsProviderName = (candidate: string): boolean =>
+    candidate === config.provider || candidate === forkProviderName
   ctx.on('subagent/provider-added', (subagentProvider) => {
-    if (subagentProvider.name === config.provider) assertSubagentProviderConfiguration(subagentProvider)
+    if (ownsProviderName(subagentProvider.name)) assertSubagentProviderConfiguration(subagentProvider)
   })
-  const initialProvider = ctx.subagents.getProvider(config.provider)
-  if (initialProvider !== undefined) assertSubagentProviderConfiguration(initialProvider)
+  for (const name of [config.provider, ...forkProviderName === undefined ? [] : [forkProviderName]]) {
+    const provider = ctx.subagents.getProvider(name)
+    if (provider !== undefined) assertSubagentProviderConfiguration(provider)
+  }
 
   const install = (runtimeCtx: Context, modelSelectionPolicy: ModelSelectionPolicy | undefined): void => {
     const modelSelectionEnabled = modelSelectionPolicy !== undefined
     if (modelSelectionPolicy !== undefined) registerListSubagentModels(runtimeCtx, modelSelectionPolicy)
     // Load order and HMR replacement can change provider availability while
     // this fiber remains active.
-    let mounted: { subagentProvider: SubagentProvider; disposeTool: () => void } | undefined
-    const mount = (subagentProvider: SubagentProvider): void => {
+    type Mounted = { subagentProvider: SubagentProvider; disposeTool: () => void }
+    let mounted: Mounted | undefined
+    /** Both providers this tool needs, or `undefined` while one is missing. */
+    const availableProviders = (): { primary: SubagentProvider; fork?: SubagentProvider } | undefined => {
+      const primary = runtimeCtx.subagents.getProvider(config.provider)
+      if (primary === undefined) return undefined
+      if (forkProviderName === undefined) return { primary }
+      const fork = runtimeCtx.subagents.getProvider(forkProviderName)
+      return fork === undefined ? undefined : { primary, fork }
+    }
+    const mount = (available: { primary: SubagentProvider; fork?: SubagentProvider }): void => {
+      const subagentProvider = available.primary
+      const forkProvider = available.fork
+      if (forkProvider !== undefined) assertForkProviderPairing(subagentProvider, forkProvider)
       assertSubagentProviderConfiguration(subagentProvider)
+      if (forkProvider !== undefined) assertSubagentProviderConfiguration(forkProvider)
       const wording = providerWording(subagentProvider.inheritsParentContext)
+      // A `fork` call reaches the other provider, so the primary's standalone
+      // prompt guidance gains the one sentence that covers building on the
+      // inherited turns the primary child does not see.
+      const promptDescription = forkProvider === undefined
+        ? wording.promptDescription
+        : wording.promptDescription + FORK_PROMPT_SUFFIX
       const providerRouteDefaults = subagentProvider.agentRouteDefaults
+      const forkRouteDefaults = forkProvider?.agentRouteDefaults
       const selectionDescription = providerRouteDefaults !== undefined
         ? ' Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and this provider\'s route defaults. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model\'s default effort.'
         : ' Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and inherit compatible missing values from the parent Agent. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model\'s default effort.'
@@ -378,14 +469,16 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             : '')
       const disposeTool = runtimeCtx.tools.register(defineTool({
         name: toolName,
-        description: wording.description + (backgroundEnabled
+        description: wording.description
+          + (forkProvider === undefined ? '' : FORK_DESCRIPTION)
+          + (backgroundEnabled
           // The completion notice is the continuation service's own behavior, not
           // a separately installed capability, so this promise holds whenever the
           // continuable background path is reachable at all.
-          ? continuable
-            ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` steers the child\'s nearest step while it is running and starts a turn while it is idle. Set `run_in_background: false` only when your next action depends on receiving the result.'
-            : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
-          : ' This call waits for the subagent and returns its result.') + choiceDescription,
+            ? continuable
+              ? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends the parent a notice containing its outcome and any final assistant message; `send_message` steers the child\'s nearest step while it is running and starts a turn while it is idle. Set `run_in_background: false` only when your next action depends on receiving the result.'
+              : ' This call waits for the result by default. Set `run_in_background: true` to return a job id; collect with `job_output` and stop with `job_kill`.'
+            : ' This call waits for the subagent and returns its result.') + choiceDescription,
         parameters: {
           description: {
             type: 'string',
@@ -395,7 +488,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
           prompt: {
             type: 'string',
             required: true,
-            description: wording.promptDescription,
+            description: promptDescription,
           },
           ...modelSelectionEnabled ? {
             provider: {
@@ -417,6 +510,12 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                 : 'Adapter-owned reasoning effort for the effective child route. Omit to inherit a compatible configured/parent effort or use a newly selected model\'s default.',
             },
           } : {},
+          ...forkProvider === undefined ? {} : {
+            fork: {
+              type: 'boolean' as const,
+              description: FORK_PARAMETER_DESCRIPTION,
+            },
+          },
           ...backgroundEnabled ? {
             run_in_background: {
               type: 'boolean' as const,
@@ -475,12 +574,27 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             throw new Error('subagent tool requires a calling agent (exec.agent was undefined)')
           }
 
+          // The validator permits undeclared keys, so an unconfigured `fork`
+          // also needs execution-time enforcement.
+          const forked = (args as { fork?: unknown }).fork === true
+          if (forked && forkProvider === undefined) {
+            throw new Error(`\`fork: true\` is unavailable: "${toolName}" is not configured with a forkProvider`)
+          }
+          const routeProvider = forked ? forkProvider as SubagentProvider : subagentProvider
+          const routeProviderDefaults = forked ? forkRouteDefaults : providerRouteDefaults
+
           const modelRequest = args as DelegationModelRequest
+          if (forked && hasDelegationModelRequest(modelRequest)) {
+            throw new Error(
+              '`fork: true` keeps the parent route so the inherited conversation prefix stays reusable; '
+              + 'omit provider, model, and reasoning_effort on a fork call',
+            )
+          }
           const parentOptions = parentAgentOptionsForDelegation(parent)
           const requiresRoutePreflight = hasDelegationModelRequest(modelRequest)
             || hasConfiguredLlmSelection(config.agentOptions)
-          const configuredChildAgentOptions = requiresRoutePreflight && providerRouteDefaults !== undefined
-            ? { ...providerRouteDefaults, ...config.agentOptions }
+          const configuredChildAgentOptions = requiresRoutePreflight && routeProviderDefaults !== undefined
+            ? { ...routeProviderDefaults, ...config.agentOptions }
             : config.agentOptions
           const requestedChildAgentOptions = requestedAgentOptions(
             parentOptions,
@@ -504,10 +618,10 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
               parentOptions,
               requestedChildAgentOptions,
               exec.signal,
-              providerRouteDefaults === undefined,
+              routeProviderDefaults === undefined,
             )
-            if (runtimeCtx.subagents.getProvider(config.provider) !== subagentProvider) {
-              throw new Error(`subagent provider "${config.provider}" changed while resolving the child LLM route; retry the delegation`)
+            if (runtimeCtx.subagents.getProvider(routeProvider.name) !== routeProvider) {
+              throw new Error(`subagent provider "${routeProvider.name}" changed while resolving the child LLM route; retry the delegation`)
             }
           }
           exec.signal.throwIfAborted()
@@ -528,7 +642,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
               // Resolves at inbox acceptance: the child owns its own turns from
               // there, so this call neither waits for nor collects a result.
               const started = await runtimeCtx.subagents.startContinuable({
-                provider: config.provider,
+                provider: routeProvider.name,
                 label: args.description,
                 request,
                 signal: exec.signal,
@@ -547,7 +661,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
               owner: parent,
               run: () => {
                 const controller = new AbortController()
-                const start = runtimeCtx.subagents.start(config.provider, { ...request, signal: controller.signal })
+                const start = runtimeCtx.subagents.start(routeProvider.name, { ...request, signal: controller.signal })
                 return {
                   cancel: (reason?: string) => {
                     controller.abort(reason ?? 'background subagent task killed')
@@ -560,7 +674,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             return { kind: 'background' as const, jobId: id }
           }
 
-          const run: SubagentRun = await runtimeCtx.subagents.start(config.provider, {
+          const run: SubagentRun = await runtimeCtx.subagents.start(routeProvider.name, {
             ...request,
             signal: exec.signal,
           })
@@ -576,31 +690,41 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
     // throw rolls back the provider registration. Continuable instances reserve
     // their prompt-section name during apply() and fail earlier. Add an intent
     // registry if the late one-shot collision occurs in a shipped composition.
+    const requiredNames = [config.provider, ...forkProviderName === undefined ? [] : [forkProviderName]]
     runtimeCtx.on('subagent/provider-added', (subagentProvider) => {
-      if (subagentProvider.name === config.provider && mounted === undefined) mount(subagentProvider)
+      if (!requiredNames.includes(subagentProvider.name) || mounted !== undefined) return
+      const available = availableProviders()
+      if (available !== undefined) mount(available)
     })
     runtimeCtx.on('subagent/provider-removed', (name) => {
-      if (name !== config.provider || mounted === undefined) return
+      if (!requiredNames.includes(name) || mounted === undefined) return
       mounted.disposeTool()
       mounted = undefined
     })
-    const present = runtimeCtx.subagents.getProvider(config.provider)
+    const present = availableProviders()
     if (present !== undefined) {
       mount(present)
     } else {
       // A backend fiber may activate later; a misspelled provider remains visible in this log.
-      runtimeCtx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${config.toolName ?? 'subagent'}" tool will register when it appears`)
+      runtimeCtx.logger.info(`subagent provider ${requiredNames.map(name => `"${name}"`).join(' and ')} not registered yet; the "${toolName}" tool will register when ${requiredNames.length === 1 ? 'it appears' : 'both appear'}`)
     }
     if (backgroundEnabled && continuable) {
       // The section follows provider availability without its own manual
       // lifecycle: empty text is omitted from rendered prompts while the tool is
       // absent, and the registration itself stays owned by this plugin fiber.
+      //
+      // Two names because the localized mirror is keyed by section name: the
+      // fork-enabled text names a parameter the split shape does not have.
       runtimeCtx.systemPrompt.section({
-        name: `tool:${toolName}`,
+        name: forkProviderName === undefined ? `tool:${toolName}` : `tool:${toolName}:merged`,
         order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
         text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
           ? ''
-          : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`,
+          : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result.`
+            + (forkProviderName === undefined
+              ? ''
+              : ' Set `fork: true` when the subtask builds on this conversation instead of being self-contained.')
+            + ' When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.',
       })
     }
   }

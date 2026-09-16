@@ -22,6 +22,10 @@
       "types": "./lib/types/invariant.d.ts",
       "default": "./lib/invariant.js"
     },
+    "./overrides": {
+      "types": "./lib/types/overrides.d.ts",
+      "default": "./lib/overrides.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

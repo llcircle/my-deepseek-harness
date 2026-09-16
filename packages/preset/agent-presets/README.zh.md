@@ -55,6 +55,10 @@ kind: "package-reference"
 | `includeShippedRoot` | `true` | 在全部已配置根目录之前，前置本包随附的 preset 作为 `system` 根目录 |
 | `includeUserRoot` | `true` | 在全部已配置根目录之后追加 `<dshHome>/.agent-presets` 作为 `user` 根目录 |
 
+### 项目自有覆盖
+
+项目可以固定自己的默认值：`<projectRoot>/.dsh/agent-preset` 的首个非空行（项目根是包含 `.git` 的最近祖先）会为在该工作区新建的会话覆盖已配置的默认 preset。调用方显式命名的 preset 仍然优先，resume 保持会话已记录的 preset，覆盖指向未知 preset 会让创建显式失败。没有该文件的项目保持部署或用户默认。
+
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 随附根目录前置在全部已配置根目录之前，因此即使补丁替换 roster 配置，内置集合仍然可用并赢得重复 id。`includeShippedRoot: false` 会为完全自行提供 preset 的部署移除内置集合。`includeUserRoot: false` 会移除推导出的可写根目录；钉住确切 roster 的测试会同时关闭两个推导根目录。

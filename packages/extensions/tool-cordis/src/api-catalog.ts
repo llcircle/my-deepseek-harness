@@ -721,6 +721,106 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    key: 'computer',
+    summary: '电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类； 调用方只依赖这组语义。',
+    description: '电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类； 调用方只依赖这组语义。\n\n契约：\n\n- 所有坐标处于同一坐标系：ComputerDisplay 描述的虚拟屏幕物理像素。 截图与输入必须共用它，否则点击会落在错误的位置。\n- 每个方法都接受取消信号；中止时必须终止自己启动的进程并尽快 settle。\n- 预期失败抛出带稳定 code 的 `ComputerError`，不抛出平台原始错误。',
+    methods: [
+      {
+        signature: 'abstract readonly provider: string',
+        description: '提供方标识，用于诊断与提示词叙述。',
+        parameters: [],
+      },
+      {
+        signature: 'abstract available(options?: ComputerCallOptions): Promise<ComputerAvailability>',
+        description: '探测当前是否真的可以执行桌面动作。\n\n这是唯一允许"不抛错"的方法：不可用时返回 `available: false` 与原因， 让 Consumer 可以照常加载并只隐藏工具。实现应缓存探测结果， 避免每次调用都付出一次进程启动代价。',
+        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '可用性判定；不可用时带一句给人看的原因。',
+      },
+      {
+        signature: 'abstract display(options?: ComputerCallOptions): Promise<ComputerDisplay>',
+        description: '读取虚拟屏幕几何。',
+        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '虚拟屏幕的宽高与（如有）缩放说明。',
+      },
+      {
+        signature: 'abstract screenshot(options?: ComputerCallOptions): Promise<ComputerScreenshot>',
+        description: '截取整个虚拟屏幕。',
+        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '截图附件与它的实际像素尺寸。',
+      },
+      {
+        signature: 'abstract pointer(options?: ComputerCallOptions): Promise<ComputerPoint>',
+        description: '读取指针当前位置。',
+        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '指针当前所在的屏幕坐标。',
+      },
+      {
+        signature: 'abstract move(point: ComputerPoint, options?: ComputerCallOptions): Promise<ComputerPoint>',
+        description: '把指针移动到指定位置。',
+        parameters: [{ name: 'point', description: '目标屏幕坐标。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '移动后指针的实际坐标。',
+      },
+      {
+        signature: 'abstract click(input: ComputerClickInput, options?: ComputerCallOptions): Promise<ComputerPoint & { button: string; clicks: number }>',
+        description: '在指定位置（省略则用当前位置）点击。',
+        parameters: [{ name: 'input', description: '点击位置、按键与次数。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '点击落点与生效的按键、次数。',
+      },
+      {
+        signature: 'abstract drag(input: ComputerDragInput, options?: ComputerCallOptions): Promise<ComputerDragResult>',
+        description: '从起点拖拽到终点。',
+        parameters: [{ name: 'input', description: '起点、终点与按键。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '起止坐标与生效的按键。',
+      },
+      {
+        signature: 'abstract typeText(input: ComputerTypeInput, options?: ComputerCallOptions): Promise<{ characters: number }>',
+        description: '输入一段文本。',
+        parameters: [{ name: 'input', description: '待输入的文本。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '实际送入的字符数。',
+      },
+      {
+        signature: 'abstract key(input: ComputerKeyInput, options?: ComputerCallOptions): Promise<{ keys: string[] }>',
+        description: '按下并释放一组组合键。',
+        parameters: [{ name: 'input', description: '组合键序列，如 `[\'ctrl\', \'c\']`。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '实际按下的键序列。',
+      },
+      {
+        signature: 'abstract scroll(input: ComputerScrollInput, options?: ComputerCallOptions): Promise<ComputerPoint & { deltaX: number; deltaY: number }>',
+        description: '在指定位置（省略则用当前位置）滚动。',
+        parameters: [{ name: 'input', description: '滚动位置与纵向/横向位移；纵向正数向下，与 DOM `WheelEvent` 一致。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
+        returns: '滚动落点与生效的位移。',
+      },
+    ],
+  },
+  {
+    key: 'computerUse',
+    summary: '`ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令， 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。',
+    description: '`ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令， 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。',
+    methods: [
+      {
+        signature: 'isActive(session: Session): boolean',
+        description: '读取会话的启用状态，优先返回本进程内刚发生的启用。',
+        parameters: [{ name: 'session', description: '目标会话。' }],
+        returns: '是否启用。',
+      },
+      {
+        signature: 'async activate(agent: Agent, reason: ActivationReason): Promise<{ kind: \'success\' | \'error\'; text: string }>',
+        description: '显式启用（命令路径）。命令在步进之外运行，因此可以先探测宿主能力， 把"这台机器不能用"作为可读的失败返回给用户，而不是留到第一次点击才炸。',
+        parameters: [{ name: 'agent', description: '目标 agent。' }, { name: 'reason', description: '启用原因，用于日志。' }],
+        returns: '命令回执。',
+      },
+      {
+        signature: 'deactivate(agent: Agent): { kind: \'success\' | \'error\'; text: string }',
+        description: '关闭电脑操作：注销工具并写入日志事件。',
+        parameters: [{ name: 'agent', description: '目标 agent。' }],
+        returns: '命令回执。',
+<<<<<<< ours
+=======
+=======
     key: 'computerUse',
     summary: 'Owns one optional provider registration in the shared computer-use service.',
     description: 'Owns one optional provider registration in the shared computer-use service.',
@@ -730,6 +830,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Reserve the sole provider slot until the contribution is disposed. A second registration fails even when it repeats the current name. Providers must stop their tools and await owned work before releasing this registration.',
         parameters: [{ name: 'name', description: 'provider-owned name used in registration diagnostics.' }],
         returns: 'the effect disposer for this exact registration.',
+>>>>>>> theirs
+>>>>>>> theirs
       },
     ],
   },
@@ -1451,6 +1553,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly contextLocale: ContextLocale',
+        description: 'Locale for the model-facing policy context.',
+        parameters: [],
+      },
+      {
         signature: 'readonly workspaceRoot: string',
         description: 'The absolute `workspace-write` fallback root for calls without a session cwd.',
         parameters: [],
@@ -2108,6 +2215,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RemoteError when no settings provider is mounted.'],
       },
       {
+        signature: '@Remote async readPromptSections(cwd?: string): Promise<PromptSectionView[]>',
+        description: 'Project prompt sections for the Web prompt editor.',
+        parameters: [{ name: 'cwd', description: 'session workspace whose per-session prompt file supplies the Chinese column; omitted reads leave that column empty.' }],
+        returns: 'current section text and whether each section accepts replacement.',
+      },
+      {
+        signature: '@Remote async readToolErrors(): Promise<ToolErrorView[]>',
+        description: 'Read the journaled tool and MCP failures.',
+        parameters: [],
+        returns: 'newest failures in file order; empty when no journal exists.',
+      },
+      {
+        signature: '@Remote async readReflections(): Promise<ReflectionBlockView[]>',
+        description: 'Read the subject-sectioned lessons of the system-level reflection document.\n\n只返回确实有内容的主题：没有经验的主题不必在界面上占一行空输入框，界面会 把"这次装配里有哪些能力"和这份清单取并集。',
+        parameters: [],
+        returns: 'one entry per subject with recorded lessons; empty when the document does not exist. Text that names no subject belongs to the document\'s global part and is intentionally not projected here.',
+      },
+      {
+        signature: '@Remote async writeReflections(blocks: ReflectionBlockView[]): Promise<void>',
+        description: 'Rewrite the given subjects\' lessons, leaving every other part of the document untouched.\n\n读改写而不是"用界面上的内容重建整份文档"：文档里还有认不出主题的历史小节 与用户备注，界面从来没显示过它们，也就没有资格删掉它们。',
+        parameters: [{ name: 'blocks', description: 'subjects to write; an empty `text` removes that subject.' }],
+      },
+      {
         signature: '@Remote canOpenAgentPresetDirectory(): boolean',
         description: 'Report whether this deployment can open an authored Agent preset directory natively.',
         parameters: [],
@@ -2492,6 +2622,34 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the section\'s numeric sort order.',
       },
       {
+        signature: 'sectionNames(): string[]',
+        description: 'List globally registered section names for prompt editing surfaces.\n\n这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用 sectionTexts，它连作用域一起算——两者覆盖的集合本来就不一样， 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。',
+        parameters: [],
+        returns: 'sorted section names visible to unscoped assemblies.',
+      },
+      {
+        signature: 'async sectionTexts(cwd?: string): Promise<PromptSectionView[]>',
+        description: 'Project the sections a Web editor may address: the global layer plus every scope\'s own first-seen contribution, in one merged view. Static sections include their current text; dynamic sections stay visible but not editable.\n\n作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>` 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段， 所以作用域里的分段同样改得动。',
+        parameters: [{ name: 'cwd', description: 'session workspace whose per-session prompt file supplies the Chinese column; omitted reads leave that column empty.' }],
+        returns: 'sorted section views for prompt editing.',
+      },
+      {
+        signature: 'installOverrides( owner: Context, settings: PromptOverridesSettingsInstaller, ): void',
+        description: 'Install runtime-editable section replacements when the deployment mounts settings.',
+        parameters: [{ name: 'owner', description: 'consumer context used for section lifetime.' }, { name: 'settings', description: 'the optional settings provider to install into.' }],
+      },
+      {
+        signature: 'adoptLocaleSource(source: () => string | undefined): void',
+        description: '接入界面语言的读取来源。\n\n注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来， 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后 下一个请求就生效，不必重启。',
+        parameters: [{ name: 'source', description: '读取当前界面语言标签的函数；返回空表示没有设置服务。' }],
+      },
+      {
+        signature: 'activeLocale(): PromptLocale',
+        description: '当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。',
+        parameters: [],
+        returns: '`zh` 或 `en`。',
+      },
+      {
         signature: 'getContextOrder(name: PromptContextOrderName): number',
         description: 'Resolve the centrally owned placement of a repository runtime context.',
         parameters: [{ name: 'name', description: 'stable context placement name.' }],
@@ -2513,6 +2671,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'tools(provider: (context: AssembleContext) => ToolProviderResult): () => void',
         description: 'Register a tool-schema provider in the calling context\'s scope. Global and matching scoped providers both contribute; returning the reserved TOOL_ORDER_REST name makes assembly fail.',
         parameters: [{ name: 'provider', description: 'evaluated for each assembly with its context.' }],
+        returns: 'the exact Cordis effect disposer.',
+      },
+      {
+        signature: 'reflectionSource(source: PromptReflectionSource): () => void',
+        description: 'Register a per-section reflection source. Every source is consulted for every section; a non-blank answer is appended below that section\'s own text. Appending happens after user overrides and before empty optional sections are dropped, and it never resurrects a section whose own text is blank — an ability that is not composed in this assembly must not come back just because an old lesson about it is still on disk.',
+        parameters: [{ name: 'source', description: 'consulted per section name on each assembly.' }],
         returns: 'the exact Cordis effect disposer.',
       },
       {
@@ -3848,7 +4012,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssembleContext',
-    declaration: 'export interface AssembleContext {\n    scope?: ScopeKey;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface AssembleContext {\n    scope?: ScopeKey;\n    cwd?: string;\n    signal?: AbortSignal;\n    locale?: PromptLocale;\n}',
   },
   {
     name: 'AssembledContext',
@@ -4035,8 +4199,63 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
   },
   {
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    name: 'ComputerAvailability',
+    declaration: 'export interface ComputerAvailability {\n    readonly available: boolean;\n    readonly provider: string;\n    readonly platform: string;\n    readonly reason?: string;\n}',
+  },
+  {
+    name: 'ComputerCallOptions',
+    declaration: 'export interface ComputerCallOptions {\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'ComputerClickInput',
+    declaration: 'export interface ComputerClickInput extends Partial<ComputerPoint> {\n    readonly button?: ComputerMouseButton;\n    readonly clicks?: number;\n}',
+  },
+  {
+    name: 'ComputerDisplay',
+    declaration: 'export interface ComputerDisplay {\n    readonly originX: number;\n    readonly originY: number;\n    readonly width: number;\n    readonly height: number;\n    readonly primaryWidth: number;\n    readonly primaryHeight: number;\n}',
+  },
+  {
+    name: 'ComputerDragInput',
+    declaration: 'export interface ComputerDragInput {\n    readonly fromX: number;\n    readonly fromY: number;\n    readonly toX: number;\n    readonly toY: number;\n    readonly button?: ComputerMouseButton;\n    readonly durationMs?: number;\n}',
+  },
+  {
+    name: 'ComputerDragResult',
+    declaration: 'export interface ComputerDragResult {\n    readonly fromX: number;\n    readonly fromY: number;\n    readonly toX: number;\n    readonly toY: number;\n    readonly button: string;\n}',
+  },
+  {
+    name: 'ComputerKeyInput',
+    declaration: 'export interface ComputerKeyInput extends Partial<ComputerPoint> {\n    readonly keys: readonly string[];\n}',
+  },
+  {
+    name: 'ComputerMouseButton',
+    declaration: 'export type ComputerMouseButton = \'left\' | \'right\' | \'middle\';',
+  },
+  {
+    name: 'ComputerPoint',
+    declaration: 'export interface ComputerPoint {\n    readonly x: number;\n    readonly y: number;\n}',
+  },
+  {
+    name: 'ComputerScreenshot',
+    declaration: 'export interface ComputerScreenshot {\n    readonly originX: number;\n    readonly originY: number;\n    readonly width: number;\n    readonly height: number;\n    readonly data: Uint8Array;\n}',
+  },
+  {
+    name: 'ComputerScrollInput',
+    declaration: 'export interface ComputerScrollInput extends Partial<ComputerPoint> {\n    readonly deltaX?: number;\n    readonly deltaY?: number;\n}',
+  },
+  {
+    name: 'ComputerTypeInput',
+    declaration: 'export interface ComputerTypeInput extends Partial<ComputerPoint> {\n    readonly text: string;\n}',
+<<<<<<< ours
+=======
+=======
     name: 'ComputerUseProviderName',
     declaration: 'export type ComputerUseProviderName = Branded<\'ComputerUseProviderName\'>;',
+>>>>>>> theirs
+>>>>>>> theirs
   },
   {
     name: 'ConfinedArgv',
@@ -4204,7 +4423,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DeepSeekLlmApiExtensionRequest',
-    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\';\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface DeepSeekLlmApiExtensionRequest {\n    readonly body: Readonly<Record<string, DeepSeekLlmApiJson>>;\n    readonly sessionId?: string;\n    readonly purpose?: \'compaction\' | \'session-title\' | \'tool-error-reflection\';\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'DeepSeekLlmApiJson',
@@ -4332,11 +4551,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EpochHeader',
+<<<<<<< ours
+    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    systemSections?: SystemPromptSectionSnapshot[];\n    tools?: ToolSchema[];\n}',
+=======
+<<<<<<< ours
+    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    systemSections?: SystemPromptSectionSnapshot[];\n    tools?: ToolSchema[];\n}',
+=======
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
   },
   {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
+>>>>>>> theirs
+>>>>>>> theirs
   },
   {
     name: 'FiberState',
@@ -4424,7 +4651,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GenerateOptions',
-    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
+    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\' | \'tool-error-reflection\';\n}',
   },
   {
     name: 'GenericCallView',
@@ -4960,7 +5187,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PromptAssembly',
-    declaration: 'export interface PromptAssembly {\n    sections: AssembledSection[];\n    contexts: AssembledContext[];\n    tools: ToolSchema[];\n    variables: Record<string, string | undefined>;\n}',
+    declaration: 'export interface PromptAssembly {\n    sections: AssembledSection[];\n    contexts: AssembledContext[];\n    tools: ToolSchema[];\n    variables: Record<string, string | undefined>;\n    locale?: PromptLocale;\n}',
   },
   {
     name: 'PromptContext',
@@ -4973,6 +5200,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptFileBinding',
     declaration: 'export interface PromptFileBinding extends Disposable {\n    commit(): void;\n}',
+  },
+  {
+    name: 'PromptOverridesSettingsInstaller',
+    declaration: 'export type PromptOverridesSettingsInstaller = {\n    installSection(owner: Context, ns: typeof SYSTEM_PROMPT_OVERRIDES_SETTINGS_NAMESPACE, schema: typeof PromptOverridesSettingsSchema, entry: PromptOverridesSettings, hooks: {\n        setSource: (current: () => PromptOverridesSettings) => void;\n        onChange: () => void;\n    }): void;\n    get?(ns: string): unknown;\n};',
+  },
+  {
+    name: 'PromptReflectionSource',
+    declaration: 'export type PromptReflectionSource = (sectionName: string) => string | undefined;',
   },
   {
     name: 'PromptSection',
@@ -5053,6 +5288,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'ReflectionBlockView',
+    declaration: 'export interface ReflectionBlockView {\n    readonly subject: string;\n    readonly text: string;\n}',
   },
   {
     name: 'RemoteError',
@@ -5808,7 +6047,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SkillListRequest',
-    declaration: 'export interface SkillListRequest {\n    readonly sessionId: SessionId;\n}',
+    declaration: 'export interface SkillListRequest {\n    readonly locale?: string;\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'SkillListValue',
@@ -6060,11 +6299,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SystemPrompt',
-    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    getSectionOrder(name: PromptSectionOrderName): number;\n    getContextOrder(name: PromptContextOrderName): number;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
+    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    getSectionOrder(name: PromptSectionOrderName): number;\n    sectionNames(): string[];\n    async sectionTexts(cwd?: string): Promise<PromptSectionView[]>;\n    installOverrides(owner: Context, settings: PromptOverridesSettingsInstaller): void;\n    adoptLocaleSource(source: () => string | undefined): void;\n    activeLocale(): PromptLocale;\n    getContextOrder(name: PromptContextOrderName): number;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    reflectionSource(source: PromptReflectionSource): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
+  },
+  {
+    name: 'SystemPromptSectionSnapshot',
+    declaration: 'export interface SystemPromptSectionSnapshot {\n    name: string;\n    text: string;\n}',
+<<<<<<< ours
+=======
   },
   {
     name: 'SystemPromptUpdate',
     declaration: 'export type SystemPromptUpdate = \'in-history\';',
+>>>>>>> theirs
   },
   {
     name: 'TableKeyOf',
@@ -6253,6 +6499,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ToolErrorInfo',
     declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n    reason?: string;\n}',
+  },
+  {
+    name: 'ToolErrorView',
+    declaration: 'export interface ToolErrorView {\n    readonly time: string;\n    readonly sessionId: string;\n    readonly seq: number;\n    readonly name: string;\n    readonly callId: string;\n    readonly text: string;\n}',
+  },
+  {
+    name: 'ToolErrorView',
+    declaration: 'export interface ToolErrorView {\n    readonly time: string;\n    readonly sessionId: string;\n    readonly seq: number;\n    readonly name: string;\n    readonly callId: string;\n    readonly text: string;\n}',
   },
   {
     name: 'ToolExecution',

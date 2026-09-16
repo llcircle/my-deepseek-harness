@@ -83,4 +83,32 @@ describe('dsh-base bundle', () => {
     // The platform layer folded into these rows: no separate patch file ships.
     expect(existsSync(resolve(root, 'windows.cordis.patch.yml'))).toBe(false)
   })
+
+  it('declares a dependency for every packaged plugin the patch mounts', () => {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    const manifest = JSON.parse(
+      readFileSync(resolve(root, 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> }
+    const parsed = yaml.load(
+      readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8'),
+      { schema: entryListSchema },
+    )
+    if (!Array.isArray(parsed)) throw new TypeError('base patch must parse to a patch list')
+    const rows = parsed.flatMap((patch): Record<string, unknown>[] =>
+      typeof patch === 'object' && patch !== null
+        ? (patch as { insert?: Record<string, unknown>[] }).insert ?? []
+        : [],
+    )
+    // A packaged row names an npm specifier — a package, optionally with a
+    // subpath entry (`@scope/pkg/entry`). Rows without a `name` are plugins the
+    // profile root already provides. A specifier that no dependency covers is
+    // unresolvable at boot, and the only symptom is a runtime "Cannot find
+    // package" that no type check or unit test sees, so pin it here.
+    const declared = new Set(Object.keys(manifest.dependencies ?? {}))
+    const mounted = rows
+      .map(row => row.name)
+      .filter((name): name is string => typeof name === 'string' && name.startsWith('@'))
+      .map(name => name.split('/').slice(0, 2).join('/'))
+    expect([...new Set(mounted)].filter(name => !declared.has(name)).sort()).toEqual([])
+  })
 })

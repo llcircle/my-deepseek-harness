@@ -132,7 +132,9 @@ export interface SubagentCapabilities {
   readonly outputSchema: boolean
   readonly depthLimit: boolean
   readonly toolFilter: boolean
+  readonly allowTools: boolean
   readonly persona: boolean
+  readonly omitSections: boolean
 }
 
 /**
@@ -191,6 +193,22 @@ export interface SubagentStartRequest {
    */
   readonly toolFilter?: ToolRestriction
   /**
+   * Optional per-child keep-list: the child sees ONLY these tools, and every
+   * other inherited one is removed. Requires
+   * {@link SubagentCapabilities.allowTools}; rejected at start otherwise.
+   *
+   * 与 {@link toolFilter} 的 `allow` 是两种不同的表达，按场景挑一个，不要叠加：
+   * `toolFilter.allow` 要求调用方点名部署里**确实存在**的每一个工具，名字对不上
+   * 就违例——一个写死的白名单在工具集不同的部署上会直接失败。本字段表达的是
+   * "我只要这些"，函数式辅助 agent 的调用方正是这么想问题的；名单里某个名字在
+   * 本次部署里不存在，跳过即可，不需要调用方知道部署挂了什么。
+   *
+   * The child's own registrations are outside any restriction, and reserved
+   * presentation transports are never removable, so a keep-list cannot empty
+   * the child's catalog outright.
+   */
+  readonly allowTools?: readonly string[]
+  /**
    * Optional per-child persona. Requires {@link SubagentCapabilities.persona};
    * rejected at start otherwise. In-process backends register it as a scoped
    * `deployment:persona-prefix` section on the child, SHADOWING the deployment's
@@ -198,6 +216,20 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Optional names of prompt sections this child does NOT get. Requires
+   * {@link SubagentCapabilities.omitSections}; rejected at start otherwise.
+   * In-process backends suppress each name on the child's scope, so the section
+   * disappears from the child's assembly no matter which layer registered it —
+   * the deployment's identity opener, an ancestor preset's persona, or a tool's
+   * own `tool:<name>` guidance.
+   *
+   * 这是"极简功能性子 agent"缺的那一半：工具靠 {@link allowTools} 裁，提示词靠这里
+   * 裁。裁掉 `skill` 工具会连带让 `skills:catalog` 整段变空（目录只在 `skill` 工具
+   * 可见时才注入），但 `harness:identity`、预设人格、`deployment:error-lessons`
+   * 这类分段与工具无关，只能点名抑制。
+   */
+  readonly omitSections?: readonly string[]
 }
 
 /**

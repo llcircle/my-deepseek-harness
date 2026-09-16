@@ -1,9 +1,17 @@
 /**
- * Model-facing `job_output`, `job_list`, and `job_kill` tools over
- * `ctx.jobs`. Loading the plugin attaches the controller required by
- * producers. It also delivers unreported completions to the owning agent:
- * injected into a busy owner's next step, or opening a turn on an idle one
- * under the default `wakeup` delivery, bounded per owner.
+ * Model-facing job controls over `ctx.jobs`.
+ *
+ * Two shapes, chosen by the composition. `split` (the default) registers
+ * `job_output`, `job_list`, and `job_kill`; `merged` registers one `job` tool
+ * whose `action` selects the same three operations and whose payload fields
+ * are the union of their parameters. The operations and their renderings are
+ * shared, so the two shapes cannot drift in behavior or output — only the
+ * spelling the model reads differs.
+ *
+ * Loading the plugin attaches the controller required by producers. It also
+ * delivers unreported completions to the owning agent: injected into a busy
+ * owner's next step, or opening a turn on an idle one under the default
+ * `wakeup` delivery, bounded per owner.
  * @module @deepseek-ai/dsh-tool-jobs
  */
 
@@ -27,6 +35,15 @@ export const inject = ['tools', 'jobs', 'systemPrompt']
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
 
+/**
+ * How this row spells the job controls to the model. `split` keeps three named
+ * tools; `merged` collapses them into one `job` tool with an `action`
+ * parameter. Two shapes rather than one because a deployment's prompts and
+ * tests address the tool names: a preset consolidating its catalog opts in,
+ * and every existing composition keeps what it names.
+ */
+export type JobToolShape = 'split' | 'merged'
+
 /** Configures bounded `job_output` waits and completion-notice delivery. */
 export interface Config {
   /** Wait duration applied when `job_output` sets `wait` without `timeout_ms` (default 30s). */
@@ -42,6 +59,10 @@ export interface Config {
    * completion wakes it again.
    */
   maxConsecutiveWakes?: number
+  /**
+   * Tool shape (default `split`). See {@link JobToolShape}.
+   */
+  toolShape?: JobToolShape
 }
 
 export const Config: z<Config> = z.object({
@@ -49,7 +70,40 @@ export const Config: z<Config> = z.object({
   maxWaitTimeoutMs: z.number().min(1).default(600_000),
   completionDelivery: z.union(['quiet', 'wakeup'] as const).default('wakeup'),
   maxConsecutiveWakes: z.number().min(1).default(3),
+  toolShape: z.union(['split', 'merged'] as const).default('split'),
 })
+
+/** Every operation the merged shape exposes as one `action` value. */
+type JobAction = 'list' | 'output' | 'kill'
+
+const JOB_ACTIONS: JobAction[] = ['list', 'output', 'kill']
+
+/** The single tool name the merged shape registers. */
+const MERGED_TOOL_NAME = 'job'
+
+/** Section name carrying this shape's policy text. */
+function sectionName(shape: JobToolShape): string {
+  // Two names because the localized mirror is keyed by section name: the split
+  // wording names three tools the merged shape does not have, so reusing one
+  // name would hand a merged session the split text in the translated locale.
+  return shape === 'merged' ? 'tool:jobs:merged' : 'tool:jobs'
+}
+
+/**
+ * Render the cross-call guidance for the registered shape.
+ * @param shape - which spelling this row registered.
+ * @returns the section text.
+ */
+function guidance(shape: JobToolShape): string {
+  const merged = shape === 'merged'
+  const collect = merged ? 'action output' : 'job_output'
+  const stop = merged ? 'action kill' : 'job_kill'
+  return (merged ? 'Use action list to see every background job you own. ' : '')
+    + 'Track every background job id you start. You are notified in-session when a job finishes — '
+    + 'do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running '
+    + `job's work. Before giving a final answer, collect every still-relevant job with ${collect} `
+    + `(set wait: true only when you are genuinely blocked on it), and ${stop} jobs that stopped mattering.`
+}
 
 /** Task state safe for model-authored programs; ownership/bookkeeping fields are omitted. */
 export interface PublicJobSnapshot {
@@ -181,19 +235,105 @@ function boundSingleText(content: readonly ContentBlock[], maxBytes: number): Co
   }]
 }
 
+/** Canonical rendering of a job list; shared by both shapes. */
+function renderJobList(jobs: readonly PublicJobSnapshot[]): ContentBlock[] {
+  return [{
+    type: 'text',
+    text: jobs.length === 0
+      ? '(no background jobs)'
+      : jobs.map(job => `${job.id} [${job.kind}] ${job.status} — ${job.label}`).join('\n'),
+  }]
+}
+
+/** Canonical rendering of one job read: the body, then its status line. */
+function renderJobOutput(value: {
+  readonly text: string
+  readonly job: PublicJobSnapshot
+}): ContentBlock[] {
+  const body = value.text.length > 0 ? value.text : '(no new output)'
+  const separator = body.endsWith('\n') ? '' : '\n'
+  return [{ type: 'text', text: `${body}${separator}${statusLine(value.job)}` }]
+}
+
+/** Canonical rendering of one cancellation request. */
+function renderJobKill(value: {
+  readonly outcome: 'cancellation-requested' | 'already-finished'
+  readonly job: PublicJobSnapshot
+}): ContentBlock[] {
+  return [{
+    type: 'text',
+    text: value.outcome === 'already-finished'
+      ? `job ${value.job.id} had already finished ${statusLine(value.job)}`
+      : `requested cancellation of job ${value.job.id}`,
+  }]
+}
+
+/** Read the caller-visible job registry. */
+function listJobs(ctx: Context, exec: ToolExecution): PublicJobSnapshot[] {
+  return ctx.jobs.list(exec.agent).map(publicJob)
+}
+
+/** Read one job's pending output, optionally waiting under the configured bounds. */
+async function readJobOutput(
+  ctx: Context,
+  exec: ToolExecution,
+  args: { readonly job_id?: string; readonly wait?: boolean; readonly timeout_ms?: number },
+  waitDefault: number,
+  waitCap: number,
+): Promise<{ text: string; job: PublicJobSnapshot }> {
+  const id = validateJobId(args.job_id)
+  if (args.wait === true) {
+    const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
+    await ctx.jobs.wait(id, timeout, exec.agent, exec.signal)
+  }
+  const read = ctx.jobs.read(id, exec.agent)
+  return { text: read.text, job: publicJob(read.snapshot) }
+}
+
+/** Request cancellation of one job and report the registry's current state. */
+function killJob(
+  ctx: Context,
+  exec: ToolExecution,
+  args: { readonly job_id?: string; readonly reason?: string },
+): { outcome: 'cancellation-requested' | 'already-finished'; job: PublicJobSnapshot } {
+  const id = validateJobId(args.job_id)
+  const result = ctx.jobs.kill(id, exec.agent, args.reason)
+  // A snapshot describes current state without consuming pending output.
+  return {
+    outcome: result === 'already-finished' ? 'already-finished' as const : 'cancellation-requested' as const,
+    job: publicJob(ctx.jobs.get(id, exec.agent)),
+  }
+}
+
+/** Whether this call renders a single job rather than the whole registry. */
+function readsOneJob(exec: ToolExecution): boolean {
+  if (exec.name === MERGED_TOOL_NAME) {
+    const action = (exec.arguments as { action?: unknown } | null | undefined)?.action
+    return action === 'output' || action === 'kill'
+  }
+  return exec.name === 'job_output' || exec.name === 'job_kill'
+}
+
 function visibleOutputLimit(ctx: Context, exec: ToolExecution): number | undefined {
-  if (exec.name !== 'job_output' && exec.name !== 'job_kill') return undefined
+  if (!readsOneJob(exec)) return undefined
   const jobId = (exec.arguments as { job_id?: unknown } | null | undefined)?.job_id
   if (typeof jobId !== 'string' || jobId.length === 0) return undefined
   return ctx.jobs.list(exec.agent).find(snapshot => snapshot.id === jobId)?.outputLimitBytes
 }
 
 /** Validate the non-empty constraint that ParameterSchemaSpec cannot express. */
-function validateJobId(value: string): JobId {
-  if (value.length === 0) {
+function validateJobId(value: string | undefined): JobId {
+  if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`invalid job_id: expected a non-empty string, got ${JSON.stringify(value)}`)
   }
   return JobId(value)
+}
+
+/** Whether this call's canonical rendering is a job read's body-plus-status pair. */
+function rendersJobOutput(exec: ToolExecution): boolean {
+  return exec.name === 'job_output'
+    || (exec.name === MERGED_TOOL_NAME
+      && (exec.arguments as { action?: unknown } | null | undefined)?.action === 'output')
 }
 
 /** Pending presentation shared by the three generic job controls. */
@@ -201,11 +341,15 @@ function presentJobCall(title: string, kind: 'read' | 'execute', rawInput?: stri
   return { card: 'generic', title, kind, ...rawInput !== undefined ? { rawInput } : {} }
 }
 
-export function apply(ctx: Context, config: Config): void {
+export function apply(ctx: Context, config: Config = {}): void {
   const waitDefault = config.waitTimeoutMs ?? 30_000
   const waitCap = config.maxWaitTimeoutMs ?? 600_000
   const delivery = config.completionDelivery ?? 'wakeup'
   const wakeBudget = config.maxConsecutiveWakes ?? 3
+  const shape = config.toolShape ?? 'split'
+  if (shape !== 'split' && shape !== 'merged') {
+    throw new Error(`tool-jobs: toolShape must be "split" or "merged", got ${JSON.stringify(shape)}`)
+  }
 
   // Turns this plugin opened on each owner since that owner last consumed
   // human input. Keyed by the exact Agent, so a same-session replacement
@@ -238,7 +382,7 @@ export function apply(ctx: Context, config: Config): void {
     const maxBytes = outputLimits.get(exec) ?? visibleOutputLimit(ctx, exec)
     outputLimits.delete(exec)
     if (maxBytes === undefined) return undefined
-    if (exec.name === 'job_output' && !result.isError) {
+    if (rendersJobOutput(exec) && !result.isError) {
       // This definition owns and schema-validates the canonical value. Preserve
       // its output/status split only while policy left the default rendering intact.
       const value = result.value as unknown as { text: string; job: PublicJobSnapshot }
@@ -260,9 +404,9 @@ export function apply(ctx: Context, config: Config): void {
 
   // Cross-call guidance follows the filesystem sections and precedes product sections.
   ctx.systemPrompt.section({
-    name: 'tool:jobs',
+    name: sectionName(shape),
     order: ctx.systemPrompt.getSectionOrder('TOOL_JOBS'),
-    text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
+    text: guidance(shape),
   })
 
   // Use the exact lifecycle owner; reusable ids could resolve to a replacement.
@@ -298,6 +442,100 @@ export function apply(ctx: Context, config: Config): void {
     owner.inject(message)
   })
 
+  if (shape === 'merged') {
+    ctx.tools.register(defineTool({
+      name: MERGED_TOOL_NAME,
+      description: 'Your background jobs, addressed by action. action list reports every running and '
+        + 'finished job. action output reads one: stream jobs return only output since the previous read, '
+        + 'final-output jobs return their result after settlement, and every response ends with '
+        + '`[status: ...]` — reads are non-blocking unless `wait: true`, which waits up to the configured cap. '
+        + 'action kill requests cancellation of a running job by id and returns immediately; the job settles '
+        + 'as killed once its work actually stops.',
+      parameters: {
+        action: {
+          type: 'string',
+          required: true,
+          enum: JOB_ACTIONS,
+          description: 'list | output | kill',
+        },
+        job_id: {
+          type: 'string',
+          description: 'Job id returned by the tool that started the background work; required with action output or kill.',
+        },
+        wait: {
+          type: 'boolean',
+          description: 'Block until the job reaches a terminal status or the timeout expires (action output only). A timed-out wait returns [status: running] and leaves the job alive.',
+        },
+        timeout_ms: {
+          type: 'number',
+          description: 'Max wait in milliseconds, only meaningful with wait: true (action output only). Defaults to the configured wait timeout; capped by the configured maximum.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Optional short reason for the cancellation, recorded in the log and forwarded to the job (action kill only).',
+        },
+      },
+      finalizeContent: finalizeTaskContent,
+      output: {
+        // One schema for three results: the registered tool name cannot vary by
+        // call, so the payload discriminates instead. `job` is present on every
+        // single-job result and absent from the list.
+        schema: {
+          oneOf: [
+            { type: 'array', items: PUBLIC_TASK_SCHEMA },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                text: { type: 'string', required: true },
+                job: { ...PUBLIC_TASK_SCHEMA, required: true },
+              },
+            },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                outcome: {
+                  type: 'string',
+                  required: true,
+                  enum: ['cancellation-requested', 'already-finished'],
+                },
+                job: { ...PUBLIC_TASK_SCHEMA, required: true },
+              },
+            },
+          ],
+        },
+        render: (_args, value) => {
+          if (!('job' in value)) return renderJobList(value)
+          return 'text' in value ? renderJobOutput(value) : renderJobKill(value)
+        },
+      },
+      async execute(args, exec) {
+        if (args.action === 'list') {
+          if (args.job_id !== undefined || args.wait !== undefined
+            || args.timeout_ms !== undefined || args.reason !== undefined) {
+            throw new Error('action list takes no other arguments')
+          }
+          return listJobs(ctx, exec)
+        }
+        if (args.action === 'output') {
+          if (args.reason !== undefined) throw new Error('reason is valid only with action kill')
+          return readJobOutput(ctx, exec, args, waitDefault, waitCap)
+        }
+        if (args.wait !== undefined || args.timeout_ms !== undefined) {
+          throw new Error('wait and timeout_ms are valid only with action output')
+        }
+        return killJob(ctx, exec, args)
+      },
+      presentCall: args => args.action === 'list'
+        ? presentTaskCall('List background jobs', 'read')
+        : args.action === 'output'
+          ? presentTaskCall(`Read output from background job ${args.job_id ?? ''}`, 'read', args.job_id)
+          : presentTaskCall(`Kill background job ${args.job_id ?? ''}`, 'execute', args.job_id),
+    }))
+    return
+  }
+
   ctx.tools.register(defineTool({
     name: 'job_output',
     description: 'Read a background job. Stream jobs return only output since the previous read; '
@@ -320,20 +558,10 @@ export function apply(ctx: Context, config: Config): void {
           job: { ...PUBLIC_JOB_SCHEMA, required: true },
         },
       },
-      render: (_args, value) => {
-        const body = value.text.length > 0 ? value.text : '(no new output)'
-        const separator = body.endsWith('\n') ? '' : '\n'
-        return [{ type: 'text', text: `${body}${separator}${statusLine(value.job)}` }]
-      },
+      render: (_args, value) => renderJobOutput(value),
     },
-    async execute(args, exec) {
-      const id = validateJobId(args.job_id)
-      if (args.wait === true) {
-        const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
-        await ctx.jobs.wait(id, timeout, exec.agent, exec.signal)
-      }
-      const read = ctx.jobs.read(id, exec.agent)
-      return { text: read.text, job: publicJob(read.snapshot) }
+    execute(args, exec) {
+      return readJobOutput(ctx, exec, args, waitDefault, waitCap)
     },
     presentCall: args => presentJobCall(`Read output from background job ${args.job_id}`, 'read', args.job_id),
   }))
@@ -343,6 +571,12 @@ export function apply(ctx: Context, config: Config): void {
     description: 'List your background jobs (running and finished) with their ids, kinds, and statuses.',
     parameters: {},
     output: {
+<<<<<<< ours
+      schema: { type: 'array', items: PUBLIC_TASK_SCHEMA },
+      render: (_args, jobs) => renderJobList(jobs),
+<<<<<<< ours
+=======
+=======
       schema: { type: 'array', items: PUBLIC_JOB_SCHEMA },
       render: (_args, jobs) => [{
         type: 'text',
@@ -350,10 +584,11 @@ export function apply(ctx: Context, config: Config): void {
           ? '(no background jobs)'
           : jobs.map(t => `${t.id} [${t.kind}] ${t.status} — ${t.label}`).join('\n'),
       }],
+>>>>>>> theirs
+>>>>>>> theirs
     },
     execute(_args, exec) {
-      const jobs = ctx.jobs.list(exec.agent)
-      return Promise.resolve(jobs.map(publicJob))
+      return Promise.resolve(listJobs(ctx, exec))
     },
     presentCall: () => presentJobCall('List background jobs', 'read'),
   }))
@@ -379,22 +614,10 @@ export function apply(ctx: Context, config: Config): void {
           job: { ...PUBLIC_JOB_SCHEMA, required: true },
         },
       },
-      render: (_args, value) => [{
-        type: 'text',
-        text: value.outcome === 'already-finished'
-          ? `job ${value.job.id} had already finished ${statusLine(value.job)}`
-          : `requested cancellation of job ${value.job.id}`,
-      }],
+      render: (_args, value) => renderJobKill(value),
     },
     execute(args, exec) {
-      const id = validateJobId(args.job_id)
-      const result = ctx.jobs.kill(id, exec.agent, args.reason)
-      // A snapshot describes current state without consuming pending output.
-      const snapshot = publicJob(ctx.jobs.get(id, exec.agent))
-      return Promise.resolve({
-        outcome: result === 'already-finished' ? 'already-finished' as const : 'cancellation-requested' as const,
-        job: snapshot,
-      })
+      return Promise.resolve(killJob(ctx, exec, args))
     },
     presentCall: args => presentJobCall(`Kill background job ${args.job_id}`, 'execute', args.job_id),
   }))

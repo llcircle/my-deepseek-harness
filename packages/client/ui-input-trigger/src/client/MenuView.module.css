@@ -52,9 +52,11 @@
 
 .item {
   display: flex;
-  align-items: center;
+  flex: 0 0 auto;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
+  height: auto;
   min-height: 40px;
   padding: 8px 10px;
   border: none;
@@ -121,10 +123,20 @@
 .itemDescription {
   flex: 1;
   min-width: 0;
+<<<<<<< ours
+  white-space: normal;
+  overflow-wrap: anywhere;
+=======
+<<<<<<< ours
+  white-space: normal;
+  overflow-wrap: anywhere;
+=======
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
+>>>>>>> theirs
+>>>>>>> theirs
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -201,6 +213,7 @@
   /* border-box so min-height matches the .item buttons, whose UA default
      box-sizing already counts the same 8px paddings inside their 40px. */
   box-sizing: border-box;
+  height: auto;
   min-height: 40px;
   padding: 8px 10px;
 }

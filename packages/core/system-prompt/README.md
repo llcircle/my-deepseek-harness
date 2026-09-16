@@ -30,20 +30,40 @@ Mount `dsh-system-prompt` wherever agents run: it provides `ctx.systemPrompt`, t
 <a id="configure-the-prompt"></a>
 ### Configure the prompt
 
+<<<<<<< ours
+The config owns the fixed opener, runtime context, deployment persona, tool order, and automatic use of a translated prompt; everything else comes from registered contributions.
+=======
+<<<<<<< ours
+The config owns the fixed opener, runtime context, deployment persona, tool order, and automatic use of a translated prompt; everything else comes from registered contributions.
+=======
 The config owns the fixed opener, runtime context, deployment persona prefix and suffix, and tool order; everything else comes from registered contributions.
+>>>>>>> theirs
+>>>>>>> theirs
 
 ```yaml
 - name: '@deepseek-ai/dsh-system-prompt'
   config:
     includeHarnessIdentity: true
     includeRuntimeContext: true
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    autoTranslatedPrompt: true
+    translatedPromptFile: '.dsh/system-prompt.zh.prompt.md'
+    persona: 'You are the deployment assistant.'
+=======
     personaPrefix: 'You are the deployment assistant.'
+>>>>>>> theirs
     toolOrder: ['<unlisted-tools>']
 ```
 
 | Field | Default | Meaning |
 |---|---|---|
 | `includeHarnessIdentity` | `true` | Include the fixed `You are an AI agent powered by DeepSeek Harness.` first-party opener at order −1000. Set false only when a compatibility deployment owns the complete system prompt. |
+| `completePromptFile` | — | Absolute path to a UTF-8 file whose whole content becomes the sole system-prompt section (tools, contexts, and variables still resolve). Missing at load means unconfigured; disappearing later fails the request loudly. Typical source: the translation-only file from `/translate-system-prompt`. |
+| `autoTranslatedPrompt` | `true` | Once the session workspace's `translatedPromptFile` exists, map its blank-line paragraphs onto the assembled static sections in order and replace each matched section's text in place, keeping the original section name. Live `skills:catalog` and `deployment:error-lessons` sections are not replaced by the translated archive, and archive paragraphs containing `<available_skills>` are skipped, so skill summaries, error lessons, and runtime context continue to update independently. |
+| `translatedPromptFile` | `.dsh/system-prompt.zh.prompt.md` | Translation-only prompt file; relative paths resolve against the assembling session's workspace. An existing but empty or unreadable file fails assembly loudly. |
 | `includeRuntimeContext` | `true` | Include ordered dynamic runtime context in assembly |
 | `personaPrefix` | `''` | Global persona prefix template at order `0`, before first-party guidance |
 | `personaSuffix` | `''` | Global `deployment:persona-suffix` template at order `10200`, after first-party guidance |
@@ -76,6 +96,18 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
 ### Contribute tool schemas
 
 Tool-schema providers are evaluated per assembly and contribute the model-visible `ToolSchema` set; `ToolRuntime` registers itself automatically, so most tools need no manual wiring here. A provider returns the post-restriction visible set plus the pre-restriction name universe used by `toolOrder`.
+
+### Edit prompt text from Web
+
+When the optional settings provider is mounted, the `system-prompt-overrides` section exposes language-separated replacements for known editable section names plus the user-authored `mcp:intro` section. For each selected section, the editor loads the English provider text and, when present, the matching Chinese text from the workspace translation archive directly into separate editable fields. Web edits write each section in place and are visible to the next model request, including an existing conversation. `deployment:error-lessons` and `skills:catalog` stay live providers: lessons come from the tool-error reflection document and the skill catalog is rebuilt from the live skill registry.
+
+### Suppress a prompt section
+
+`suppressSection(name)` removes one named section from every assembly the calling scope takes part in, wherever it was registered — the global layer, an ancestor scope, or that scope itself. It is not the same thing as shadowing a section: shadowing asks you for replacement text, while suppression says "this section does not exist here", which is what a narrowly scoped helper agent needs when it should carry very little of the prompt. Suppression never deregisters anyone, so the same section keeps rendering for the parent and sibling scopes, and a single suppression layer needs no text of its own.
+
+```text
+ctx.systemPrompt.suppressSection('skills:catalog')
+```
 
 ### Suppress runtime context
 

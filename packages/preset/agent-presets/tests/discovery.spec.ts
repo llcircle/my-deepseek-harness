@@ -344,7 +344,14 @@ describe('rows naming a plugin that cannot be resolved', () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-presets-dangling-'))
     roots.push(home)
     await mkdir(join(home, 'node_modules', '@scope'), { recursive: true })
-    await symlink(join(home, 'deleted-checkout'), join(home, 'node_modules', '@scope', 'pkg'))
+    // A junction reads back exactly like a symlink (lstat is a link, readlink
+    // returns the target, stat follows to ENOENT) but needs no elevation on
+    // Windows, where an unprivileged `symlink` fails outright with EPERM.
+    await symlink(
+      join(home, 'deleted-checkout'),
+      join(home, 'node_modules', '@scope', 'pkg'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    )
     await mkdir(join(home, 'presets', 'probe'), { recursive: true })
     await writeFile(join(home, 'presets', 'probe', COMPOSITION_FILE), "- id: p\n  name: '@scope/pkg'\n")
 

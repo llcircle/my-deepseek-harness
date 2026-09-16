@@ -31,7 +31,15 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
+<<<<<<< ours
+import type { CommandId } from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-goal'
+<<<<<<< ours
+=======
+=======
 import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands'
+>>>>>>> theirs
+>>>>>>> theirs
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PlanProjection, PlanUnitState } from './types.ts'
@@ -60,10 +68,41 @@ declare module '@deepseek-ai/cordis' {
  */
 export const EXIT_PLAN_MODE = 'exit_plan_mode'
 
+/**
+ * Built-in plan guidance, used when the deployment configures no `section`.
+ *
+ * It lives here rather than only in the base bundle because a patch layer
+ * replaces an entry's whole `config` object instead of merging into it
+ * (`vendor/include` assigns `target[key] = value`). A deployment that only
+ * wants to flip `goalOnApprove` would otherwise have to repeat this entire
+ * text in its patch, and one that forgot to would load a plan-mode entry with
+ * no section at all.
+ */
+const DEFAULT_SECTION = `You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed only to keep the request shape stable. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.`
+
 /** Deployment-owned plan guidance. */
 export interface PlanModeConfig {
-  /** Guidance rendered as the `plan:policy` prompt section while plan mode is active. */
-  section: string
+  /**
+   * Guidance rendered as the `plan:policy` prompt section while plan mode is
+   * active. Omit to use the built-in {@link DEFAULT_SECTION}; it stays optional
+   * so a patch layer can adjust a sibling switch without repeating this text.
+   */
+  section?: string
+  /**
+   * Create a durable goal from the plan on review approval. Requires the goal
+   * service; approval fails loudly when it is not mounted.
+   */
+  goalOnApprove?: boolean
 }
 
 /** The review question's id, echoed in the answer this tool reads. */
@@ -90,26 +129,42 @@ function firstHeading(plan: string): string | undefined {
   return undefined
 }
 
+/** A validated plan config: `section` is always resolved to usable guidance. */
+export interface ResolvedPlanModeConfig {
+  /** Guidance rendered as the `plan:policy` section; never blank. */
+  section: string
+  /** Whether approval creates a goal; absent when the deployment left it unset. */
+  goalOnApprove?: boolean
+}
+
 /**
- * Validate deployment-owned plan guidance. Missing, blank, non-string, or
- * unknown fields fail at plugin load rather than being ignored.
+ * Validate deployment-owned plan guidance. A missing `section` takes the
+ * built-in {@link DEFAULT_SECTION}; a present-but-blank or non-string one is a
+ * misconfiguration and fails at plugin load rather than being ignored.
  *
  * @param config Raw plugin config.
  * @returns A detached validated config.
  */
-export function resolveConfig(config: PlanModeConfig): PlanModeConfig {
+export function resolveConfig(config: PlanModeConfig): ResolvedPlanModeConfig {
   const section = (config as Partial<PlanModeConfig>).section
-  if (typeof section !== 'string') {
-    throw new Error('PlanModeConfig needs a string `section`')
+  if (section !== undefined && typeof section !== 'string') {
+    throw new Error('PlanModeConfig `section` must be a string when set')
   }
-  if (section.trim() === '') {
-    throw new Error('PlanModeConfig needs a non-empty `section`')
+  if (typeof section === 'string' && section.trim() === '') {
+    throw new Error('PlanModeConfig `section` must be non-empty when set')
   }
-  const unknown = Object.keys(config).filter(key => key !== 'section')
+  const goalOnApprove = (config as Partial<PlanModeConfig>).goalOnApprove
+  if (goalOnApprove !== undefined && typeof goalOnApprove !== 'boolean') {
+    throw new Error('PlanModeConfig `goalOnApprove` must be a boolean')
+  }
+  const unknown = Object.keys(config).filter(key => key !== 'section' && key !== 'goalOnApprove')
   if (unknown.length > 0) {
-    throw new Error(`PlanModeConfig has unknown key(s) ${unknown.join(', ')} — config is { section }`)
+    throw new Error(`PlanModeConfig has unknown key(s) ${unknown.join(', ')} — config is { section, goalOnApprove }`)
   }
-  return { section }
+  return {
+    section: section ?? DEFAULT_SECTION,
+    ...goalOnApprove === undefined ? {} : { goalOnApprove },
+  }
 }
 
 const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
@@ -174,6 +229,9 @@ export class PlanModeController extends Service {
   /** Validated deployment-owned guidance. */
   private readonly section: string
 
+  /** Whether review approval starts a goal from the plan. */
+  private readonly goalOnApprove: boolean
+
   /**
    * Latest selection per session awaiting the next accepted in-turn pre-step.
    * `narrate` is true for user selections and false for the exit tool, whose
@@ -181,9 +239,11 @@ export class PlanModeController extends Service {
    */
   private readonly pendingIntents = new WeakMap<Session, { active: boolean; narrate: boolean }>()
 
-  constructor(ctx: Context, config: PlanModeConfig = { section: '' }) {
+  constructor(ctx: Context, config: PlanModeConfig = {}) {
     super(ctx, 'planMode')
-    this.section = resolveConfig(config).section
+    const resolved = resolveConfig(config)
+    this.section = resolved.section
+    this.goalOnApprove = resolved.goalOnApprove === true
     let disposed = false
     // Pre-step is outside Session.append publication, so it can append the
     // log-only mode event inside an open turn without re-entering the session.
@@ -340,6 +400,19 @@ export class PlanModeController extends Service {
           throw new Error(feedback === ''
             ? 'The user chose to keep planning; revise the plan and present it again.'
             : `The user chose to keep planning; their feedback: ${feedback}`)
+        }
+        if (this.goalOnApprove) {
+          const goals = ctx.get('goals')
+          if (goals === undefined) {
+            throw new Error('plan approval could not start a goal: goalOnApprove is enabled but no goal service is mounted')
+          }
+          const current = goals.get(agent)
+          if (current !== undefined && current.phase !== 'complete') {
+            throw new Error('plan approval could not start a goal: an unfinished goal already exists for this session')
+          }
+          // Create before staging the switch: a failed goal mutation leaves
+          // plan mode active with no half-applied transition.
+          goals.create(agent, { objective: args.plan })
         }
         // Keep plan guidance for the rest of this assistant tool batch. The
         // silent selection is appended at the next accepted in-turn pre-step,

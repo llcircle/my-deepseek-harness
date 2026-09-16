@@ -37,6 +37,7 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
-    }
+    },
+    { "path": "../../goal/goal" }
   ]
 }

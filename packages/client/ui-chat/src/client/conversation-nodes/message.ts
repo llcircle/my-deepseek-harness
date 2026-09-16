@@ -5,7 +5,15 @@ import type {
 import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
+<<<<<<< ours
+import { contextForm, contextProvenance, isLegacySkillCatalogSource } from './event-projection.ts'
+=======
+<<<<<<< ours
+import { contextForm, contextProvenance, isLegacySkillCatalogSource } from './event-projection.ts'
+=======
 import { contextForm, contextProducer } from './event-projection.ts'
+>>>>>>> theirs
+>>>>>>> theirs
 
 interface ReferencedUserMessageNode extends UserMessageNode {
   /** Labels cited by the immediately following session-reference context. */
@@ -34,6 +42,10 @@ declare module '../contract/chat-nodes.ts' {
   }
 }
 
+function isLegacySkillCatalog(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
+  return event.type === 'user/message' && isLegacySkillCatalogSource(event.data.source)
+}
+
 function isCompactionCheckpoint(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
   if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return false
   const source = event.data.source
@@ -47,6 +59,8 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   match: event => event.type === 'user/message'
     && isAppendSurfaceEvent(event)
     && !isCompactionCheckpoint(event)
+    // Historical catalogs were user-role context; the catalog now belongs to the system prompt.
+    && !isLegacySkillCatalog(event)
     ? { id: String(event.data.id), role: 'start' }
     : null,
   start: (_context, match, reader) => {

@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { SettingsDescriptor } from '@deepseek-ai/dsh-settings'
@@ -76,6 +79,10 @@ describe('the settings Remote namespace a configuration page calls', () => {
     expect(controller.typertRemote.namespace).toBe('settings')
     expect(remoteMethods(controller)).toEqual([
       { method: 'describe', invocation: { kind: 'direct' } },
+      { method: 'readPromptSections', invocation: { kind: 'direct' } },
+      { method: 'readToolErrors', invocation: { kind: 'direct' } },
+      { method: 'readReflections', invocation: { kind: 'direct' } },
+      { method: 'writeReflections', invocation: { kind: 'direct' } },
       { method: 'canOpenAgentPresetDirectory', invocation: { kind: 'direct' } },
       { method: 'update', invocation: { kind: 'direct' } },
       { method: 'replace', invocation: { kind: 'direct' } },
@@ -430,5 +437,76 @@ describe('the settings Remote namespace a configuration page calls', () => {
       .rejects.toMatchObject({ code: 'gateway/cancelled' })
     await expect(controller.openAgentPresetDirectory('second', new AbortController().signal))
       .rejects.toMatchObject({ code: 'gateway/internal', message: 'path open failed: desktop unavailable' })
+  })
+})
+
+describe('per-subject failure lessons', () => {
+  const dirs: string[] = []
+  afterEach(async () => {
+    for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
+  })
+
+  /** A controller pointed at a scratch Harness home holding one lessons document. */
+  async function boot(doc: string): Promise<{ controller: SettingsController; docPath: string }> {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-settings-reflections-'))
+    dirs.push(dir)
+    const docPath = join(dir, 'error-reflections.md')
+    if (doc !== '') await writeFile(docPath, doc, 'utf8')
+    const ctx = new Context()
+    await ctx.plugin(MemorySettings, {})
+    ctx.settings.register(NS, Profile, {})
+    await ctx.plugin(SettingsController, { toolErrorDirectory: dir })
+    return { controller: ctx.settingsController, docPath }
+  }
+
+  it('projects only the subjects that actually carry lessons', async () => {
+    const { controller } = await boot([
+      '手写前言。',
+      '',
+      '## 2026-09-08',
+      '历史日期小节属于全局部分，不是某个主题。',
+      '',
+      '## tool:read',
+      '读大文件先看行数。',
+      '',
+      '## tool:write',
+      '',
+      '## mcp__github__search',
+      '仓库名要带 owner。',
+    ].join('\n'))
+
+    expect(await controller.readReflections()).toEqual([
+      { subject: 'mcp:github', text: '仓库名要带 owner。' },
+      { subject: 'tool:read', text: '读大文件先看行数。' },
+    ])
+  })
+
+  it('reads an absent document as no lessons at all', async () => {
+    const { controller } = await boot('')
+    expect(await controller.readReflections()).toEqual([])
+  })
+
+  it('rewrites only the named subjects and keeps the rest of the document', async () => {
+    const { controller, docPath } = await boot([
+      '手写前言。',
+      '',
+      '## 2026-09-08',
+      '历史经验，别动我。',
+      '',
+      '## tool:read',
+      '旧的。',
+    ].join('\n'))
+
+    await controller.writeReflections([
+      { subject: 'tool:read', text: '新的。' },
+      { subject: 'tool:write', text: '写文件要先确认路径。' },
+    ])
+
+    const stored = await readFile(docPath, 'utf8')
+    expect(stored).toContain('手写前言。')
+    expect(stored).toContain('历史经验，别动我。')
+    expect(stored).toContain('## tool:read\n\n新的。')
+    expect(stored).toContain('## tool:write\n\n写文件要先确认路径。')
+    expect(stored).not.toContain('旧的。')
   })
 })

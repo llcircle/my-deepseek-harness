@@ -26,7 +26,9 @@ describe('NO_START_CAPABILITIES', () => {
       outputSchema: false,
       depthLimit: false,
       toolFilter: false,
+      allowTools: false,
       persona: false,
+      omitSections: false,
     })
     expect(Object.isFrozen(NO_START_CAPABILITIES)).toBe(true)
   })

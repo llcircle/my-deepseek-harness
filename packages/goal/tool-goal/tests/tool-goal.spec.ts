@@ -655,3 +655,161 @@ describe('goal tool state transitions', () => {
     expect(blocked.additionalContexts).toBeUndefined()
   })
 })
+
+describe('merged goal tool shape', () => {
+  it('registers one goal tool, no split names, and the merged section', async () => {
+    const { ctx, fiber } = await harness({ toolShape: 'merged', blockedAfterConsecutiveRounds: 5 })
+    expect(ctx.tools.get('goal')?.name).toBe('goal')
+    for (const name of ['create_goal', 'get_goal', 'update_goal']) {
+      expect(ctx.tools.get(name)).toBeUndefined()
+    }
+    expect(ctx.tools.executionMode({ signal: testToolSignal, callId: ToolCallId('goal'), name: 'goal', arguments: {} }))
+      .toEqual({ kind: 'exclusive' })
+
+    const sections = (await ctx.systemPrompt.assemble()).sections
+    const section = sections.find(item => item.name === 'tool:goal:merged')
+    expect(section?.text).toContain('action create')
+    expect(section?.text).toContain('action resume')
+    expect(section?.text).toContain('at least 5 consecutive goal rounds')
+    expect(sections.some(item => item.name === 'tool:goal')).toBe(false)
+
+    await fiber.dispose()
+    expect(ctx.tools.get('goal')).toBeUndefined()
+    expect((await ctx.systemPrompt.assemble()).sections.some(item => item.name === 'tool:goal:merged'))
+      .toBe(false)
+  })
+
+  it('declares every action in one enum and keeps the payload fields optional', async () => {
+    const { ctx } = await harness({ toolShape: 'merged' })
+    const schema = ctx.tools.schemas().find(item => item.name === 'goal')
+    const parameters = schema?.parameters as
+      | { properties?: Record<string, { enum?: string[]; required?: boolean }>; required?: string[] }
+      | undefined
+    expect(parameters?.properties?.['action']?.enum)
+      .toEqual(['create', 'get', 'edit', 'pause', 'resume', 'complete', 'blocked'])
+    expect(parameters?.required).toEqual(['action'])
+    for (const field of ['objective', 'goal_id', 'revision', 'max_goal_rounds', 'blocked_reason']) {
+      expect(parameters?.properties?.[field]?.required).toBeUndefined()
+    }
+  })
+
+  it('routes all seven actions through one tool with the split shape policy', async () => {
+    const { ctx, root } = await harness({ toolShape: 'merged' })
+    openTurn(root, { kind: 'user' })
+
+    expect(resultJson(await execute(ctx, 'goal', { action: 'get' }, root.agent))).toEqual({ goal: null })
+
+    const created = resultGoal(await execute(ctx, 'goal', {
+      action: 'create',
+      objective: 'ship the merged goal tool',
+      max_goal_rounds: 7,
+    }, root.agent))
+    expect(created).toMatchObject({
+      objective: 'ship the merged goal tool',
+      phase: 'active',
+      maxGoalRounds: 7,
+      revision: 1,
+    })
+
+    const id = created['id'] as string
+    expect(resultGoal(await execute(ctx, 'goal', { action: 'get' }, root.agent)))
+      .toMatchObject({ id, revision: 1 })
+
+    expect(resultGoal(await execute(ctx, 'goal', {
+      action: 'edit',
+      goal_id: id,
+      revision: 1,
+      objective: 'ship it with the merged shape',
+    }, root.agent))).toMatchObject({ objective: 'ship it with the merged shape', revision: 2 })
+
+    expect(resultGoal(await execute(ctx, 'goal', {
+      action: 'pause', goal_id: id, revision: 2,
+    }, root.agent))).toMatchObject({ phase: 'paused', revision: 3 })
+
+    expect(resultGoal(await execute(ctx, 'goal', {
+      action: 'resume', goal_id: id, revision: 3,
+    }, root.agent))).toMatchObject({ phase: 'active', revision: 4 })
+
+    expect(resultGoal(await execute(ctx, 'goal', {
+      action: 'complete', goal_id: id, revision: 4,
+    }, root.agent))).toMatchObject({ phase: 'complete', revision: 5 })
+  })
+
+  it('rejects the arguments a chosen action does not take', async () => {
+    const { ctx, root } = await harness({ toolShape: 'merged' })
+    openTurn(root, { kind: 'user' })
+
+    const codeOf = async (args: Record<string, unknown>): Promise<string | undefined> =>
+      (await execute(ctx, 'goal', args, root.agent)).error?.info?.code
+
+    expect(await codeOf({ action: 'get', objective: 'ignored' })).toBe('GOAL_TOOL_INVALID_UPDATE')
+    expect(await codeOf({ action: 'get', goal_id: 'goal-1', revision: 1 })).toBe('GOAL_TOOL_INVALID_UPDATE')
+    expect(await codeOf({ action: 'create' })).toBe('GOAL_TOOL_INVALID_CREATE')
+    expect(await codeOf({ action: 'create', objective: 'ship', goal_id: 'goal-1', revision: 1 }))
+      .toBe('GOAL_TOOL_INVALID_CREATE')
+
+    // The merged schema cannot mark the compare-and-set ref required, so the
+    // execution layer owns that check rather than trusting the model's types.
+    expect(await codeOf({ action: 'edit', objective: 'x' })).toBe('GOAL_TOOL_INVALID_UPDATE')
+    expect(await codeOf({ action: 'pause', goal_id: 'goal-1' })).toBe('GOAL_TOOL_INVALID_UPDATE')
+
+    const created = resultGoal(await execute(ctx, 'goal', { action: 'create', objective: 'ship' }, root.agent))
+    expect(await codeOf({
+      action: 'complete',
+      goal_id: created['id'],
+      revision: created['revision'],
+      blocked_reason: 'not valid here',
+    })).toBe('GOAL_TOOL_INVALID_UPDATE')
+    expect(await codeOf({
+      action: 'blocked', goal_id: created['id'], revision: created['revision'],
+    })).toBe('GOAL_TOOL_INVALID_UPDATE')
+  })
+
+  it('keeps the configured self-block round floor on the merged shape', async () => {
+    const { ctx, root } = await harness({ toolShape: 'merged', blockedAfterConsecutiveRounds: 4 })
+    let turn = openTurn(root, { kind: 'user' })
+    const created = ctx.goals.create(root.agent, { objective: 'merged floor' })
+    closeTurn(root, turn)
+    const ref: GoalRef = { id: GoalId(created.id), revision: created.revision }
+
+    for (let round = 1; round <= 3; round += 1) {
+      turn = openTurn(root, { kind: 'goal', goalId: ref.id, revision: ref.revision, round })
+      const refused = await execute(ctx, 'goal', {
+        action: 'blocked',
+        goal_id: ref.id,
+        revision: ref.revision,
+        blocked_reason: 'The same prerequisite is still missing.',
+      }, root.agent)
+      expect(refused.error?.info?.code).toBe('GOAL_TOOL_BLOCK_THRESHOLD')
+      closeTurn(root, turn)
+    }
+    openTurn(root, { kind: 'goal', goalId: ref.id, revision: ref.revision, round: 4 })
+    const blocked = await execute(ctx, 'goal', {
+      action: 'blocked',
+      goal_id: ref.id,
+      revision: ref.revision,
+      blocked_reason: 'The same prerequisite is still missing.',
+    }, root.agent)
+    expect(resultGoal(blocked)).toMatchObject({
+      phase: 'blocked',
+      blockedReason: { code: 'model-reported', message: 'The same prerequisite is still missing.' },
+      roundsStarted: 4,
+    })
+    const contexts = blocked.additionalContexts ?? []
+    expect(contexts).toHaveLength(1)
+    const block = contexts[0]?.content[0]
+    if (block?.type !== 'text') throw new Error('expected one text wrap-up block')
+    expect(block.text).toContain('<goal_blocked>')
+    expect(block.text).toContain('The same prerequisite is still missing.')
+  })
+
+  it('rejects an unknown tool shape before registering anything', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    expect(() => toolGoal.apply(ctx, { toolShape: 'both' as 'split' }))
+      .toThrow('toolShape must be "split" or "merged"')
+    expect(ctx.tools.get('goal')).toBeUndefined()
+    expect(ctx.tools.get('get_goal')).toBeUndefined()
+  })
+})

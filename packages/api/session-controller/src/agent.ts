@@ -1,6 +1,8 @@
 /** Agent activation, composition, and model-selection policy owned by API Session. */
 
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
@@ -15,6 +17,44 @@ import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-ses
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-typert-registry'
 import type { ModelSelection } from './types.ts'
+
+/**
+ * Walk upward from `start` to the nearest ancestor containing a `.git`
+ * directory; a start outside any repository resolves to itself. Mirrors the
+ * project-root rule the filesystem skill provider uses.
+ * @param start - absolute directory to walk from.
+ * @returns the project root candidate.
+ */
+function findProjectRoot(start: string): string {
+  let current = resolve(start)
+  while (true) {
+    if (existsSync(join(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current) return start
+    current = parent
+  }
+}
+
+/**
+ * Read the project-owned Agent preset override: the first non-empty line of
+ * `<projectRoot>/.dsh/agent-preset`. A missing or blank file means "no
+ * override" — projects without the file keep the deployment or user default.
+ * @param cwd - the workspace directory the session runs in.
+ * @returns the preset id to compose, or `undefined` to keep the default.
+ */
+export function projectPresetOverride(cwd: string): string | undefined {
+  if (!isAbsolute(cwd)) return undefined
+  const file = join(findProjectRoot(cwd), '.dsh', 'agent-preset')
+  let raw: string
+  try {
+    raw = readFileSync(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
+    throw error
+  }
+  const id = raw.trim().split('\n')[0]?.trim()
+  return id === undefined || id === '' ? undefined : id
+}
 
 /** Cold Session identity absent from persistence. */
 export class ApiSessionNotFound extends Error {}
@@ -475,7 +515,7 @@ export class ApiSessionAgentController {
     } catch (error: unknown) {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
-    const composition = await this.composeAgent(presetId)
+    const composition = await this.composeAgent(presetId ?? projectPresetOverride(cwd))
     return (await this.ctx.agents.create({
       sessionId,
       agentOptions: this.agentOptions(),

@@ -12,6 +12,7 @@ import UserQuestionService, {
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import GoalService from '@deepseek-ai/dsh-goal'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import PlanModeController, { EXIT_PLAN_MODE, planProjectionDefinition, resolveConfig } from '../src/index.ts'
 import type { PlanModeConfig } from '../src/index.ts'
@@ -180,13 +181,21 @@ function execute(ctx: Context, name: string, agent?: Agent) {
 }
 
 describe('resolveConfig', () => {
-  it('requires string, non-empty plan instructions', () => {
-    expect(() => resolveConfig({} as PlanModeConfig))
-      .toThrow('needs a string `section`')
+  it('falls back to the built-in guidance when no section is configured', () => {
+    // A patch layer replaces an entry's whole `config` object rather than
+    // merging into it, so a deployment that only flips `goalOnApprove` sends
+    // no section at all and must still get usable plan guidance.
+    const resolved = resolveConfig({ goalOnApprove: true })
+    expect(resolved.section).toContain('You are in plan mode.')
+    expect(resolved.goalOnApprove).toBe(true)
+    expect(resolveConfig({}).section).toBe(resolved.section)
+  })
+
+  it('rejects a present-but-unusable plan section', () => {
     expect(() => resolveConfig({ section: 5 } as unknown as PlanModeConfig))
-      .toThrow('needs a string `section`')
+      .toThrow('`section` must be a string when set')
     expect(() => resolveConfig({ section: '   ' }))
-      .toThrow('needs a non-empty `section`')
+      .toThrow('`section` must be non-empty when set')
   })
 
   it('returns a detached plan config', () => {
@@ -198,7 +207,7 @@ describe('resolveConfig', () => {
 
   it('rejects fields outside the plan policy config', () => {
     expect(() => resolveConfig({ section: TEST_PLAN_SECTION, tools: ['read'] } as unknown as PlanModeConfig))
-      .toThrow('unknown key(s) tools — config is { section }')
+      .toThrow('unknown key(s) tools — config is { section, goalOnApprove }')
   })
 })
 
@@ -1204,5 +1213,95 @@ describe('HMR disposal', () => {
     expect((await ctx.systemPrompt.assemble()).sections.map(section => section.name)).not.toContain('plan:policy')
     await boundary(ctx, agent, 'step-start')
     expect(agent.session.snapshotEvents().some(event => event.type === 'plan/mode')).toBe(false)
+  })
+})
+
+describe('plan approval starting a goal', () => {
+  let callCounter = 0
+
+  function callExit(ctx: Context, agent: Agent, plan = '# The plan\n\ndo things') {
+    return ctx.tools.execute({
+      callId: ToolCallId(`call-exit-goal-${++callCounter}`),
+      name: EXIT_PLAN_MODE,
+      arguments: { plan },
+      signal: new AbortController().signal,
+      agent,
+    })
+  }
+
+  async function setupWithGoals(config: PlanModeConfig = { section: TEST_PLAN_SECTION, goalOnApprove: true }) {
+    const ctx = new Context()
+    await mountProjectionSeam(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(GoalService)
+    await ctx.plugin(PlanModeController, config)
+    await ctx.plugin(UserQuestionService)
+    registerQuestionAnswerer(ctx, {
+      ask: _request => Promise.resolve({ answers: [{ id: 'plan-review', selected: ['Approve'] }] }),
+    })
+    const agent = await agentWithSession(ctx, 'goal-agent', { active: true })
+    return { ctx, agent }
+  }
+
+  it('creates a durable goal from the approved plan', async () => {
+    const { ctx, agent } = await setupWithGoals()
+
+    const result = await callExit(ctx, agent)
+
+    expect(result.isError).toBe(false)
+    const goal = ctx.goals.get(agent)
+    expect(goal?.objective).toBe('# The plan\n\ndo things')
+    expect(goal?.phase).toBe('active')
+    expect(ctx.planMode.get(agent)).toEqual({ active: true, pending: false })
+    // The create is durable: the folded log carries the goal change.
+    expect(agent.session.snapshotEvents().some(event => event.type === 'goal/change')).toBe(true)
+  })
+
+  it('creates no goal while goalOnApprove is disabled', async () => {
+    const { ctx, agent } = await setupWithGoals({ section: TEST_PLAN_SECTION })
+
+    const result = await callExit(ctx, agent)
+
+    expect(result.isError).toBe(false)
+    expect(ctx.goals.get(agent)).toBeUndefined()
+  })
+
+  it('fails the approval loudly when goalOnApprove is enabled but no goal service is mounted', async () => {
+    const ctx = new Context()
+    await mountProjectionSeam(ctx)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(PlanModeController, { section: TEST_PLAN_SECTION, goalOnApprove: true })
+    await ctx.plugin(UserQuestionService)
+    registerQuestionAnswerer(ctx, {
+      ask: _request => Promise.resolve({ answers: [{ id: 'plan-review', selected: ['Approve'] }] }),
+    })
+    const agent = await agentWithSession(ctx, 'goalless-agent', { active: true })
+
+    const result = await callExit(ctx, agent)
+
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: 'Error: plan approval could not start a goal: goalOnApprove is enabled but no goal service is mounted' }])
+    // No half-applied transition: plan mode stays active.
+    expect(foldPlanMode(agent.session.snapshotEvents())).toBe(true)
+  })
+
+  it('refuses to replace an unfinished goal', async () => {
+    const { ctx, agent } = await setupWithGoals()
+    ctx.goals.create(agent, { objective: 'An unfinished objective' })
+
+    const result = await callExit(ctx, agent)
+
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: 'Error: plan approval could not start a goal: an unfinished goal already exists for this session' }])
+    expect(ctx.goals.get(agent)?.objective).toBe('An unfinished objective')
+  })
+
+  it('rejects a non-boolean goalOnApprove at load', () => {
+    expect(() => resolveConfig({ section: TEST_PLAN_SECTION, goalOnApprove: 'yes' as unknown as boolean }))
+      .toThrow('`goalOnApprove` must be a boolean')
   })
 })

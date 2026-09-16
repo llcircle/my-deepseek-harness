@@ -37,7 +37,15 @@ A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md
 
 `disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
 
+<<<<<<< ours
+The plugin also accepts a runtime `invocationOverrides` map from skill name to a trigger state: `passive` keeps both surfaces, `active-only` restricts the skill to explicit user invocation, and `ignored` hides it from every catalog. A configured state overrides the frontmatter policy for that skill; keys must be valid skill names and fail plugin load otherwise. The runtime settings section adds a `projects` record keyed by workspace path, so a project map can override the global map per session cwd.
+=======
+<<<<<<< ours
+The plugin also accepts a runtime `invocationOverrides` map from skill name to a trigger state: `passive` keeps both surfaces, `active-only` restricts the skill to explicit user invocation, and `ignored` hides it from every catalog. A configured state overrides the frontmatter policy for that skill; keys must be valid skill names and fail plugin load otherwise. The runtime settings section adds a `projects` record keyed by workspace path, so a project map can override the global map per session cwd.
+=======
 Catalog entries and loaded skills expose the resolved instruction-file path, so symlinked directories and flat files can open as regular-file previews. Reload locators and resource bases retain the discovered paths, including symlinks.
+>>>>>>> theirs
+>>>>>>> theirs
 
 The catalog and the body have separate lifecycles: discovery parses frontmatter into the catalog entry, and every load re-reads the current file, so editing a skill body needs no versioning or cache invalidation.
 
@@ -73,6 +81,8 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 | `customSkillDirs` | `[]` | Additional local skill roots, after project roots and before user roots |
 | `watch` | `true` | Watch local roots and invalidate the provider when the catalog may have changed |
 | `bundledSkillDir` | — | Bundled skill root scanned at rank 600 when configured |
+| `invocationOverrides` | `{}` | Global per-skill trigger states (`passive`, `active-only`, `ignored`) overriding frontmatter |
+| `SKILL_FILESYSTEM_SETTINGS_NAMESPACE` | `skill-filesystem` | Runtime settings section; `projects.<cwd>.invocationOverrides` overrides the global map per workspace |
 
 The remaining `watch*` fields tune Chokidar behavior — polling, stability window, interval, project cap, and symlink following. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill-filesystem) is the exhaustive source for every field.
 

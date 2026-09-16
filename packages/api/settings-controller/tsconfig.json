@@ -24,6 +24,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../guard/tool-error-journal"
+    },
+    {
       "path": "../../util/native-command"
     },
     {

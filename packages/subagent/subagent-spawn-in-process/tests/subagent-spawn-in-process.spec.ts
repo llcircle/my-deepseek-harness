@@ -16,6 +16,9 @@ import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '
 import * as spawn from '../src/index.ts'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+// Type-only: pulls the ctx.systemPrompt merge so the omitSections case can
+// register the deployment section it then removes from the child.
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -298,7 +301,9 @@ describe('dsh-subagent-spawn-in-process', () => {
       outputSchema: true,
       depthLimit: true,
       toolFilter: true,
+      allowTools: true,
       persona: true,
+      omitSections: true,
     })
   })
 
@@ -452,6 +457,57 @@ describe('dsh-subagent-spawn-in-process', () => {
         toolFilter: { deny: ['no_such_tool'] },
       })).rejects.toThrow(/unknown global tool "no_such_tool"/)
       expect(ctx.agents.list().length).toBe(before)
+    })
+  })
+
+  describe('the narrow-helper knobs (allowTools and omitSections)', () => {
+    it('allowTools keeps exactly the named tools and skips a name this deployment never had', async () => {
+      const { ctx, parent, adapter } = await setup([textResponse('done')])
+      ctx.tools.register(defineContentToolFixture({
+        name: 'keep_me', description: 'kept', parameters: {},
+        execute: () => Promise.resolve([{ type: 'text', text: 'ran' }]),
+      }))
+      ctx.tools.register(defineContentToolFixture({
+        name: 'drop_me', description: 'dropped', parameters: {},
+        execute: () => Promise.resolve([{ type: 'text', text: 'ran' }]),
+      }))
+      // `never_registered` is the whole point of this form: a functional helper
+      // states the tools it needs without knowing what this deployment mounts,
+      // so an entry matching nothing is skipped rather than fatal. The strict
+      // `toolFilter.allow` beside it stays the tool for exact control.
+      const run = await start(ctx, 'spawn', {
+        prompt: [{ type: 'text', text: 'do X' }],
+        parent,
+        allowTools: ['keep_me', 'never_registered'],
+      })
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
+      const names = (adapter.requests[0]!.tools ?? []).map(t => t.name)
+      expect(names).toContain('keep_me')
+      expect(names).not.toContain('drop_me')
+      await run.dispose()
+    })
+
+    it('omitSections removes the named section from the child prompt while the parent keeps it', async () => {
+      const { ctx, parent, adapter } = await setup([
+        textResponse('parent answer'),
+        textResponse('child answer'),
+      ])
+      ctx.systemPrompt.section({ name: 'test:deployment-note', order: 6100, text: 'DEPLOYMENT NOTE MARKER.' })
+      parent.followup(createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }))
+      await parent.whenIdle()
+
+      const run = await start(ctx, 'spawn', {
+        prompt: [{ type: 'text', text: 'do X' }],
+        parent,
+        omitSections: ['test:deployment-note'],
+      })
+      await run.result
+      // The parent's own request (index 0) still carries it: suppression is
+      // scoped to the child, never a deployment-wide edit.
+      expect(adapter.requests[0]!.system).toContain('DEPLOYMENT NOTE MARKER.')
+      expect(adapter.requests.at(-1)!.system).not.toContain('DEPLOYMENT NOTE MARKER.')
+      await run.dispose()
     })
   })
 

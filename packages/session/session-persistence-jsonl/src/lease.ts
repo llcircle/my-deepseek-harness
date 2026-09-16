@@ -31,7 +31,13 @@
 import { mkdir, open, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
+<<<<<<< ours
+=======
+<<<<<<< ours
+=======
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
+>>>>>>> theirs
+>>>>>>> theirs
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { acquireLockHandleWin32, releaseLockHandleWin32 } from './win32.ts'
@@ -44,6 +50,28 @@ type HeldLock =
   | { readonly kind: 'posix'; readonly handle: FileHandle }
   | { readonly kind: 'win32'; readonly handle: number }
 
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+/**
+ * Promise face over fs-ext's callback flock, pinned to its string-flag
+ * overload. The native binding loads on first POSIX use: Windows never takes
+ * this branch, and a machine without the fs-ext binding still boots the
+ * harness (the worker deployment aliases this import to its stub).
+ */
+async function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
+  const { flock } = await import('fs-ext')
+  return new Promise((resolve, reject) => {
+    flock(fd, flags, (error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
+}
+
+=======
+>>>>>>> theirs
 /** Whether a flock failure means another descriptor holds the lock. */
 function isLockContention(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code

@@ -23,10 +23,15 @@ agent 运行时，唯一的追加点是前置（prepend）注册的 `agent/pre-s
 interface PlanModeConfig {
   /** Guidance rendered as the `plan:policy` prompt section while plan mode is active. */
   section: string
+  /**
+   * Create a durable goal from the plan on review approval. Requires the goal
+   * service; approval fails loudly when it is not mounted.
+   */
+  goalOnApprove?: boolean
 }
 ```
 
-`section` 缺失、为空白或不是字符串，以及任何未知键，都会在插件加载时失败，而不是被忽略。计划模式激活期间，确切的 `section` 文本以 order 50 渲染为 `plan:policy` [系统提示词段落](system-prompt.zh.md)；未激活的计划模式不贡献任何文本。
+`section` 缺失、为空白或不是字符串，以及任何未知键，都会在插件加载时失败，而不是被忽略。计划模式激活期间，确切的 `section` 文本以 order 50 渲染为 `plan:policy` [系统提示词段落](system-prompt.zh.md)；未激活的计划模式不贡献任何文本。设置 `goalOnApprove: true` 后，批准评审还会通过已挂载的 goal 服务，把评审后的计划创建为持久 goal。
 
 ## 退出工具与 `/plan` 命令
 

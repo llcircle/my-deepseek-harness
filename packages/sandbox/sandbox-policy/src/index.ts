@@ -38,15 +38,55 @@ function resolveWorkspaceRoot(path: string): string {
   return path
 }
 
+/**
+ * Locales for the policy context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
+const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
+export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
+
+/** A locale already resolved for rendering; `auto` never reaches the templates. */
+type ResolvedLocale = 'en' | 'zh'
+
+/** Resolve `auto` against the assembly's language, pinning `en`/`zh` as given. */
+function resolveContextLocale(preference: ContextLocale, assemblyLocale: string | undefined): ResolvedLocale {
+  if (preference !== 'auto') return preference
+  return assemblyLocale === 'zh' ? 'zh' : 'en'
+}
+
+/**
+ * Locales for the policy context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
+const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
+export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
+
+/** A locale already resolved for rendering; `auto` never reaches the templates. */
+type ResolvedLocale = 'en' | 'zh'
+
+/** Resolve `auto` against the assembly's language, pinning `en`/`zh` as given. */
+function resolveContextLocale(preference: ContextLocale, assemblyLocale: string | undefined): ResolvedLocale {
+  if (preference !== 'auto') return preference
+  return assemblyLocale === 'zh' ? 'zh' : 'en'
+}
+
 /** Render the policy without claiming which capabilities are mounted. */
-function renderPolicyContext(policy: SandboxExecutionPolicy): string {
+function renderPolicyContext(policy: SandboxExecutionPolicy, locale: ResolvedLocale): string {
   switch (policy.mode) {
     case 'read-only':
-      return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
+      return locale === 'zh'
+        ? '当前 DSH 文件策略：read-only。现行模式下，DSH 文件沙箱不允许任何可用操作修改文件。不要仅因该策略拒绝必要的修改：先正常尝试可用工具，并遵循其返回的拒绝与升级指引。'
+        : 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
     case 'workspace-write':
-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+      return locale === 'zh'
+        ? `当前 DSH 文件策略：workspace-write。DSH 文件沙箱允许通过可用操作修改会话工作区内的文件：${JSON.stringify(policy.workspaceRoot)}。部分平台临时目录也可能可写。`
+        : `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
     case 'danger-full-access':
-      return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
+      return locale === 'zh'
+        ? '当前 DSH 文件策略：danger-full-access。DSH 文件沙箱不通过可用操作限制文件修改。'
+        : 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
     /* v8 ignore next 4 -- SandboxMode is a typed same-process closed union; this branch is only the static exhaustiveness guard. */
     default: {
       const mode: never = policy.mode
@@ -72,7 +112,21 @@ export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+   * Locale for the model-facing `sandbox:policy` context (default `auto`).
+   * `auto` follows the assembly language — the interface language the user
+   * picked in settings — and falls back to English when the assembly carries
+   * none. `en`/`zh` pin it regardless of the setting.
+   */
+  contextLocale?: ContextLocale
+  /**
+   * Fallback root for agentless calls and sessions without a cwd (default:
+=======
    * Absolute fallback root for agentless calls and sessions without a cwd (default:
+>>>>>>> theirs
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
@@ -111,6 +165,7 @@ export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
     mode: z.union(['read-only', 'workspace-write', 'danger-full-access'] as const).default('read-only'),
+    contextLocale: z.union(CONTEXT_LOCALES).default('auto'),
     // No schema default: process.cwd() is resolved in the constructor so the
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
@@ -120,6 +175,8 @@ export class SandboxPolicyService extends Service {
 
   /** The deployment default mode — the fallback beneath a session override. */
   readonly defaultMode: SandboxMode
+  /** Locale for the model-facing policy context. */
+  readonly contextLocale: ContextLocale
   /** The absolute `workspace-write` fallback root for calls without a session cwd. */
   readonly workspaceRoot: string
   constructor(ctx: Context, config: Config) {
@@ -128,6 +185,7 @@ export class SandboxPolicyService extends Service {
     // runtime fact. `workspaceRoot` has NO schema default, so its fallback to
     // the process cwd is real branching, resolved absolute either way.
     this.defaultMode = config.mode as SandboxMode
+    this.contextLocale = config.contextLocale as ContextLocale
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
 
     ctx.sessionProjections.register({
@@ -144,9 +202,11 @@ export class SandboxPolicyService extends Service {
         order: scope.systemPrompt.getContextOrder('SANDBOX_POLICY'),
         text: (context) => {
           const session = context.agent?.session
-          return session === undefined
-            ? ''
-            : renderPolicyContext(this.resolve({ session }))
+          if (session === undefined) return ''
+          return renderPolicyContext(
+            this.resolve({ session }),
+            resolveContextLocale(this.contextLocale, context.locale),
+          )
         },
       })
     })

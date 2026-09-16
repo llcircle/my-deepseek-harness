@@ -44,6 +44,14 @@ pnpm dsh web
 
 `pnpm run build` 会准备仓库产物。`pnpm dsh web` 会直接使用这些已构建产物，不会重新构建。
 
+在 Windows 上，可以直接双击仓库根目录的 `start-web.cmd`，或运行：
+
+```sh
+pnpm run start:web
+```
+
+该脚本会在 `node_modules` 缺失时安装依赖，并启动 `web` profile。额外参数会转发给 `dsh`。
+
 ## 社区与支持
 
 - 通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。

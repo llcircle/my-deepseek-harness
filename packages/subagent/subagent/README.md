@@ -46,6 +46,16 @@ An agent that calls the tool gets the child's final answer as the tool result. M
 
 One-shot children run once and settle with a single result, plus an optional structured output and a safe diagnostic on failure. A start request may override the child Agent's provider, model, reasoning effort, and output-token limit through `agentOptions`; every requested option requires the provider's matching capability. Continuable children keep a durable session and accept later messages in order: the caller receives a stable child id, sends adjacent-Agent messages, and can interrupt the current turn without destroying the child. The tool row's `backgroundMode` picks the shape (`one-shot` by default, or `continuable` on providers that support it).
 
+### Scoping a child to a narrow job
+
+A functional helper — a child whose whole job is to rewrite one document or translate one archive — has no use for the deployment's full prompt and tool set. Two request options describe that narrowing, and every provider that composes children in-process advertises both.
+
+`allowTools` is a keep-list: the child sees ONLY the named inherited tools, and an entry this deployment never registered is skipped rather than fatal. That last part is what separates it from `toolFilter: { allow: … }`, which demands that every listed name exist. Reach for `allowTools` when the caller knows what it needs but not what the deployment mounts, and for `toolFilter` when it needs exact control.
+
+`omitSections` names prompt sections the child does not get. Suppression is scoped to the child alone — the parent and its siblings keep rendering the section unchanged. Trimming tools already removes the `tool:<name>` guidance that belonged to them, and removing the `skill` tool empties `skills:catalog` on its own; `omitSections` is for the parts with no tool behind them, such as the deployment identity, the persona, and the error-lessons section.
+
+Neither option can empty a child's catalog outright: the child's own registrations sit outside any restriction, and reserved presentation transports are never removable.
+
 ### Messaging, interrupting, and discovering
 
 Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the Agent message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. A browser continuation prompt independently selects Queue or Steer and may carry image parts: the Host admits and persists each image batch through the attachment store before the child inbox accepts the message, and refuses delivery when the child's declared model does not accept image input. Discovery covers both shapes: the service lists direct children and the full descendant tree — mode, activity, and lineage — reading live session state and optional persistence, without loading any child.

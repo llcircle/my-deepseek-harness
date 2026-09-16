@@ -1,4 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
@@ -83,6 +86,63 @@ describe('SessionSkillCatalog', () => {
     expect(resume).not.toHaveBeenCalled()
     expect(ctx.agents.list()).toEqual([])
     expect(list).toHaveBeenCalledWith({ cwd: '/cold/project', scope: undefined })
+  })
+
+  it('uses the Chinese skill-summary archive only for Chinese UI locales', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-skill-catalog-'))
+    await mkdir(join(cwd, '.dsh'))
+    await writeFile(join(cwd, '.dsh', 'skill-translations.zh.json'), JSON.stringify({
+      review: { description: '审查当前变更。', whenToUse: '发布前使用。', promptLine: '- `review`: 审查当前变更。' },
+    }), 'utf8')
+    try {
+      const ctx = await context()
+      const sessionId = SessionId('translated-skills')
+      ctx.provide('sessionQuery', {
+        observeSession: () => Promise.resolve(observation(sessionId, { cwd })),
+      } as never)
+      ctx.provide('skills', { list: () => Promise.resolve([{
+        name: 'review',
+        description: 'Review the current change.',
+        whenToUse: 'Before publishing.',
+        invocation: { modelInvocable: true, userInvocable: true },
+      }]) } as never)
+      const catalog = new SessionSkillCatalog(ctx)
+
+      await expect(catalog.list({ sessionId, locale: 'zh-CN' }, new AbortController().signal))
+        .resolves.toEqual({ skills: [{
+          name: 'review', description: '审查当前变更。', whenToUse: '发布前使用。', modelInvocable: true,
+        }] })
+      await expect(catalog.list({ sessionId, locale: 'en' }, new AbortController().signal))
+        .resolves.toEqual({ skills: [{
+          name: 'review', description: 'Review the current change.', whenToUse: 'Before publishing.', modelInvocable: true,
+        }] })
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('ignores a missing or invalid Chinese skill-summary archive', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-skill-catalog-invalid-'))
+    await mkdir(join(cwd, '.dsh'))
+    await writeFile(join(cwd, '.dsh', 'skill-translations.zh.json'), '{invalid', 'utf8')
+    try {
+      const ctx = await context()
+      const sessionId = SessionId('invalid-translations')
+      ctx.provide('sessionQuery', {
+        observeSession: () => Promise.resolve(observation(sessionId, { cwd })),
+      } as never)
+      ctx.provide('skills', { list: () => Promise.resolve([{
+        name: 'review', description: 'Review the current change.',
+        invocation: { modelInvocable: true, userInvocable: true },
+      }]) } as never)
+      const catalog = new SessionSkillCatalog(ctx)
+      await expect(catalog.list({ sessionId, locale: 'zh' }, new AbortController().signal))
+        .resolves.toEqual({ skills: [{
+          name: 'review', description: 'Review the current change.', modelInvocable: true,
+        }] })
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 
   it('uses a live Agent to address a preset-owned registry', async () => {

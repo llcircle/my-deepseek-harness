@@ -53,6 +53,28 @@ export interface SkillInvocationPolicy {
   readonly userInvocable: boolean
 }
 
+/**
+ * User-facing trigger state for a skill. `passive` keeps both invocation
+ * surfaces, `active-only` restricts the skill to explicit user invocation,
+ * and `ignored` hides it from every catalog.
+ */
+export type SkillTriggerState = 'passive' | 'active-only' | 'ignored'
+
+const TRIGGER_STATE_POLICIES: Readonly<Record<SkillTriggerState, SkillInvocationPolicy>> = {
+  passive: { modelInvocable: true, userInvocable: true },
+  'active-only': { modelInvocable: false, userInvocable: true },
+  ignored: { modelInvocable: false, userInvocable: false },
+}
+
+/**
+ * Resolve the invocation policy a trigger state stands for.
+ * @param state - user-facing trigger state.
+ * @returns the model/user invocation policy for that state.
+ */
+export function invocationPolicyForTriggerState(state: SkillTriggerState): SkillInvocationPolicy {
+  return TRIGGER_STATE_POLICIES[state]
+}
+
 /** Invocation-neutral skill metadata returned by `ctx.skills.list()`. */
 export interface SkillSummary {
   /** Absolute instruction file path when supplied by the provider; absent for virtual skills. */

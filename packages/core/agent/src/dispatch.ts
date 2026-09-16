@@ -172,5 +172,10 @@ export function emitAgentEvent<K extends AgentSubjectEvent>(
  * @returns the context to pass to `assemble()`.
  */
 export function assembleContextFor(agent: Agent, signal?: AbortSignal): AssembleContext {
-  return { agent, scope: agent, ...signal === undefined ? {} : { signal } }
+  return {
+    agent,
+    scope: agent,
+    ...agent.session.header.cwd === undefined ? {} : { cwd: agent.session.header.cwd },
+    ...signal === undefined ? {} : { signal },
+  }
 }

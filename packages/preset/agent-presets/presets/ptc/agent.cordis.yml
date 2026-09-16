@@ -83,13 +83,8 @@
 
 # ── skills ──────────────────────────────────────────────────────────────────
 
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
-- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
+# The skill registry and local discovery provider are mounted by the host.
+# This preset contributes only the model-facing catalog and loader.
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'

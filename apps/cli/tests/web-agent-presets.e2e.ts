@@ -44,6 +44,21 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
 * Please avoid commands that may produce a very large amount of output.
 * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.`
+const MINIMAL_PWSH_DESCRIPTION = `Run commands in a PowerShell shell
+* When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+* You don't have access to the internet via this tool.
+* State is persistent across command calls and discussions with the user.
+* Use native Windows paths (C:\\...) and $env:NAME variables; this is PowerShell, not bash.
+* Please avoid commands that may produce a very large amount of output.
+* Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.`
+/**
+ * The shell tool this host's compositions mount. Every preset carries both the
+ * bash and the pwsh stack gated on `process.platform`, so exactly one of them
+ * registers here — asserting `bash` everywhere made this file POSIX-only.
+ */
+const SHELL_TOOL = process.platform === 'win32' ? 'pwsh' : 'bash'
+/** The `minimal` preset's description for {@link SHELL_TOOL}, which mirrors the tool name. */
+const MINIMAL_SHELL_DESCRIPTION = process.platform === 'win32' ? MINIMAL_PWSH_DESCRIPTION : MINIMAL_BASH_DESCRIPTION
 
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
@@ -69,7 +84,20 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+    // The session log store defaults to `$DSH_HOME/sessions`, which is the
+    // developer's own. Unpinned, every run writes its fixed session ids there
+    // and the NEXT run of this file fails at creation with
+    // SessionAlreadyExistsError — the suite is only runnable once per machine.
+<<<<<<< ours
+=======
+=======
     // Fixed Session IDs must stay inside this boot's temporary profile root.
+>>>>>>> theirs
+>>>>>>> theirs
     { id: 'session-persistence-jsonl', config: { root: join(dirname(settingsFile), 'sessions') } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
@@ -84,6 +112,11 @@ async function bootWeb(
     // and the URL prompt line — surface glue, not anything that decides an
     // agent's capabilities, which is all this file asserts.
     { id: 'web-runtime', disabled: true },
+    // The web bundle's MCP settings panel injects `webServer` for its served
+    // half, so it is in the same class as the row above: a browser surface that
+    // cannot activate without the bound port, and nothing this file asserts.
+    // Left enabled it parks pending and the boot audit below fails the suite.
+    { id: 'dsh-mcp-manager', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     // A deployment-level skill on the host registry's GLOBAL layer — the same
     // registration shape a repository plugin's skill root uses. The layered
@@ -120,6 +153,20 @@ async function bootWeb(
     ...extra,
   ]
   const home = dirname(settingsFile)
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+  // The skill provider's `agentsHome` defaults to the developer's `~/.agents`,
+  // whose 18 installed skills would then appear in the global layer as though
+  // the deployment had registered them. Pinned through the environment rather
+  // than a patch row on purpose: a patch entry carrying `id: skill-filesystem`
+  // REPLACES that row, and the presets mount their own under the same id —
+  // which would drop each preset's bundled skill root.
+  process.env.DSH_AGENTS_HOME = join(home, 'agents')
+  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, home })
+=======
+>>>>>>> theirs
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   // Product Bundles are installed into the Profile, not the dsh app. Model
@@ -236,7 +283,7 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'lean', 'minimal', 'ptc', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -253,11 +300,64 @@ describe('the shipped Web composition', () => {
       // excluded for the reason the TUI composition e2e excludes them — they
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+        'ask_user_question', SHELL_TOOL, 'create_goal', 'edit', 'exit_plan_mode',
+        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
+=======
         'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
         'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'present', 'read', 'read_image', 'send_message', 'skill',
+>>>>>>> theirs
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_fetch', 'web_search',
         'workflow', 'write',
-      ])
+        // Sorted rather than left in literal order: the shell tool is `pwsh` on
+        // win32, which sorts into a different position than `bash` does.
+      ].sort())
+      expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('composes the lean agent: merged triples, deferred schemas, no workflow or ralph', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-lean'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'lean').then(() => undefined),
+    })
+    try {
+      // What the model RECEIVES, not what the registry holds: the wire list is
+      // where the merged names and the withheld schemas show up, and reading
+      // `tools.schemas` here would report the deferred four as present.
+      const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      expect(assembly.tools.map(tool => tool.name).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
+        'ask_user_question', SHELL_TOOL, 'edit', 'exit_plan_mode', 'goal', 'job', 'read',
+        'send_message', 'skill', 'subagent', 'todo_write', 'tool_search', 'web_fetch',
+        'web_search', 'write',
+        // Sorted for the same reason as the `standard` catalog above.
+      ].sort())
+
+      // Registered and callable, just not advertised yet — the fetch is what
+      // makes withholding safe, so the fetch's own row must be present.
+      const registered = toolNames(ctx, handle.agent)
+      for (const name of ['interrupt_agent', 'list_agents', 'read_image']) {
+        expect(registered).toContain(name)
+        expect(assembly.tools.map(tool => tool.name)).not.toContain(name)
+      }
+      const onDemand = assembly.sections.find(section => section.name === 'tools:on-demand')
+      expect(onDemand?.text).toContain('interrupt_agent')
+      expect(onDemand?.text).toContain('list_agents')
+      expect(onDemand?.text).toContain('read_image')
+
+      // The merges, and nothing left of the split spellings or the two rows
+      // this preset drops.
+      for (const name of ['get_goal', 'create_goal', 'update_goal', 'job_list', 'job_output', 'job_kill', 'subagent_fork', 'workflow', 'ralph']) {
+        expect(registered).not.toContain(name)
+      }
+      expect(toolParameterNames(ctx, handle.agent, 'goal')).toContain('action')
+      expect(toolParameterNames(ctx, handle.agent, 'job')).toContain('action')
+      expect(toolParameterNames(ctx, handle.agent, 'subagent')).toContain('fork')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
     } finally {
       await handle.dispose()
@@ -308,8 +408,18 @@ describe('the shipped Web composition', () => {
       expect(assembly.sections).toEqual([
         { name: 'deployment:persona-prefix', text: MINIMAL_PROMPT },
       ])
+<<<<<<< ours
+=======
+<<<<<<< ours
+>>>>>>> theirs
+      expect(assembly.tools.map(tool => tool.name)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+      expect(assembly.tools.find(tool => tool.name === SHELL_TOOL)?.description).toBe(MINIMAL_SHELL_DESCRIPTION)
+      expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
+        .toContain('Absolute path')
+=======
       expect(assembly.tools.map(tool => tool.name)).toEqual(['bash'])
       expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
+>>>>>>> theirs
       expect(ctx.commands.find(handle.agent, 'goal')).toBeUndefined()
       // serviceFor reports preset-owned providers; unisolated consumers inherit the host fs.
       expect(ctx.agentPresets.serviceFor(handle.agent, 'fs')).toBeUndefined()
@@ -332,7 +442,15 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
+<<<<<<< ours
+      expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
+<<<<<<< ours
+      expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
       expect(toolNames(ctx, minimal.agent)).toEqual(['bash'])
+>>>>>>> theirs
+>>>>>>> theirs
       expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
 
       await minimal.dispose()
@@ -346,6 +464,18 @@ describe('the shipped Web composition', () => {
   })
 
   it('composes the cordis agent with its own toolset', async () => {
+    const proj = await mkdtemp(join(tmpdir(), 'dsh-preset-cordis-proj-'))
+    await mkdir(join(proj, '.dsh', 'skills', 'project-proof'), { recursive: true })
+    await writeFile(join(proj, '.dsh', 'skills', 'project-proof', 'SKILL.md'), [
+      '---',
+      'name: project-proof',
+      'description: Proves a preset provider registers beside the host one, not over it.',
+      '---',
+      '',
+      'Project proof body.',
+      '',
+    ].join('\n'))
+
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-cordis'),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
@@ -358,15 +488,23 @@ describe('the shipped Web composition', () => {
         'cordis_define', 'cordis_run', 'cordis_stop', 'cordis_undefine',
       ]))
       // And it keeps the standard agent's own tools rather than replacing them.
-      expect(tools).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
+      expect(tools).toEqual(expect.arrayContaining([SHELL_TOOL, 'read', 'edit', 'skill']))
       expect(tools).not.toContain('str_replace_editor')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
 
       // The preset's own authoring skill registers into ITS layer of the host
       // registry: the cordis agent's view carries it, the global view does not.
-      const scoped = (await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)
+      // It travels in the preset directory, and the preset's own
+      // `skill-filesystem` row roots it.
+      const scoped = (await ctx.skills.list({ cwd: proj, scope: handle.agent })).map(skill => skill.name)
       expect(scoped).toContain('editing-cordis-compositions')
       expect((await ctx.skills.list()).map(skill => skill.name)).not.toContain('editing-cordis-compositions')
+
+      // ...beside the host row that owns local discovery rather than instead of
+      // it. A read runs every provider in the chain and merges by skill name,
+      // so the preset's own provider adds its skill without displacing the
+      // host's roots: this agent still reaches the global layer.
+      expect(scoped).toContain('project-proof')
     } finally {
       await handle.dispose()
     }
@@ -396,7 +534,7 @@ describe('the shipped Web composition', () => {
       // The presentation is this agent's alone: the deployment default is
       // native, and the session composed from `standard` still sees it.
       const nativeAssembly = await ctx.systemPrompt.assemble({ scope: native.agent })
-      expect(nativeAssembly.tools.map(tool => tool.name)).toContain('bash')
+      expect(nativeAssembly.tools.map(tool => tool.name)).toContain(SHELL_TOOL)
       expect(nativeAssembly.tools.map(tool => tool.name)).not.toContain('run_code')
       expect(nativeAssembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
     } finally {
@@ -428,7 +566,7 @@ describe('the shipped Web composition', () => {
     expect((await readFile(skill, 'utf8')).startsWith('---\nname: editing-cordis-compositions')).toBe(true)
   })
 
-  it('merges the global skill layer into a preset agent\'s catalog, keeping local discovery preset-side', async () => {
+  it('merges the global skill layer into a preset agent\'s catalog, with local discovery on the host', async () => {
     const proj = await mkdtemp(join(tmpdir(), 'dsh-preset-skill-proj-'))
     await mkdir(join(proj, '.dsh', 'skills', 'project-proof'), { recursive: true })
     await writeFile(join(proj, '.dsh', 'skills', 'project-proof', 'SKILL.md'), [
@@ -448,9 +586,13 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
     try {
-      // The host (global) view carries the deployment-level provider alone:
-      // local discovery moved behind the presets with `skill-filesystem`.
-      expect((await ctx.skills.list({ cwd: proj })).map(skill => skill.name)).toEqual(['dsh-badge'])
+      // The host `skill-filesystem` row owns local discovery, so the global
+      // layer carries the project's own skills alongside the deployment-level
+      // provider: it resolves the cwd each request asks about, which is what
+      // lets one host registration serve every project without a row per
+      // preset. A preset adds only what travels inside its own directory.
+      expect((await ctx.skills.list({ cwd: proj })).map(skill => skill.name).sort())
+        .toEqual(['dsh-badge', 'project-proof'])
 
       // The standard agent's view merges the global layer with its preset's
       // own local discovery over the session cwd.
@@ -483,7 +625,15 @@ describe('the shipped Web composition', () => {
       // stays the preset's choice — minimal mounts no `tool-skill`, so its
       // tool table has no loader even though the global layer is readable.
       expect((await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)).toContain('dsh-badge')
+<<<<<<< ours
+      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
+<<<<<<< ours
+      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
       expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
+>>>>>>> theirs
+>>>>>>> theirs
     } finally {
       await handle.dispose()
     }
@@ -719,7 +869,7 @@ describe('a delegated child', () => {
       expect(toolNames(ctx, child.agent)).toEqual(toolNames(ctx, parent.agent))
       // The shipped `standard` preset is the whole coding agent; an empty
       // child here is the defect, and equality alone would not catch it.
-      expect(toolNames(ctx, child.agent)).toContain('bash')
+      expect(toolNames(ctx, child.agent)).toContain(SHELL_TOOL)
       expect(child.agent.session.header.agentPreset).toBe('standard')
     } finally {
       await child.dispose()
@@ -853,8 +1003,11 @@ describe('authoring a preset on the shipped composition', () => {
     expect(preset.description).toBe(source.description)
     expect(await authorCtx.agentPresets.read('my-agent')).toBe(await authorCtx.agentPresets.read('minimal'))
     // Owner-only, in an owner-only directory: a composition is executable
-    // configuration on a machine that may have other users.
-    expect((await stat(preset.path)).mode & 0o777).toBe(0o600)
+    // configuration on a machine that may have other users. POSIX-only, and
+    // asserted where it holds: `chmod` is a no-op on Windows — NTFS carries no
+    // POSIX mode bits, so the 0o600 the writer requests reads back as 0o666 —
+    // the same platform split `credentials-local` guards for the same claim.
+    if (process.platform !== 'win32') expect((await stat(preset.path)).mode & 0o777).toBe(0o600)
     const handle = await authorCtx.agents.create({
       sessionId: SessionId('preset-authored'),
       setup: agentCtx => authorCtx.agentPresets.mount(agentCtx, 'my-agent').then(() => undefined),
@@ -862,7 +1015,15 @@ describe('authoring a preset on the shipped composition', () => {
     try {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
+<<<<<<< ours
+      expect(toolNames(authorCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
+<<<<<<< ours
+      expect(toolNames(authorCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
       expect(toolNames(authorCtx, handle.agent)).toEqual(['bash'])
+>>>>>>> theirs
+>>>>>>> theirs
     } finally {
       await handle.dispose()
     }
@@ -900,7 +1061,15 @@ describe('the default preset as a user setting', () => {
       try {
         // `mount()` with no id resolves the effective default. One tool, not
         // `standard`'s catalog: the setting decided the composition.
+<<<<<<< ours
+        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
+<<<<<<< ours
+        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
         expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
+>>>>>>> theirs
+>>>>>>> theirs
       } finally {
         await handle.dispose()
       }
@@ -973,7 +1142,7 @@ describe('a composition that configures its own preset roots', () => {
     ])
 
     const listed = await rootsCtx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'minimal', 'ptc', 'standard', 'team-spec'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'lean', 'minimal', 'ptc', 'standard', 'team-spec'])
     expect(listed.every(preset => preset.broken === undefined)).toBe(true)
     // The shipped root comes first: a configured directory claiming a shipped
     // id is shadowed, never the other way around.
@@ -987,7 +1156,15 @@ describe('a composition that configures its own preset roots', () => {
       setup: agentCtx => rootsCtx.agentPresets.mount(agentCtx, 'team-spec').then(() => undefined),
     })
     try {
+<<<<<<< ours
+      expect(toolNames(rootsCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
+<<<<<<< ours
+      expect(toolNames(rootsCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+=======
       expect(toolNames(rootsCtx, handle.agent)).toEqual(['bash'])
+>>>>>>> theirs
+>>>>>>> theirs
     } finally {
       await handle.dispose()
     }

@@ -69,6 +69,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   computerUse: 'computer-use.md',
   commands: 'commands.md',
   compaction: 'compaction.md',
+  computer: 'computer.md',
+  computerUse: 'computer.md',
   cordisInspect: 'extensions.md',
   authorization: 'credentials.md',
   credentials: 'credentials.md',
@@ -784,6 +786,29 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   WorkflowAgentEndInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowAgentInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowResultInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
+<<<<<<< ours
+  ComputerAvailability: 'computer capability payload is owned by packages/computer/computer/src/index.ts',
+  ComputerCallOptions: 'computer call metadata is owned by packages/computer/computer/src/index.ts',
+  ComputerClickInput: 'computer click input is owned by packages/computer/computer/src/index.ts',
+  ComputerDisplay: 'computer display geometry is owned by packages/computer/computer/src/index.ts',
+  ComputerDragInput: 'computer drag input is owned by packages/computer/computer/src/index.ts',
+  ComputerDragResult: 'computer drag result is owned by packages/computer/computer/src/index.ts',
+  ComputerKeyInput: 'computer key input is owned by packages/computer/computer/src/index.ts',
+  ComputerPoint: 'computer screen coordinate is owned by packages/computer/computer/src/index.ts',
+  ComputerScreenshot: 'computer screenshot result is owned by packages/computer/computer/src/index.ts',
+  ComputerScrollInput: 'computer scroll input is owned by packages/computer/computer/src/index.ts',
+  ComputerTypeInput: 'computer type input is owned by packages/computer/computer/src/index.ts',
+  ActivationReason: 'computer activation reason is owned by packages/computer/tool-computer-use/src/index.ts',
+  PromptLocale: 'prompt language union is owned by packages/core/system-prompt/src/index.ts',
+  PromptOverridesSettingsInstaller:
+    'settings installer shape is owned by packages/core/system-prompt/src/index.ts',
+  PromptSectionView: 'prompt editor projection is owned by packages/core/system-prompt/src/index.ts',
+  PromptReflectionSource:
+    'reflection source contract is owned by packages/core/system-prompt/src/index.ts',
+  ReflectionBlockView:
+    'reflection document block is owned by packages/api/settings-controller/src/types.ts',
+  ToolErrorView: 'tool-error journal projection is owned by packages/api/settings-controller/src/index.ts',
+=======
   WorkspaceFileScope: 'Host workspace file lookup contract is owned by packages/api/workspace-files/README.md',
   WorkspaceByteRange: 'Host workspace file endpoint contract is owned by packages/api/workspace-files/README.md',
   WorkspaceDirectoryListing: 'Host workspace file endpoint contract is owned by packages/api/workspace-files/README.md',
@@ -800,6 +825,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   TerminalAttachmentId: 'Browser terminal input ownership is owned by packages/api/terminal-controller/README.md',
   TerminalFrame: 'Browser terminal stream frames are owned by packages/api/terminal-controller/README.md',
   WebTerminalId: 'Browser terminal identity is owned by packages/api/terminal-controller/README.md',
+>>>>>>> theirs
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

@@ -1,6 +1,6 @@
 /** What the browser half registers, and that it all leaves with the fiber. */
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, symbols } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -12,6 +12,7 @@ import type {
   ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
 } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { SubagentModelSelectionCardController } from '../src/client/subagent-model-selection-card-controller.ts'
+import type { PromptOverridesCardFace } from '../src/client/prompt-overrides-card-controller.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
@@ -21,8 +22,10 @@ import { apply as hostApply } from '../src/index.ts'
 /**
  * @param served - namespaces the Host describes; omitted answers a failed read,
  * which is what most of these specs want (no card has anything to render).
+ * @param session - session id the card surface sees as open; omitted means no
+ * session, which is what the correction button reads before it can run.
  */
-async function bench(served?: string[]) {
+async function bench(served?: string[], session?: string) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -46,14 +49,42 @@ async function bench(served?: string[]) {
         })),
       },
     }))
-  const remote = new TestRemote(ctx, {
-    credentials: { describe: describeCredentials, set: vi.fn() },
-    session: { modelCatalog: models },
-    settings: { describe: describeSettings },
-  })
+  const executeCommand = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { result: { kind: 'success' as const, text: 'Correction child started.' } },
+  }))
+  // The Remote double lives in its own fiber, the way the shipped Client Remote
+  // service does, and carries the same service tracker. Both matter: a service
+  // provided at the root is reachable from every fiber by ancestor walk, and a
+  // plain object answers `ctx.remote.<namespace>` without Cordis's associate
+  // redirect. Together they would hide a missing `remote.<namespace>` inject
+  // entry — the failure this bench has to be able to produce.
+  let remote!: TestRemote
+  await ctx.plugin((host: Context) => {
+    remote = new TestRemote(host, {
+      credentials: { describe: describeCredentials, set: vi.fn() },
+      session: { modelCatalog: models },
+      settings: { describe: describeSettings },
+      skills: { list: vi.fn(() => Promise.resolve({ ok: true, value: { skills: [] } })) },
+      commands: { execute: executeCommand },
+    })
+    Object.defineProperty(remote, symbols.tracker, {
+      value: { associate: 'remote', property: 'ctx' },
+    })
+  }).await()
+  const sessions = {
+    list: {
+      getSnapshot: () => session === undefined
+        ? { current: undefined, byId: {} }
+        : { current: session, byId: { [session]: { cwd: 'C:/workspace' } } },
+      subscribe: () => () => {},
+    },
+  }
+  ctx.provide('sessions', sessions)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, models, remote,
+    executeCommand,
   }
 }
 
@@ -71,7 +102,8 @@ describe('ui-settings-plugins apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.commands', 'remote.credentials', 'remote.session',
+      'remote.skills', 'remote.settings', 'sessions', 'settingsScope',
     ])
   })
 
@@ -132,7 +164,7 @@ describe('ui-settings-plugins apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek'])
+      .toEqual(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek', 'skill-filesystem', 'llm-deepseek', 'system-prompt-overrides'])
   })
 
   it('dispatches the served namespaces its cards claim, and no others', async () => {
@@ -230,12 +262,49 @@ describe('ui-settings-plugins apply', () => {
     await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
   })
 
+  it('runs the correction command through the commands remote in the open session', async () => {
+    // Guards a hole only the running plugin shows: a Remote namespace is its own
+    // Cordis service, so a missing `remote.<name>` inject entry still loads the
+    // plugin and only throws when the call site finally reads it.
+    const { ctx, slots, executeCommand } = await bench(undefined, 'session-open')
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const card = slots.entries('settings.plugin.item')
+      .find(entry => entry.options.key === 'system-prompt-overrides')!
+    const face = (card as { inject?: () => unknown }).inject?.() as PromptOverridesCardFace
+
+    face.runCorrection()
+
+    await vi.waitFor(() => {
+      expect(executeCommand).toHaveBeenCalledWith('session-open', '/correct-errors', [])
+    })
+    await vi.waitFor(() => {
+      expect(face.hooks.promptOverridesCard.getSnapshot().correction)
+        .toEqual({ phase: 'done', message: 'Correction child started.' })
+    })
+  })
+
+  it('reports the correction as unavailable when no session is open', async () => {
+    const { ctx, slots, executeCommand } = await bench()
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const card = slots.entries('settings.plugin.item')
+      .find(entry => entry.options.key === 'system-prompt-overrides')!
+    const face = (card as { inject?: () => unknown }).inject?.() as PromptOverridesCardFace
+    face.runCorrection()
+
+    expect(face.hooks.promptOverridesCard.getSnapshot().correction).toEqual({ phase: 'unavailable' })
+    expect(executeCommand).not.toHaveBeenCalled()
+  })
+
   it('collapses every contribution on teardown', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.plugin.item')).toHaveLength(7)
 
     await fiber.dispose()
 

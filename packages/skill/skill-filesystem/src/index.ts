@@ -13,11 +13,14 @@ import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promis
 import { unwatchFile, watchFile, type Stats } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import chokidar from 'chokidar'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import { parse as parseYaml } from 'yaml'
+// Type-only: pulls the ctx.settings service merge for the trigger-state namespace.
+import type {} from '@deepseek-ai/dsh-settings'
 import type { FileSystem, FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
 import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
@@ -25,12 +28,14 @@ import {
   isSkillName,
   type SkillCandidate,
   type SkillDefinition,
+  invocationPolicyForTriggerState,
   type SkillInvocationPolicy,
   type SkillLookupOptions,
   type SkillProvider,
   type SkillProviderControl,
   type SkillProviderObservation,
   type SkillSource,
+  type SkillTriggerState,
 } from '@deepseek-ai/dsh-skill'
 
 const PROJECT_DSH_RANK = 100
@@ -45,6 +50,18 @@ const DEFAULT_WATCH_MAX_PROJECTS = 128
 export const name = 'skill-filesystem'
 export const inject = ['skills']
 
+/**
+ * Resolve one configured custom root.
+ *
+ * A path is cwd-relative like every other configured path; a `file:` URL is not,
+ * which is the point — see {@link Config.customSkillDirs}.
+ * @param root - the configured root, as a path or a `file:` URL.
+ * @returns the native path discovery scans.
+ */
+function resolveCustomRoot(root: string): string {
+  return root.startsWith('file:') ? fileURLToPath(root) : resolve(root)
+}
+
 /** Local filesystem skill provider configuration. */
 export interface Config {
   /** Unique provider name. Defaults to `filesystem`. */
@@ -55,7 +72,13 @@ export interface Config {
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
   agentsHome?: string
-  /** Additional skill roots scanned after project roots and before user roots. */
+  /** Additional skill roots scanned after project roots and before user roots.
+   *
+   * A path resolves against the process cwd. A `file:` URL resolves as a URL
+   * instead, which is how a composition names a directory beside itself:
+   * `!!js new URL('skills', baseUrl)` is the directory next to the composition
+   * that wrote it, so the root travels wherever that composition is installed.
+   */
   customSkillDirs?: string[]
   /** Whether host-local skill roots are watched for catalog changes. */
   watch?: boolean
@@ -71,6 +94,13 @@ export interface Config {
   watchFollowSymlinks?: boolean
   /** Bundled skill root; defaults to `$DSH_BUNDLED_SKILL_DIR` when default roots are included, otherwise mounts none. */
   bundledSkillDir?: string
+  /** Per-skill trigger states overriding skill frontmatter.
+   *
+   * - `passive` keeps both invocation surfaces.
+   * - `active-only` restricts the skill to explicit user invocation.
+   * - `ignored` hides the skill from every catalog.
+   */
+  invocationOverrides?: Record<string, SkillTriggerState>
 }
 
 export const Config: Schema<Config> = z.object({
@@ -86,6 +116,32 @@ export const Config: Schema<Config> = z.object({
   watchMaxProjects: z.number().default(DEFAULT_WATCH_MAX_PROJECTS),
   watchFollowSymlinks: z.boolean().default(true),
   bundledSkillDir: z.string(),
+  invocationOverrides: z.dict(z.union([z.const('passive'), z.const('active-only'), z.const('ignored')])).default({}),
+})
+
+/** Settings namespace this plugin serves for runtime trigger-state control. */
+export const SKILL_FILESYSTEM_SETTINGS_NAMESPACE = 'skill-filesystem'
+
+/** Workspace-scoped trigger-state settings. */
+export interface SkillTriggerProjectSettings {
+  /** Per-skill trigger states overriding the global section for one workspace. */
+  invocationOverrides: Record<string, SkillTriggerState>
+}
+
+/** Runtime-editable trigger-state settings. */
+export interface SkillTriggerSettings {
+  /** Global per-skill trigger states overriding skill frontmatter. */
+  invocationOverrides: Record<string, SkillTriggerState>
+  /** Workspace-scoped trigger states; the session cwd is the key. */
+  projects?: Record<string, SkillTriggerProjectSettings>
+}
+
+/** Schema for the {@link SKILL_FILESYSTEM_SETTINGS_NAMESPACE} section. */
+export const SkillTriggerSettingsSchema: z<SkillTriggerSettings> = z.object({
+  invocationOverrides: z.dict(z.union([z.const('passive'), z.const('active-only'), z.const('ignored')])).default({}),
+  projects: z.dict(z.object({
+    invocationOverrides: z.dict(z.union([z.const('passive'), z.const('active-only'), z.const('ignored')])).default({}),
+  })).default({}),
 })
 
 interface SkillRoot {
@@ -132,10 +188,47 @@ interface ResolvedWatchConfig {
 
 /** Register the local filesystem skill provider on `ctx.skills`. */
 export function apply(ctx: Context, config: Config = {}): void {
+  validateTriggerOverrides(config.invocationOverrides ?? {}, 'global')
+  const settingsSource: { current: () => SkillTriggerSettings } = {
+    current: () => ({
+      invocationOverrides: config.invocationOverrides ?? {},
+      projects: {},
+    }),
+  }
   let provider!: FileSystemSkillProvider
   ctx.skills.registerProvider((control) => {
-    provider = new FileSystemSkillProvider(ctx, control, config)
+    provider = new FileSystemSkillProvider(ctx, control, config, () => settingsSource.current())
     return provider
+  })
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(
+      ctx,
+      SKILL_FILESYSTEM_SETTINGS_NAMESPACE,
+      SkillTriggerSettingsSchema,
+      {
+        invocationOverrides: config.invocationOverrides ?? {},
+        projects: {},
+      },
+      {
+        validate: (value) => {
+          validateTriggerOverrides(value.invocationOverrides, 'global')
+          for (const [workspace, project] of Object.entries(value.projects ?? {})) {
+            if (workspace.length === 0) {
+              throw new TypeError('skill-filesystem: project trigger override key must be a non-empty workspace path')
+            }
+            validateTriggerOverrides(project.invocationOverrides, `project "${workspace}"`)
+          }
+        },
+        setSource: (current) => {
+          settingsSource.current = current
+        },
+        // A committed change re-reads the stored source; discovery reads the
+        // source per lookup, so no re-registration is needed.
+        onChange: () => {
+          provider.invalidateCatalog()
+        },
+      },
+    )
   })
   ctx.effect(function* () {
     yield async () => { await provider.dispose() }
@@ -155,18 +248,24 @@ export class FileSystemSkillProvider implements SkillProvider {
   private readonly customSkillDirs: string[]
   private readonly watchManager: SkillWatchManager
   private readonly bundledSkillDir: string | undefined
+  private readonly settingsSource: () => SkillTriggerSettings
+  private readonly control: SkillProviderControl
   private disposal: Promise<void> | undefined
 
   constructor(
     private readonly ctx: Context,
     control: SkillProviderControl,
     config: Config = {},
+    settingsSource: () => SkillTriggerSettings = () => ({
+      invocationOverrides: config.invocationOverrides ?? {},
+      projects: {},
+    }),
   ) {
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
     this.dshHome = resolveDshHome(config.dshHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
-    this.customSkillDirs = (config.customSkillDirs ?? []).map(root => resolve(root))
+    this.customSkillDirs = (config.customSkillDirs ?? []).map(resolveCustomRoot)
     this.watchManager = new SkillWatchManager(ctx, control.invalidate, resolveWatchConfig(config))
     control.signal.addEventListener('abort', () => { void this.dispose() }, { once: true })
     // The environment bundled root is a default root: an isolated provider
@@ -175,6 +274,17 @@ export class FileSystemSkillProvider implements SkillProvider {
     const bundledSkillDir = config.bundledSkillDir
       ?? (this.includeDefaultRoots ? process.env.DSH_BUNDLED_SKILL_DIR : undefined)
     this.bundledSkillDir = bundledSkillDir === undefined ? undefined : resolve(bundledSkillDir)
+    this.settingsSource = settingsSource
+    this.control = control
+  }
+
+  /**
+   * Invalidate the registry's catalog cache after an out-of-band policy change.
+   * Discovery inputs are unchanged, so the watcher cannot see it; a trigger-state
+   * settings commit must invalidate explicitly.
+   */
+  invalidateCatalog(): void {
+    this.control.invalidate()
   }
 
   /**
@@ -192,9 +302,10 @@ export class FileSystemSkillProvider implements SkillProvider {
       if (this.disposal !== undefined) throw error
       complete = false
     }
+    const overrides = this.effectiveOverrides(options.cwd)
     const candidates: SkillCandidate[] = []
     for (const root of roots) {
-      for (const skill of await discoverRoot(root, this.ctx, this.name)) {
+      for (const skill of await discoverRoot(root, this.ctx, this.name, overrides)) {
         candidates.push(skill)
       }
     }
@@ -215,7 +326,7 @@ export class FileSystemSkillProvider implements SkillProvider {
       name: parsed.name,
       description: parsed.description,
       ...parsed.whenToUse !== undefined ? { whenToUse: parsed.whenToUse } : {},
-      invocation: parsed.invocation,
+      invocation: resolvedInvocation(parsed, candidate.name, this.effectiveOverrides(options.cwd)),
       source: candidate.source,
       provider: this.name,
       resourceBase: { kind: 'directory', path: locator.directory },
@@ -240,6 +351,20 @@ export class FileSystemSkillProvider implements SkillProvider {
   dispose(): Promise<void> {
     this.disposal ??= this.watchManager.dispose()
     return this.disposal
+  }
+
+  /**
+   * Merge global and workspace trigger overrides; the workspace section wins.
+   * @param cwd - session workspace path that selects the project section.
+   * @returns the effective per-skill trigger states.
+   */
+  private effectiveOverrides(cwd: string | undefined): Readonly<Record<string, SkillTriggerState>> {
+    const settings = this.settingsSource()
+    if (cwd === undefined || settings.projects === undefined) return settings.invocationOverrides
+    return {
+      ...settings.invocationOverrides,
+      ...settings.projects[cwd]?.invocationOverrides ?? {},
+    }
   }
 
   private async roots(cwd: string | undefined): Promise<SkillRoot[]> {
@@ -720,7 +845,12 @@ function hasErrorCode(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
-async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Promise<SkillCandidate[]> {
+async function discoverRoot(
+  root: SkillRoot,
+  ctx: Context,
+  provider: string,
+  overrides: Readonly<Record<string, SkillTriggerState>>,
+): Promise<SkillCandidate[]> {
   const skills: SkillCandidate[] = []
   const entries = await listSkillRootEntries(root, ctx)
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -737,7 +867,7 @@ async function discoverRoot(root: SkillRoot, ctx: Context, provider: string): Pr
       name: parsed.name,
       description: parsed.description,
       ...parsed.whenToUse !== undefined ? { whenToUse: parsed.whenToUse } : {},
-      invocation: parsed.invocation,
+      invocation: resolvedInvocation(parsed, parsed.name, overrides),
       provider,
       source: root.source,
       rank: root.rank,
@@ -995,6 +1125,38 @@ function stringField(data: Record<string, unknown>, key: string): string | undef
 function optionalString(data: Record<string, unknown>, key: string): { [K in typeof key]?: string } {
   const value = data[key]
   return typeof value === 'string' && value.length > 0 ? { [key]: value } : {}
+}
+
+/**
+ * Reject trigger override keys outside the public skill-name grammar.
+ * @param overrides - configured per-skill trigger states.
+ * @param scope - settings section named in the diagnostic.
+ */
+function validateTriggerOverrides(
+  overrides: Readonly<Record<string, SkillTriggerState>>,
+  scope: string,
+): void {
+  for (const skillName of Object.keys(overrides)) {
+    if (!isSkillName(skillName)) {
+      throw new TypeError(`skill-filesystem: ${scope} trigger override key "${skillName}" is not a valid skill name`)
+    }
+  }
+}
+
+/**
+ * Resolve a parsed skill's invocation policy under the provider's trigger-state overrides.
+ * @param parsed - frontmatter-parsed skill before overrides.
+ * @param name - skill name the override map is keyed on.
+ * @param overrides - configured per-skill trigger states.
+ * @returns the overriding policy, or the frontmatter policy when unset.
+ */
+function resolvedInvocation(
+  parsed: ParsedSkill,
+  name: string,
+  overrides: Readonly<Record<string, SkillTriggerState>>,
+): SkillInvocationPolicy {
+  const state = overrides[name]
+  return state === undefined ? parsed.invocation : invocationPolicyForTriggerState(state)
 }
 
 function parseInvocationPolicy(data: Record<string, unknown>): SkillInvocationPolicy {

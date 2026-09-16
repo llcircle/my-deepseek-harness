@@ -76,13 +76,8 @@
 
 # ── skills ──────────────────────────────────────────────────────────────────
 
-# The skill REGISTRY lives in the host composition and is layered per scope:
-# these rows register into THIS preset's layer of it, so they need no realm.
-# `skill-filesystem` contributes local-root discovery for agents on this preset, and
-# `tool-skill` gives them the catalog and loader; the merged catalog also
-# carries whatever the deployment registered globally (repository plugins).
-- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
+# The skill registry and local discovery provider are mounted by the host.
+# This preset contributes only the model-facing catalog and loader.
 
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
@@ -111,6 +106,9 @@
     - id: plan-mode
       name: '@deepseek-ai/dsh-plan-mode'
       config:
+        # Approval turns the plan into a durable goal; goal-round-driver then
+        # keeps that goal running in this session until it completes.
+        goalOnApprove: true
         section: |
               You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
 

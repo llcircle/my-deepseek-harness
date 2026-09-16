@@ -47,6 +47,15 @@
   white-space: nowrap;
 }
 
+/* SystemPromptRow's change badge: the caption geometry the context rows already
+   use for their file actions, so "added" reads the same in both disclosures. */
+.sectionChange {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
 .body {
   box-sizing: border-box;
   /* Indent under the title, which starts at leading (16 + delta) + gap 6. */

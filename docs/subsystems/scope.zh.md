@@ -54,6 +54,6 @@ interface ScopeLayer {
 }
 ```
 
-`ScopedLayers<L>` 拥有立即创建的全局 layer，以及惰性创建的确切作用域 layer。读取不会创建 layer：`peek(undefined)` 表示不存在作用域覆盖层，而 `merge()` 会依次物化按插入顺序排列的全局具名条目和带作用域的遮蔽项。注册使用同一个上下文表示可见性与 Cordis effect 所有权，在可选通知前取得一个同步撤销函数，返回 Cordis 的原始 disposer，并且只在带作用域 layer 的完整 `ScopeLayer` 为空时回收它。
+`ScopedLayers<L>` 拥有立即创建的全局 layer，以及惰性创建的确切作用域 layer。读取不会创建 layer：`peek(undefined)` 表示不存在作用域覆盖层，而 `merge()` 会依次物化按插入顺序排列的全局具名条目和带作用域的遮蔽项。`overlays()` 是唯一刻意不带作用域的读取——它返回全部已创建的覆盖层，用于回答"某处注册了什么"这类问题（例如部署级的编辑面清单）；只读全局层会把"有，但注册在某个作用域"错答成"没有"。注册使用同一个上下文表示可见性与 Cordis effect 所有权，在可选通知前取得一个同步撤销函数，返回 Cordis 的原始 disposer，并且只在带作用域 layer 的完整 `ScopeLayer` 为空时回收它。
 
 `NamedEntries<V>` 提供按插入顺序的查找和动态迭代，重复项错误由调用方处理。`AnonymousEntries<V>` 为每次 append 分配唯一标识，因此值相等的条目仍彼此独立。在同一轮非空 table 生命周期内，迭代器可以观察后续变化；table 被清空后，现有迭代器不会再观察后续插入。两者都返回幂等、精确对应相应条目的撤销函数；共享实现接口 `EntryValues` 不对外公开。
