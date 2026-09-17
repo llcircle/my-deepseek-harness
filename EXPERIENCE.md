@@ -364,3 +364,25 @@
 - 跑一批单测时 `packages/skill/tool-skill` 冒出 **18 个失败**，症状很唬人（`composePrefix` 恒空 → 看似 catalog 装配断了）。差点当成自己引入的回归去深挖。
 - 一条 `grep -rn "tool-skill" EXPERIENCE.md LOG.md .workbuddy/memory/*.md` 立刻给出答案：`LOG.md:537` 与两份日记都记着"**18/38 失败，用 HEAD 版源码复跑同样 18 失败 → 基线自带**；原因是旧测试仍断言旧契约（技能目录作为 user 消息注入），而代码已迁到系统提示词分段"。**结论：不该修，与我无关。**
 - 教训：本仓的既有红灯**已被反复记录**（工具名 + 数量 + 判据）。**看到"意料之外的红灯"，先 grep 笔记里的文件名**——比读代码快一个数量级，也是唯一能区分"我弄坏了"与"它本来就红"的可靠手段。
+
+## 2026-09-18T00:45:00+08:00 【必读】冲突标记会跟着提交进 HEAD——"工作树里 grep 不到"不等于"仓库里没有"
+- 上一提交把 **57 个文件连 `<<<<<<< ours` 一起提交了进去**。工作树里 `git grep '^<<<<<<< '` 是**空的**（因为工作树是解决后的版本），所以只看工作树会得出"没有冲突"的错觉。**判据必须是对 HEAD 查**：`git grep -l '^<<<<<<< ' HEAD -- .`。
+- **最省事的识别信号是体积**：同一个文件 `git cat-file -s HEAD:<path>` 与 `stat -c%s <path>` 一比，HEAD 那份**接近两倍**就是"两侧内容都还在 + 标记"，不是代码变多。本例 `TrajectoryTable.tsx` HEAD 252661 / 工作树 131830。
+- **确认"合并没有合丢"的判据是拿基线（上游那个 commit）比，而不是拿 HEAD 比**：工作树 = 基线 **+ 一点**（`131370 → 131830`、`25001 → 25546`）说明是"上游 + 定制"；**恰好等于基线**说明"只取了 theirs，定制没了"；远大于基线说明"ours/theirs 都留着"。
+- 收口核对：57 个带标记文件里 `git diff --quiet -- <f>` 为真的必须为 **0**（即无一遗漏地都改过）。
+
+## 2026-09-18T00:45:00+08:00 【必读】派生文档的内容泄漏，配对门禁**结构上就查不出来**
+- `verify-translation-pairing` 只比 **blob 哈希 + 结构签名（标题深度/代码块/表格行列/列表种类）**，**从不比较语言**。所以源码 JSDoc 里的中文被生成器原样渲染进 `docs/config-catalog.md` / `tool-catalog.md` / `docs/subsystems/*.md`（英文侧）时，配对检查照样报 ok——**955/955 全绿和"英文文档里没有中文"是两件事，必须分别取证**。
+- 取证办法（`D:\dsh-port\probe\cjk-sources.mjs`）：扫英文侧 markdown 的 **fenced code block 内** CJK，并按最近一条 `Source:`（或生成器的来源清单）**归因到源文件**。归因的作用是把范围从"全仓 388 个文件 5948 行中文"压到"真的会落进英文产物的那 4 处"。
+- **必须在源头改，然后重跑生成器**；只改产物会被下一次生成冲掉，而且 `--check` 会立刻变红。判据永远是 `gen-*-catalog --check` 全部 up to date。生成器清单里**硬编码的字符串**（`scripts/gen-tool-catalog.ts` 的 `note`/`writes`/`requires` 单元格）是同一个坑的第二入口，改产物时要一起看。
+
+## 2026-09-18T00:45:00+08:00 i18n 流水线的三个反直觉点：哈希、键名、锚点
+- **blob 哈希不能借 `git hash-object`**：它是 `sha1('blob ' + 字节数 + '\0' + 内容)`（`scripts/translation-pairing-git.ts`），而 `git hash-object` **做 CRLF 过滤**，在这台机器上永远对不上 → 会得出"全部漂移"的假结论。要自己按字节复刻。
+- **`.i18n.yaml` 的键是 basename**（`config-catalog.md:`），不是相对路径。用全路径查会全部 miss，而 miss 的表现是**两个方向都被误判成"没有记录"**——比报错更危险。判定漂移方向要拿"原始哈希 vs 记录值"比，不是拿 mtime 比。
+- **锚点语言**：中文页保留**英文 slug**（`#session-log`，不是 `#会话日志`）。若中文页的标题文本本身是中文，就在其上方显式加 `<a id="session-log"></a>`。`scripts/translation-links.ts` 归一化时只去掉文件名里的 `.zh`、**保留锚点后缀**，所以两侧必须指向同一语义目标——否则配对检查仍绿（它不看链接），但 `verify-md-links` 会红。本例那个长期红灯（3 处坏锚点）根因正是锚点语言不一致。
+
+## 2026-09-18T00:45:00+08:00 钩子拦下的红灯先"归类"再动手；`.bin/tsx` 别用 `node` 去跑
+- pre-commit 的 lint 报了 **44 条 `@stylistic/max-len`**。**逐行对基线比内容是不可靠的**（合并后行号会漂，46/47 条都显示"与基线不同行号处的内容不同"）。可靠的归类是**看代码形态**：44 条全是同一个模式——移植给 `SubagentProvider.capabilities` 补了 `allowTools`/`persona`/`omitSections` 后单行超 140 列。形态单一 → 全仓按模式扫出 46 处、脚本一次改写即可（纯格式化，语义不变），改完 `gen-*-catalog --check` 仍绿即证明未动产物。
+- **别用 `--no-verify` 绕过**：这类红灯是真问题（同一形态在 CI 的 `pnpm run lint` 下也会红）。反过来，钩子里的 **4 条 warning（`Unused oxlint-disable directive`）是 profile 产物不是缺陷**——`.oxlintrc.staged.json` 设了 `typeAware: false`，被 disable 的 `typescript/prefer-promise-reject-errors` / `no-misused-promises` 都是类型感知规则，在此 profile 下本就不跑。
+- **`node ./node_modules/.bin/tsx script.ts` 必炸**（`SyntaxError: missing ) after argument list`）——那是 **sh 垫片**，不是 JS 入口。两种正确写法：shell 直接执行 `./node_modules/.bin/tsx script.ts`，或 `node node_modules/tsx/dist/cli.mjs script.ts`。
+- **`git count-objects` 报 `no corresponding .pack: ...idx` 不等于库坏了**：本仓 2026-09-15 那次毁库留下了一个孤儿 `.idx`（无同名 `.pack`）与两条 `refs/heads/{custom-work,old-master}` 的 `invalid reflog entry`。**完整性判据仍然只有一条：`git rev-list --objects HEAD > /dev/null; echo $?` 为 0**（本例为 0）。孤儿 idx 只贡献噪音，不贡献对象。
