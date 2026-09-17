@@ -1,14 +1,20 @@
 # 移植计划：把本项目在 dsh 基线上的定制搬到 fork 的新版本
 
-> 状态：**移植已落地，文档门禁全绿**。工作树 208 项变更（171 修改 + 37 新增：36 份 `.i18n.yaml` 记录
-> 与 1 份新译文），57 个冲突已全部裁决（工作区 `grep '^<<<<<<< '` 为空，`conflict-audit.mjs` 判定全部
-> 保留 fork 侧语义）。
+> 状态：**移植已落地并已提交，文档门禁全绿**。
 >
-> 文档链已收口：i18n 配对 **955/955 一致**、`verify-md-links` **1909 个文件全解析**、四张生成物目录
-> （config / tool / persistence / cordis）重生成后 `--check` 全部 up to date 且英文侧零中文残留。
-> 测试：`packages/{computer,core/system-prompt,skill}` 314/314 绿；`packages/api` 7 例为本机
-> `EPERM symlink` 环境红灯（与本移植无关，详见「九」）。
-> 详见「六、冲突清单」与「八、剩余阶段」。
+> - `55214de25b` 移植主体（该提交把 57 个文件的嵌套冲突标记一起提交了进去）。
+> - **`ad1ad578ba` 收口**：209 文件 / +4879 −8984。解决全部 57 处冲突标记、i18n 配对归零、
+>   四张生成物目录重生成、英文侧中文泄漏在源头修掉、md 锚点语言定案。
+> - `09ea2d9b46` 经验记录（`EXPERIENCE.md` 四类新判据）。
+>
+> 现态：工作树干净、`git grep -l '^<<<<<<< ' HEAD` 为空、`git rev-list --objects HEAD` exit 0。
+>
+> 门禁：i18n 配对 **955/955 一致**、`verify-md-links` **1909 个文件全解析**、四张生成物
+> （config / tool / persistence / cordis）`--check` 全部 up to date、英文侧目录文档零中文残留、
+> pre-commit 的 lint 对本次暂存集 **0 error**。
+> 测试：`packages/{computer,core/system-prompt,skill}` 314/314 绿；`packages/api` 7 例为
+> 本机 `EPERM symlink` 环境红灯（与本移植无关，详见「九」）。
+> 详见「六、冲突清单」与「八、剩余阶段」。**未推送**。
 
 ---
 
@@ -194,10 +200,12 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 
 ### 仍欠的账（按优先级）
 
-1. **生成物里的中文来源**（已修 4 处，余下为**非文档可见**的内部注释）。规则：只有落进
-   英文生成文档的 JSDoc 必须英文化；`packages/**/src` 里其余中文注释（含模块头、`//` 注释、
-   `packages/client/*/locales.ts` 这类**本就该是中文**的 UI 文案）不动。核验脚本：
-   `D:\dsh-port\probe\cjk-sources.mjs`（按 `Source:` 行归因）。
+1. ~~生成物里的中文来源~~ **已收口**（`ad1ad578ba`）。4 处落进英文生成文档的中文 JSDoc 已英文化，
+   英文侧 `config-catalog.md` / `tool-catalog.md` / `persistence-catalog.md` CJK 行数 = 0，
+   `docs/subsystems/*.md` 只剩语言切换行（设计内）。规则仍成立：只有落进英文生成文档的 JSDoc 必须
+   英文化；`packages/**/src` 里其余中文注释（含模块头、`//` 注释、`packages/client/*/locales.ts`
+   这类**本就该是中文**的 UI 文案）不动。核验脚本：`D:\dsh-port\probe\cjk-sources.mjs`（按
+   `Source:` 行归因）。
 2. `packages/api/workspace-files/tests/*` 与 `scripts/repo-files.spec.ts`、`scripts/dev-web.spec.ts`
    在本机因无特权 `symlink()` 报 `EPERM` 而红——属环境不属代码，见「九」。若要本地全绿，
    按 `credentials-local/tests/local.spec.ts` 的先例加平台守卫（目录用 `junction`、文件用 `fs.link()`），
