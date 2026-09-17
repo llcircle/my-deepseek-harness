@@ -84,20 +84,10 @@ async function bootWeb(
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     // The session log store defaults to `$DSH_HOME/sessions`, which is the
     // developer's own. Unpinned, every run writes its fixed session ids there
     // and the NEXT run of this file fails at creation with
     // SessionAlreadyExistsError — the suite is only runnable once per machine.
-<<<<<<< ours
-=======
-=======
-    // Fixed Session IDs must stay inside this boot's temporary profile root.
->>>>>>> theirs
->>>>>>> theirs
     { id: 'session-persistence-jsonl', config: { root: join(dirname(settingsFile), 'sessions') } },
     // Host rows with side effects outside this process: a bound port, a served
     // asset tree, a telemetry exporter. `api-gateway` and `directory-picker`
@@ -153,10 +143,6 @@ async function bootWeb(
     ...extra,
   ]
   const home = dirname(settingsFile)
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
   // The skill provider's `agentsHome` defaults to the developer's `~/.agents`,
   // whose 18 installed skills would then appear in the global layer as though
   // the deployment had registered them. Pinned through the environment rather
@@ -164,9 +150,9 @@ async function bootWeb(
   // REPLACES that row, and the presets mount their own under the same id —
   // which would drop each preset's bundled skill root.
   process.env.DSH_AGENTS_HOME = join(home, 'agents')
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, home })
-=======
->>>>>>> theirs
+  // The profile's module fallback is no longer healed by hand: this baseline
+  // builds a resolution generation below (`createProfileResolutionGeneration`)
+  // and hands it to `PluginPackages`, which supersedes `healProfilesModuleFallback`.
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   // Product Bundles are installed into the Profile, not the dsh app. Model
@@ -300,16 +286,8 @@ describe('the shipped Web composition', () => {
       // excluded for the reason the TUI composition e2e excludes them — they
       // depend on ripgrep being present on the machine.
       expect(toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')).toEqual([
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
         'ask_user_question', SHELL_TOOL, 'create_goal', 'edit', 'exit_plan_mode',
-        'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'ralph', 'read', 'read_image', 'send_message', 'skill',
-=======
-        'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
         'get_goal', 'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'list_agents', 'present', 'read', 'read_image', 'send_message', 'skill',
->>>>>>> theirs
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_fetch', 'web_search',
         'workflow', 'write',
         // Sorted rather than left in literal order: the shell tool is `pwsh` on
@@ -408,18 +386,8 @@ describe('the shipped Web composition', () => {
       expect(assembly.sections).toEqual([
         { name: 'deployment:persona-prefix', text: MINIMAL_PROMPT },
       ])
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
-      expect(assembly.tools.map(tool => tool.name)).toEqual([SHELL_TOOL, 'str_replace_editor'])
+      expect(assembly.tools.map(tool => tool.name)).toEqual([SHELL_TOOL])
       expect(assembly.tools.find(tool => tool.name === SHELL_TOOL)?.description).toBe(MINIMAL_SHELL_DESCRIPTION)
-      expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
-        .toContain('Absolute path')
-=======
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash'])
-      expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
->>>>>>> theirs
       expect(ctx.commands.find(handle.agent, 'goal')).toBeUndefined()
       // serviceFor reports preset-owned providers; unisolated consumers inherit the host fs.
       expect(ctx.agentPresets.serviceFor(handle.agent, 'fs')).toBeUndefined()
@@ -442,15 +410,7 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
-<<<<<<< ours
-      expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-<<<<<<< ours
-      expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-      expect(toolNames(ctx, minimal.agent)).toEqual(['bash'])
->>>>>>> theirs
->>>>>>> theirs
+      expect(toolNames(ctx, minimal.agent)).toEqual([SHELL_TOOL])
       expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
 
       await minimal.dispose()
@@ -625,15 +585,7 @@ describe('the shipped Web composition', () => {
       // stays the preset's choice — minimal mounts no `tool-skill`, so its
       // tool table has no loader even though the global layer is readable.
       expect((await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)).toContain('dsh-badge')
-<<<<<<< ours
-      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-<<<<<<< ours
-      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-      expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
->>>>>>> theirs
->>>>>>> theirs
+      expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL])
     } finally {
       await handle.dispose()
     }
@@ -1015,15 +967,7 @@ describe('authoring a preset on the shipped composition', () => {
     try {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
-<<<<<<< ours
-      expect(toolNames(authorCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-<<<<<<< ours
-      expect(toolNames(authorCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-      expect(toolNames(authorCtx, handle.agent)).toEqual(['bash'])
->>>>>>> theirs
->>>>>>> theirs
+      expect(toolNames(authorCtx, handle.agent)).toEqual([SHELL_TOOL])
     } finally {
       await handle.dispose()
     }
@@ -1061,15 +1005,7 @@ describe('the default preset as a user setting', () => {
       try {
         // `mount()` with no id resolves the effective default. One tool, not
         // `standard`'s catalog: the setting decided the composition.
-<<<<<<< ours
-        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-<<<<<<< ours
-        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-        expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
->>>>>>> theirs
->>>>>>> theirs
+        expect(toolNames(ctx, handle.agent)).toEqual([SHELL_TOOL])
       } finally {
         await handle.dispose()
       }
@@ -1156,15 +1092,7 @@ describe('a composition that configures its own preset roots', () => {
       setup: agentCtx => rootsCtx.agentPresets.mount(agentCtx, 'team-spec').then(() => undefined),
     })
     try {
-<<<<<<< ours
-      expect(toolNames(rootsCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-<<<<<<< ours
-      expect(toolNames(rootsCtx, handle.agent)).toEqual([SHELL_TOOL, 'str_replace_editor'])
-=======
-      expect(toolNames(rootsCtx, handle.agent)).toEqual(['bash'])
->>>>>>> theirs
->>>>>>> theirs
+      expect(toolNames(rootsCtx, handle.agent)).toEqual([SHELL_TOOL])
     } finally {
       await handle.dispose()
     }

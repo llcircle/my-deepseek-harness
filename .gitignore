@@ -43,10 +43,7 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
+native/system/test/bin/
 
 # CodeGraph MCP index cache
 .codegraph/
@@ -59,9 +56,3 @@ codex-rust/
 # Local scratch used by ad-hoc verification harnesses.
 .tmp-cu/
 .e2e/
-<<<<<<< ours
-=======
-=======
-native/system/test/bin/
->>>>>>> theirs
->>>>>>> theirs

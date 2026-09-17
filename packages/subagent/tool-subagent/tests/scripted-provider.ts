@@ -17,7 +17,9 @@ const DEFAULT_CAPABILITIES: SubagentCapabilities = {
   outputSchema: true,
   depthLimit: true,
   toolFilter: true,
+  allowTools: true,
   persona: true,
+  omitSections: true,
 }
 
 /** Options for one scripted provider fixture. */

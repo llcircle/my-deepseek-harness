@@ -5,15 +5,7 @@ import type {
 import { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { InboxState } from './inbox.ts'
 import { chatNode } from './common.ts'
-<<<<<<< ours
-import { contextForm, contextProvenance, isLegacySkillCatalogSource } from './event-projection.ts'
-=======
-<<<<<<< ours
-import { contextForm, contextProvenance, isLegacySkillCatalogSource } from './event-projection.ts'
-=======
-import { contextForm, contextProducer } from './event-projection.ts'
->>>>>>> theirs
->>>>>>> theirs
+import { contextForm, contextProducer, isLegacySkillCatalogSource } from './event-projection.ts'
 
 interface ReferencedUserMessageNode extends UserMessageNode {
   /** Labels cited by the immediately following session-reference context. */

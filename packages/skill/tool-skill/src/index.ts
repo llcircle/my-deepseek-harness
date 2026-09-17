@@ -262,10 +262,15 @@ export function apply(ctx: Context, config: Config = {}): void {
   // The catalog belongs to the system prompt, not to the first user-message batch.
   // Register an empty ordered section now; the assembly listener fills its text after
   // resolving the current agent's scoped skills and project translation archive.
+  // `interpolate: false` is load-bearing: skill descriptions are data written by
+  // whoever authored the skill, and a description containing `{{name}}` must not be
+  // read as a prompt variable — that would fail the whole assembly, not just this
+  // section, the moment any skill mentions a template placeholder.
   ctx.systemPrompt.section({
     name: 'skills:catalog',
     order: ctx.systemPrompt.getSectionOrder('SKILL_CATALOG'),
     text: '',
+    interpolate: false,
   })
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const transformed = await next()
@@ -321,7 +326,6 @@ export function catalogTranslationFiles(
   home: string = resolveDshHome(),
 ): string[] {
   return skillTranslationFiles(cwd, configured, home)
-<<<<<<< ours
 }
 
 /**
@@ -347,33 +351,6 @@ export async function loadCatalogTranslations(
   return descriptions
 }
 
-=======
-}
-
-/**
- * Load the layered translation archives into one name→description map. The
- * layering, the per-field merge, and the degrade-to-untranslated rules live in
- * `@deepseek-ai/dsh-skill/translations`: the slash-menu catalog reads the very
- * same archives, and two copies of the precedence rule is exactly how one
- * surface keeps rendering English after the other was fixed.
- * @param cwd - the session workspace a relative configured path resolves against.
- * @param configured - the configured archive path, relative or absolute.
- * @param home - the resolved harness home; injectable so the layering stays testable.
- * @returns the merged translations, empty when no archive exists.
- */
-export async function loadCatalogTranslations(
-  cwd: string,
-  configured: string,
-  home: string = resolveDshHome(),
-): Promise<Map<string, string>> {
-  const descriptions = new Map<string, string>()
-  for (const [name, translation] of await readSkillTranslations(cwd, configured, home)) {
-    if (translation.description !== undefined) descriptions.set(name, translation.description)
-  }
-  return descriptions
-}
-
->>>>>>> theirs
 function renderCatalogText(
   entries: SkillCatalogSource['entries'],
   inChinese: boolean,
@@ -412,80 +389,6 @@ function renderCatalogEntries(entries: SkillCatalogSource['entries']): string[] 
   return entries.map(entry => `- \`${entry.name}\`: ${escapeText(entry.description)}`)
 }
 
-<<<<<<< ours
-=======
-<<<<<<< ours
-=======
-/**
- * Catalog identity over the durable entry list rather than the rendered prose.
- * The entries are what changes; the surrounding `<system-reminder>` framing is
- * written for the model and must not decide whether a republish is needed.
- */
-function digestCatalogEntries(entries: SkillCatalogSource['entries']): string {
-  // JSON per entry rather than a separator character: every separator is itself
-  // a legal description character, so only quoting makes the boundary exact.
-  const canonical = entries.map(entry => JSON.stringify([entry.name, entry.description])).join('\n')
-  return createHash('sha256')
-    .update(canonical)
-    .digest('hex')
-}
-
-/**
- * Entries of one durable catalog message, or undefined when the record is not a
- * usable catalog.
- *
- * `agent.session.snapshotEvents()` may contain a resumed, forked, or externally written seed,
- * and seed validation only guarantees a source object with a non-empty `kind`;
- * no per-kind field is checked there. An unreadable record is therefore treated
- * as "not this plugin's catalog" — the posture the replaced content digest had —
- * rather than throwing inside the step listener, which would fail every
- * subsequent turn of that session.
- */
-function readCatalogEntries(source: unknown): SkillCatalogSource['entries'] | undefined {
-  const entries = (source as { entries?: unknown }).entries
-  if (!Array.isArray(entries)) return undefined
-  const readable: { name: string; description: string }[] = []
-  for (const entry of entries as readonly unknown[]) {
-    if (typeof entry !== 'object' || entry === null) return undefined
-    const { name, description } = entry as { name?: unknown; description?: unknown }
-    if (typeof name !== 'string' || name === '' || typeof description !== 'string') return undefined
-    readable.push({ name, description })
-  }
-  return readable
-}
-
-function catalogHistory(agent: Agent): { visibleDigest?: string; published: boolean } {
-  const visible = new Set(agent.session.surface.nodes)
-  let published = false
-  for (let index = agent.session.seq - 1; index >= 0; index -= 1) {
-    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
-    const event = agent.session.eventAt(SessionSeq(index))
-    if (event === undefined) {
-      throw new Error(`skill catalog cannot read seq ${String(index)} below the current Session length`)
-    }
-    if (event.type !== 'user/message' || event.data.source.kind !== 'skill-catalog') continue
-    const entries = readCatalogEntries(event.data.source)
-    if (entries === undefined) continue
-    const digest = digestCatalogEntries(entries)
-    published = true
-    if (visible.has(event.seq)) return { visibleDigest: digest, published }
-  }
-  return { published }
-}
-
-function catalogMessage(
-  messages: readonly UserMessage[],
-): { message: UserMessage; entries: SkillCatalogSource['entries'] } | undefined {
-  for (const message of messages) {
-    if (message.source.kind !== 'skill-catalog') continue
-    const entries = readCatalogEntries(message.source)
-    if (entries !== undefined) return { message, entries }
-  }
-  return undefined
-}
-
->>>>>>> theirs
->>>>>>> theirs
 function catalogDescription(value: string, maxLength: number): string {
   const normalized = value.replaceAll(/\s+/g, ' ').trim()
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`

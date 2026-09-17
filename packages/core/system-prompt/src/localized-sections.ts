@@ -45,8 +45,9 @@ export type LocalizedSections = Readonly<
 /**
  * 内置的段名到译文的映射。
  *
- * 收录标准：第一方、内容静态、且不属于用户可编辑的部署配置。`deployment:persona`
- * 不在此列——它是部署自己写的人格，翻译它等于替部署改主意。`skills:catalog` 与
+ * 收录标准：第一方、内容静态、且不属于用户可编辑的部署配置。`deployment:persona-prefix`
+ * 与 `deployment:persona-suffix` 中只有 standard preset 写下的第一方模板在此列，
+ * 部署自己写的人格不在此列——翻译它等于替部署改主意。`skills:catalog` 与
  * `deployment:error-lessons` 也不在此列——它们的文本是运行期现算的，由各自的
  * 提供者按装配语言自行选文案。
  */
@@ -55,8 +56,9 @@ export const LOCALIZED_SECTIONS: LocalizedSections = {
     zh: { text: '你是由 DeepSeek Harness 驱动的 AI 智能体。' },
   },
 
-  'deployment:persona': {
-    // standard preset 的第一方人格模板。变量占位符原样保留，插值发生在渲染期。
+  'deployment:persona-prefix': {
+    // standard preset 的第一方人格模板（上游把人格拆成前缀/后缀两节，前缀是那段
+    // 模板，后缀由部署自己写）。变量占位符原样保留，插值发生在渲染期。
     // 用户/部署自己写的 persona 不经过这里——那是别人写的人格，翻译它等于替作者改主意。
     zh: {
       text: '你是由 {{model}} 模型驱动的编码智能体。当前工作目录是 {{cwd}}。',

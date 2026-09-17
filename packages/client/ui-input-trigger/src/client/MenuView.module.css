@@ -123,20 +123,10 @@
 .itemDescription {
   flex: 1;
   min-width: 0;
-<<<<<<< ours
-  white-space: normal;
-  overflow-wrap: anywhere;
-=======
-<<<<<<< ours
-  white-space: normal;
-  overflow-wrap: anywhere;
-=======
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
->>>>>>> theirs
->>>>>>> theirs
   color: var(--dsw-alias-label-tertiary);
 }
 

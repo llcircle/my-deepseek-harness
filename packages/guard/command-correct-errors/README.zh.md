@@ -48,7 +48,7 @@ kind: "package-reference"
 | `maxErrors` | `20` | 交给子代理的最大日志条数，最新在后 |
 | `maxReflectionChars` | `8000` | 交给子代理的既有反思文档尾部上限 |
 | `childTools` | `["read", "write"]` | 子代理保留的工具；其余继承来的工具一律移除。空列表表示不动它的工具集 |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
 
 ### 运行方式
 

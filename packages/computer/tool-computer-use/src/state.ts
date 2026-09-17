@@ -15,8 +15,9 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
-     * 电脑操作能力是否从此刻起对模型可见：仅记录、不参与界面渲染、
-     * 整体替换。最后一条 `computer/mode` 生效；日志中没有时折叠为未启用。
+     * Whether the computer-use capability is visible to the model from this
+     * point on: log-only, not rendered by any UI, and replacing wholesale. The
+     * last `computer/mode` wins; with none in the log it folds to disabled.
      */
     'computer/mode': { active: boolean }
   }

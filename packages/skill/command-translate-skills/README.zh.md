@@ -47,7 +47,7 @@ Skill 简介由作者用什么语言写就是什么语言，目录里因此混�
 | `targetLocale` | `zh` | 翻译目标语言的 BCP-47 标签 |
 | `provider` | `spawn` | 运行翻译子代理的 subagent 提供方 |
 | `childTools` | `["read", "write"]` | 子代理保留的工具；其余继承来的工具一律移除。空列表表示不动它的工具集 |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
 
 ### 运行方式
 

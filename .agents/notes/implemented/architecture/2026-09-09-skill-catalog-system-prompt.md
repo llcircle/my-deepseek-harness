@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-09-09-skill-catalog-system-prompt.zh.md)
+
 ## Problem
 
 The skill catalog was emitted as a synthetic `user/message` during `agent/pre-step`. Because the agent loop assembles the system prompt before running that waterfall, the catalog appeared after the first user message and was persisted as user-role context.

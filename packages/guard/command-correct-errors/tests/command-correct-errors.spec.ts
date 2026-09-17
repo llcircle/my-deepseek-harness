@@ -9,8 +9,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -30,13 +31,12 @@ async function tempDir(): Promise<string> {
 
 function stubAgent(ctx: Context, id: string): Agent {
   const session = ctx.sessions.create(SessionId(id))
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
     options: {},
     session,
-    inbox,
+    inbox: unsupportedInbox(),
     ctx: new Context(),
     get status() { return status },
     send: () => {},
@@ -105,19 +105,34 @@ async function harness(options: {
         return Promise.resolve({ id: SessionId('child-1') })
       }
     }
-    await ctx.plugin(FakeSubagents, {})
+    await ctx.plugin(FakeSubagents)
   }
   await ctx.plugin(CorrectErrors, Object.assign({ journalPath, archivePath, reflectionDocPath: reflectionPath }, options.config))
   const agent = stubAgent(ctx, 'correct-agent')
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return { ctx, agent, subagents, journalPath, archivePath, reflectionPath }
+}
+
+/**
+ * Run the command and hand back its settled execution. `execute()` returns
+ * `undefined` only when the line does not resolve to a registered command,
+ * which every test here treats as a broken harness rather than a result.
+ */
+async function run(
+  ctx: Context,
+  agent: Agent,
+  line: string,
+): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
+  const settled = await ctx.commands.execute(agent, line, [], new AbortController().signal)
+  if (settled === undefined) throw new Error(`${line} is not registered`)
+  return settled
 }
 
 describe('the /correct-errors command', () => {
   it('reports nothing to correct when the journal is absent', async () => {
     const { ctx, agent, subagents } = await harness({})
 
-    const settled = await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/correct-errors')
 
     expect(settled.result).toEqual({ kind: 'success', text: 'No tool errors recorded; nothing to correct.' })
     expect(subagents.runs).toHaveLength(0)
@@ -137,7 +152,7 @@ describe('the /correct-errors command', () => {
       reflectionContent: '## 2026-09-07\nEarlier lesson about timeouts.',
     })
 
-    const settled = await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/correct-errors')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs).toHaveLength(1)
@@ -170,7 +185,7 @@ describe('the /correct-errors command', () => {
     })
     const { ctx, agent, subagents } = await harness({ journalLines: [line] })
 
-    await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    await run(ctx, agent, '/correct-errors')
 
     // 子 agent 的活是改写一份文档：所需材料都在提示词里，shell／搜索／委派／计划
     // 对它没有一处是必需的。
@@ -178,7 +193,7 @@ describe('the /correct-errors command', () => {
     // `deployment:error-lessons` 正是这个子 agent 要改写的文档本身；注入它等于让
     // 改写者把自己的输出当经验读。
     expect(subagents.runs[0]?.omitSections)
-      .toEqual(['harness:identity', 'deployment:persona', 'deployment:error-lessons'])
+      .toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons'])
   })
 
   it('an explicit empty list turns trimming off rather than starving the child', async () => {
@@ -195,7 +210,7 @@ describe('the /correct-errors command', () => {
       config: { childTools: [], childOmitSections: [] },
     })
 
-    await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    await run(ctx, agent, '/correct-errors')
 
     // 空名单字面上意味着「一个工具都不留」，而那样的子 agent 连文档都写不出去。
     // 所以它读作「别动工具集」，请求里两个字段都不出现。
@@ -214,7 +229,7 @@ describe('the /correct-errors command', () => {
     })
     const { ctx, agent, subagents, journalPath, archivePath } = await harness({ journalLines: [line] })
 
-    const settled = await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/correct-errors')
 
     expect(settled.result.kind).toBe('success')
     expect((settled.result as { text: string }).text).toContain('archived')
@@ -226,7 +241,7 @@ describe('the /correct-errors command', () => {
   it('does not archive or clear when there is nothing to correct', async () => {
     const { ctx, agent, subagents, journalPath, archivePath } = await harness({})
 
-    const settled = await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/correct-errors')
 
     expect(settled.result).toEqual({ kind: 'success', text: 'No tool errors recorded; nothing to correct.' })
     await expect(readFile(archivePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
@@ -245,7 +260,7 @@ describe('the /correct-errors command', () => {
     })
     const { ctx, agent, subagents } = await harness({ journalLines: [line], withSubagents: false })
 
-    const settled = await ctx.commands.execute(agent, '/correct-errors', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/correct-errors')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('subagent runtime')

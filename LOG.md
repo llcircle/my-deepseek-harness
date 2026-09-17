@@ -786,3 +786,58 @@ e2e 跑的是**构建产物 `lib/`**（09-14 那次构建，此时 `deferred` �
 ### 验证
 
 `web-agent-presets.e2e.ts` **33/33 全绿**；`skill-filesystem` 24/24；`agent-presets` 186/186（含 `shipped-root`）。跑批时 `tool-skill` 冒出 18 个失败，`grep` 笔记后确认是**既有基线红灯**（`LOG.md:537`、`.workbuddy/memory/2026-09-{12,15}.md` 均已记录：旧测试断言旧契约"技能目录作为 user 消息注入"，代码已迁到系统提示词分段），与本轮无关，未动。
+
+## 2026-09-17 22:40–2026-09-18 00:40 i18n 配对归零 955/955、修掉生成物里的中文泄漏、md 锚点规则定案
+
+本轮把移植收尾的**文档链**整条打通：`verify-translation-pairing` **955 ok / 0 out-of-sync / 0 missing**，`verify-md-links` **1909 文件全解析**（此前 3 处坏锚点红灯消失），四张生成物目录 `--check` 全部 up to date。
+
+### 配对漂移的分类：先分清"哪一侧真变了"
+
+一开始 27 个 out-of-sync 摆在面前但看不出方向。写 `pair-drift2.mjs` 逐对比较"记录里的 blob 哈希 vs 当前内容"，得到 16 对两侧都改、10 对只有中文侧变、1 对只有英文侧变。分类脚本踩了两个坑，记下来免得再犯：
+
+1. **`.i18n.yaml` 的键是 basename**（`config-catalog.md: <hash>`），不是全路径。按全路径查表会全部查不到，把"两侧都变了"误判成"都没变"。
+2. **校验脚本用的是"未经过滤"的原始 blob 哈希**（`sha1('blob <len>\0' + bytes)`，见 `scripts/translation-pairing-git.ts:12`）。`git hash-object <file>` 会做 CRLF 过滤，拿它比对**永远对不上**。
+
+### 结构层才露出来的真问题（哈希一致后才会被检查）
+
+`--write` 重录后校验进入结构签名比对，一次暴露四类：
+
+- **代码块 stale**：中文侧有 10 个 `ts config-catalog` 代码块是上游旧版（缺 `toolErrorDirectory`、`goalOnApprove`，`section: string` 还是必填）。写 `sync-blocks.mjs` 按序号整块用英文侧覆盖——**前提是块数相等且每块所属包标题相同**，两条都校验，不满足就拒绝执行。注意代码块在两侧**必须逐字一致**（它是源码声明原文，不翻译）。
+- **列表项数**：中文侧少一条 `@deepseek-ai/dsh-computer`（整个包漏登记）。
+- **链接目标**：中文侧 skill-filesystem 段漏了 `Depends on:` 行，导致后续链接序位整体错位。
+- **缺 8 个包章节**：`docs/config-catalog.zh.md` 有 121 个包而英文侧 129 个，缺的正是移植新增的那批（四个 `command-*`、`computer-python`、`error-reflection-prompt`、`tool-computer-use`、`tool-error-journal`）。写 `cc-sync-zh.mjs` 按英文顺序把缺失块插到"其后第一个中文已存在块"之前（从后往前插避免行号漂移），并且**只把 `Requires:`/`Source:` 两个标签换成 `需要：`/`来源：`**，其余逐字保留——这样 8 个章节的插入没有一次手抄。
+
+### 锚点规则定案：中文页保留**英文 slug**，靠显式锚点兜底
+
+`docs/architecture.zh.md` 的 `## 会话日志` 天然 slug 是 `#会话日志`，而配对门禁要求两侧链接的**语义目标**相同（`translation-links.ts` 归一成 `dsh-translation-target:<pair 源路径><后缀>`，只消掉 `.zh` 文件名、**保留锚点**）。上游给出的答案是显式锚点：该文件 `## 事件`/`## 轮次流程` 上方本来就有 `<a id="events">`/`<a id="turn-flow">`。
+
+于是本轮：在 `docs/architecture.zh.md` 补 `<a id="session-log">`、`<a id="where-new-behavior-goes">`；把三处中文 README 的 `#会话日志`/`#新行为的归属位置`/`#契约` 改回英文 slug；`packages/computer/computer/README.zh.md` 的 `### 契约` 上方补 `<a id="the-contract">`。**顺带把 `verify-md-links` 那个长期红灯一并修掉**（它之前报的正是这些锚点）。
+
+### 生成物里的中文：只有"落进英文文档的 JSDoc"需要英文化
+
+`docs/config-catalog.md` / `tool-catalog.md` 是生成物，**源码 JSDoc 与生成器清单里的中文会原样落进英文目录**，而 `verify-translation-pairing` **只比哈希与结构、从不比语言**，照样报 ok——这类泄漏只能靠独立扫描发现。写了 `cjk-sources.mjs`：扫英文侧 markdown 的 **fenced code block 内** CJK，并按最近一条 `Source:` 行**归因到源文件**。归因结果把范围限定到 4 处，逐个在源码侧改英文后重跑生成器：
+
+| 生成物 | 来源 |
+|---|---|
+| `docs/config-catalog.md` | `computer-python/src/config.ts`、`core/system-prompt/src/index.ts`、`tool-computer-use/src/index.ts` 的 `Config` JSDoc |
+| `docs/tool-catalog.md` | `scripts/gen-tool-catalog.ts` 清单里硬编码的 `note`、`writes` 单元格、`requires` 单元格 |
+| `docs/persistence-catalog.md` | `tool-computer-use/src/state.ts` 的 `computer/mode` 事件 JSDoc |
+| `docs/subsystems/{computer,system-prompt,settings}.md` | `computer/computer/src/index.ts`、`core/system-prompt/src/index.ts`、`api/settings-controller/src/index.ts` 的声明 JSDoc |
+
+`api/settings-controller/src/index.ts` 里还有两段中文**追加在英文 JSDoc 中间**（`readReflections` / `writeReflections`），一并英文化。
+
+### 顺手确认的两条既有约定（避免误判为回退）
+
+- **`cordis-catalog` 区块在两侧是源码原文、逐字一致**。核验方式：备份 `docs/subsystems/system-prompt.zh.md` 里上游成员 `assemble()` 的 JSDoc，是**英文**且与英文页同文同行号。所以把中文源码注释改成英文后，中文页对应区块跟着变英文，是**符合约定**的，不是回退。
+- **`docs/i18n/translation-prompt.md` 通篇中文是刻意的**（流水线模板，README 排除清单里明确不参与配对）。同理 `packages/client/*/src/client/locales.ts` 本就该是中文。全仓 388 个源文件 5948 行中文，绝大多数属于这两类，**不该无差别英文化**。
+
+### 测试取信号
+
+- `packages/{computer,core/system-prompt,skill}`：**18 文件 / 314 用例全绿**。
+- `packages/api`：7 例红，**全部是本机 `EPERM: operation not permitted, symlink`**（`workspace-files/tests/*` 5 个文件 + `media-references.host.spec.ts`）——环境型红灯，与本轮无关。
+- `scripts` 整目录：14 文件 / 27 例红，逐条看过全是环境型或既有问题：`EPERM symlink`（`repo-files` 9/9、`dev-web`、`project-doc-site` 1 例）、5s 超时（跑 npm/git/oxlint 子进程）、`translation-pairing-merge` 3 例报 "runtime is unavailable"（需先构建 `lib/`）、fork 包 README 缺 `Dev Note`（`doc-standard` 1 例）。
+- **测试残留会互相污染**：`oxlint-contract.spec.ts` 超时中止时留下合成文件 `packages/fs/fs-observation-policy/src/oxlint-contract-<hash>.ts`，让 `persistence-schema.spec.ts` 报 `TS6053: File ... not found`。本轮该残渣已自行清理；下次跑完这两个 spec 要确认现场干净。
+
+### 记忆维护
+
+`.workbuddy/memory/MEMORY.md` 已超注入限额被截断，本轮重写为 11.6KB（原 20.5KB）：把低频道专题（junction 修法、工具注册表、分层技能、文档/i18n 细则、包入口、架构边界、移植过程）搬到新文件 `MEMORY-DETAIL.md`，MEMORY.md 只留高频操作判据并加一张细则索引表。

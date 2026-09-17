@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-10-system-prompt-translation-dedup.zh.md)
+[English](2026-09-10-system-prompt-translation-dedup.md) | 中文
 
 ## Problem
 

@@ -226,6 +226,16 @@ export interface Config {
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+  /**
+   * Directory holding the three tool-error documents; defaults to the Harness
+   * home.
+   *
+   * The error-journal plugin can move the journal elsewhere with its own
+   * `path`, and the other two documents travel with it. Such a deployment must
+   * point this field at that same directory; otherwise this surface honestly
+   * reads "no failures recorded".
+   */
+  readonly toolErrorDirectory?: string
 }
 ```
 
@@ -442,6 +452,137 @@ export interface Config {
 
 来源：[`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
+<a id="deepseek-aidsh-command-correct-errors"></a>
+
+## `@deepseek-ai/dsh-command-correct-errors`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * Tool error journal to read; a relative path resolves under the Harness
+   * home. Defaults to the journal package's own default file name.
+   */
+  journalPath?: string
+  /** Append-only archive every cleared journal lands in; relative paths resolve under the Harness home. */
+  archivePath?: string
+  /**
+   * System-level reflection document the child rewrites; a relative path
+   * resolves under the Harness home, so lessons persist across projects.
+   */
+  reflectionDocPath?: string
+  /** Subagent provider that runs the correction child. */
+  provider?: string
+  /** Maximum journal entries handed to the child, newest last. */
+  maxErrors?: number
+  /** Tail cap on the existing reflection document handed to the child. */
+  maxReflectionChars?: number
+  /**
+   * Tools the correction child keeps; every other inherited tool is removed.
+   * Defaults to reading and writing — see {@link DEFAULT_CHILD_TOOLS}.
+   */
+  childTools?: string[]
+  /**
+   * Prompt sections the correction child does not get; defaults to deployment
+   * identity, persona, and the error-lessons section itself. An empty list is
+   * honored as written: it suppresses nothing.
+   */
+  childOmitSections?: string[]
+}
+```
+
+来源：[`packages/guard/command-correct-errors/src/index.ts:37`](../packages/guard/command-correct-errors/src/index.ts)
+
+<a id="deepseek-aidsh-command-summarize-skill"></a>
+
+## `@deepseek-ai/dsh-command-summarize-skill`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Skill root the child writes into; relative to the child's workspace. */
+  skillsDir?: string
+  /** Optional cap on user/assistant text turns handed to the child; omit for the full conversation. */
+  maxTurns?: number
+  /** Subagent provider that runs the summarization child. */
+  provider?: string
+  /**
+   * Tools the summarization child keeps; every other inherited tool is removed.
+   * Defaults to reading and writing — see {@link DEFAULT_CHILD_TOOLS}.
+   */
+  childTools?: string[]
+  /**
+   * Prompt sections the summarization child does not get; defaults to deployment
+   * identity, persona, and the error-lessons section. An empty list suppresses
+   * nothing.
+   */
+  childOmitSections?: string[]
+}
+```
+
+来源：[`packages/guard/command-summarize-skill/src/index.ts:28`](../packages/guard/command-summarize-skill/src/index.ts)
+
+<a id="deepseek-aidsh-command-translate-skills"></a>
+
+## `@deepseek-ai/dsh-command-translate-skills`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Archive file the child writes; relative to the child's workspace. */
+  archivePath?: string
+  /**
+   * Shared archive the child writes IN ADDITION to {@link archivePath}.
+   * Relative paths resolve against the harness home; an empty string disables
+   * the shared copy. It exists because skills live in a user-level registry:
+   * without it a catalog translated for one workspace reads as untranslated in
+   * every other one.
+   */
+  sharedArchivePath?: string
+  /** Target locale BCP-47 tag for the translations. */
+  targetLocale?: string
+  /** Subagent provider that runs the translation child. */
+  provider?: string
+  /**
+   * Tools the translation child keeps; every other inherited tool is removed.
+   * Defaults to reading and writing — see {@link DEFAULT_CHILD_TOOLS}.
+   */
+  childTools?: string[]
+  /**
+   * Prompt sections the translation child does not get; defaults to deployment
+   * identity, persona, and the error-lessons section. An empty list suppresses
+   * nothing.
+   */
+  childOmitSections?: string[]
+}
+```
+
+来源：[`packages/skill/command-translate-skills/src/index.ts:29`](../packages/skill/command-translate-skills/src/index.ts)
+
+<a id="deepseek-aidsh-command-translate-system-prompt"></a>
+
+## `@deepseek-ai/dsh-command-translate-system-prompt`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Archive file the child writes; relative to the child's workspace. */
+  archivePath?: string
+  /**
+   * Translation-only file the child writes beside the archive; feed this path
+   * to system-prompt's `completePromptFile` to make the model receive the
+   * translated prompt. Relative to the child's workspace.
+   */
+  promptOnlyPath?: string
+  /** Target locale BCP-47 tag for the translation. */
+  targetLocale?: string
+  /** Subagent provider that runs the translation child. */
+  provider?: string
+}
+```
+
+来源：[`packages/skill/command-translate-system-prompt/src/index.ts:29`](../packages/skill/command-translate-system-prompt/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -508,6 +649,26 @@ export interface ToolResultPruneConfig {
 
 来源：[`packages/compaction/compaction-tool-result-pruner/src/types.ts:5`](../packages/compaction/compaction-tool-result-pruner/src/types.ts)
 
+<a id="deepseek-aidsh-computer-python"></a>
+
+## `@deepseek-ai/dsh-computer-python`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * Absolute path or PATH name of the CPython interpreter. Empty probes the
+   * candidates in order — `python`, then `python3`, then `py -3` — and keeps the
+   * first one that completes a probe call.
+   */
+  pythonPath?: string
+  /** Timeout for one action in milliseconds, 20000 by default. Screenshots carry PNG encoding, so do not set this too low. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/computer/computer-python/src/config.ts:13`](../packages/computer/computer-python/src/config.ts)
+
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
 ## `@deepseek-ai/dsh-cordis-host-runner`
@@ -543,6 +704,24 @@ export interface Config {
 ```
 
 来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-error-reflection-prompt"></a>
+
+## `@deepseek-ai/dsh-error-reflection-prompt`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Reflection document to read; a relative path resolves under the Harness home. */
+  docPath?: string
+  /** Tail cap on the document's global text contributed to the prompt. */
+  maxPromptChars?: number
+  /** Cap on ONE subject's lessons contributed to that subject's section. */
+  maxSubjectChars?: number
+}
+```
+
+来源：[`packages/guard/error-reflection-prompt/src/index.ts:46`](../packages/guard/error-reflection-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -1770,8 +1949,17 @@ export interface Config {
 ```ts config-catalog
 /** Deployment-owned plan guidance. */
 export interface PlanModeConfig {
-  /** Guidance rendered as the `plan:policy` prompt section while plan mode is active. */
-  section: string
+  /**
+   * Guidance rendered as the `plan:policy` prompt section while plan mode is
+   * active. Omit to use the built-in {@link DEFAULT_SECTION}; it stays optional
+   * so a patch layer can adjust a sibling switch without repeating this text.
+   */
+  section?: string
+  /**
+   * Create a durable goal from the plan on review approval. Requires the goal
+   * service; approval fails loudly when it is not mounted.
+   */
+  goalOnApprove?: boolean
 }
 ```
 
@@ -1968,11 +2156,20 @@ export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
+   * Locale for the model-facing `sandbox:policy` context (default `auto`).
+   * `auto` follows the assembly language — the interface language the user
+   * picked in settings — and falls back to English when the assembly carries
+   * none. `en`/`zh` pin it regardless of the setting.
+   */
+  contextLocale?: ContextLocale
+  /**
    * Absolute fallback root for agentless calls and sessions without a cwd (default:
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string
 }
+
+export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
 依赖：[`SandboxMode`](subsystems/sandbox.zh.md)
@@ -2333,7 +2530,13 @@ export interface Config {
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
   agentsHome?: string
-  /** Additional skill roots scanned after project roots and before user roots. */
+  /** Additional skill roots scanned after project roots and before user roots.
+   *
+   * A path resolves against the process cwd. A `file:` URL resolves as a URL
+   * instead, which is how a composition names a directory beside itself:
+   * `!!js new URL('skills', baseUrl)` is the directory next to the composition
+   * that wrote it, so the root travels wherever that composition is installed.
+   */
   customSkillDirs?: string[]
   /** Whether host-local skill roots are watched for catalog changes. */
   watch?: boolean
@@ -2349,10 +2552,19 @@ export interface Config {
   watchFollowSymlinks?: boolean
   /** Bundled skill root; defaults to `$DSH_BUNDLED_SKILL_DIR` when default roots are included, otherwise mounts none. */
   bundledSkillDir?: string
+  /** Per-skill trigger states overriding skill frontmatter.
+   *
+   * - `passive` keeps both invocation surfaces.
+   * - `active-only` restricts the skill to explicit user invocation.
+   * - `ignored` hides the skill from every catalog.
+   */
+  invocationOverrides?: Record<string, SkillTriggerState>
 }
 ```
 
-来源：[`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
+依赖：[`SkillTriggerState`](../packages/skill/skill/src/index.ts)
+
+来源：[`packages/skill/skill-filesystem/src/index.ts:66`](../packages/skill/skill-filesystem/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 
@@ -2739,6 +2951,22 @@ export interface Config {
 export interface Config {
   /** Include the fixed DeepSeek Harness identity before the deployment persona (default true). */
   includeHarnessIdentity?: boolean
+  /**
+   * Absolute path to a UTF-8 file whose whole content replaces the assembled
+   * system prompt sections (the tools, contexts, and variables still resolve).
+   * At construction a missing file means "not configured" — the standard
+   * assembly runs; any other read failure fails the plugin at load. Once
+   * active, the file is re-read per assembly and its disappearance fails that
+   * request loudly rather than silently downgrading the prompt.
+   */
+  completePromptFile?: string
+  /**
+   * Use the per-session translation-only prompt produced by
+   * `/translate-system-prompt` (default true). A relative
+   * {@link Config.translatedPromptFile} resolves against the assembling agent's
+   * session workspace; a missing file leaves the standard assembly untouched.
+   */
+  autoTranslatedPrompt?: boolean
   /** Include dynamic runtime-context snapshots in model history (default true). */
   includeRuntimeContext?: boolean
   /**
@@ -2752,12 +2980,39 @@ export interface Config {
    */
   personaSuffix?: string
   /**
+   * Per-session translation-only prompt file. Relative paths resolve against
+   * the assembling agent's session workspace (default
+   * `.dsh/system-prompt.zh.prompt.md`, the `/translate-system-prompt` output).
+   */
+  translatedPromptFile?: string
+  /**
+   * System-prompt language (`auto` by default). `auto` follows the interface
+   * language the user picked in settings; `zh`/`en` are locked by the
+   * deployment and stop following settings — for pinning one deployment to a
+   * single language.
+   *
+   * It only picks the wording of built-in sections and the skill catalog;
+   * section overrides the user writes in the settings card always take effect
+   * in that card's own language, unaffected by this.
+   */
+  promptLocale?: PromptLocalePreference
+  /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
    * hidden in one scope may be absent there. Omitted means lexicographic order.
    */
   toolOrder?: string[]
 }
+
+/**
+ * The values a language setting can come from. `auto` follows the interface
+ * language the user picked in settings; `zh`/`en` are locked explicitly by the
+ * deployment and stop following settings.
+ */
+export type PromptLocalePreference = 'auto' | PromptLocale
+
+/** A selectable system-prompt language. */
+export type PromptLocale = 'zh' | 'en'
 ```
 
 来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
@@ -2897,6 +3152,51 @@ export interface Config {
 
 来源：[`packages/shell/tool-bash-persistent/src/index.ts:435`](../packages/shell/tool-bash-persistent/src/index.ts)
 
+<a id="deepseek-aidsh-tool-computer-use"></a>
+
+## `@deepseek-ai/dsh-tool-computer-use`
+
+需要：`tools` · `systemPrompt` · `sessionProjections`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * Replaces the built-in policy text wholesale. This is the second layer: a
+   * deployment customizes the wording, narrows the safety boundary, or switches
+   * languages without changing code.
+   */
+  policy?: string
+  /**
+   * Additional trigger phrases beyond the built-in ones, for a team's own
+   * vocabulary — an internal product or process name, say.
+   */
+  extraTriggers?: string[]
+}
+```
+
+来源：[`packages/computer/tool-computer-use/src/index.ts:70`](../packages/computer/tool-computer-use/src/index.ts)
+
+<a id="deepseek-aidsh-tool-error-journal"></a>
+
+## `@deepseek-ai/dsh-tool-error-journal`
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * JSONL sink path. A relative path resolves under the Harness home
+   * (`$DSH_HOME` or `~/.dsh`); the default file is `tool-error-log.jsonl`
+   * there. The archive and the reflection document sit beside it.
+   */
+  path?: string
+  /** Cap on the model-facing failure text excerpt stored per entry. */
+  maxTextChars?: number
+}
+```
+
+来源：[`packages/guard/tool-error-journal/src/index.ts:47`](../packages/guard/tool-error-journal/src/index.ts)
+
 <a id="deepseek-aidsh-tool-fs"></a>
 
 ## `@deepseek-ai/dsh-tool-fs`
@@ -2965,7 +3265,20 @@ export interface Config {
 export interface Config {
   /** Minimum admitted goal rounds before the model may self-report `blocked`. */
   blockedAfterConsecutiveRounds?: number
+  /**
+   * Tool shape (default `split`). See {@link GoalToolShape}.
+   */
+  toolShape?: GoalToolShape
 }
+
+/**
+ * How this row spells the goal controls to the model. `split` keeps three
+ * named tools; `merged` collapses them into one `goal` tool with an `action`
+ * parameter. Two shapes rather than one because a deployment's other rows,
+ * prompts, and tests address the tool names: a preset that consolidates its
+ * catalog opts in, and every existing composition keeps what it names.
+ */
+export type GoalToolShape = 'split' | 'merged'
 ```
 
 来源：[`packages/goal/tool-goal/src/index.ts:25`](../packages/goal/tool-goal/src/index.ts)
@@ -2992,6 +3305,10 @@ export interface Config {
    * completion wakes it again.
    */
   maxConsecutiveWakes?: number
+  /**
+   * Tool shape (default `split`). See {@link JobToolShape}.
+   */
+  toolShape?: JobToolShape
 }
 
 /**
@@ -3000,6 +3317,15 @@ export interface Config {
  * owner. A busy owner is injected either way.
  */
 export type CompletionDelivery = 'quiet' | 'wakeup'
+
+/**
+ * How this row spells the job controls to the model. `split` keeps three named
+ * tools; `merged` collapses them into one `job` tool with an `action`
+ * parameter. Two shapes rather than one because a deployment's prompts and
+ * tests address the tool names: a preset consolidating its catalog opts in,
+ * and every existing composition keeps what it names.
+ */
+export type JobToolShape = 'split' | 'merged'
 ```
 
 来源：[`packages/jobs/tool-jobs/src/index.ts:31`](../packages/jobs/tool-jobs/src/index.ts)
@@ -3129,7 +3455,25 @@ export interface Config {
 export interface Config {
   /** Maximum normalized description length rendered in the session catalog; minimum 3. */
   catalogDescriptionMaxLength?: number
+  /**
+   * Locale for the session catalog (default `auto`). `auto` follows the
+   * language the assembly resolved — which, unless a deployment pins
+   * `system-prompt.promptLocale`, is the interface language the user picked in
+   * settings — and falls back to the archive heuristic (Chinese when the
+   * per-project translation archive carries at least one description) for
+   * assemblies that carry no locale. `zh` selects Chinese unconditionally;
+   * `en` never translates.
+   */
+  catalogLocale?: CatalogLocale
+  /**
+   * Translation archive the `zh` locale reads; relative paths resolve against
+   * the session workspace (default `.dsh/skill-translations.zh.json`, the
+   * `/translate-skills` archive).
+   */
+  catalogTranslationsFile?: string
 }
+
+export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 ```
 
 来源：[`packages/skill/tool-skill/src/index.ts:61`](../packages/skill/tool-skill/src/index.ts)
@@ -3163,6 +3507,19 @@ export interface Config {
 export interface Config {
   /** The `ctx.subagents` provider name to start runs on (e.g. `spawn`, `acp`). */
   provider: string
+  /**
+   * A second provider reachable through one `fork` boolean instead of a second
+   * tool instance. Set it to the provider that inherits the parent
+   * conversation; `fork: true` then routes there and the omitted flag keeps
+   * {@link Config.provider}. Omit for the split shape: one plugin instance per
+   * provider, each with its own `toolName`.
+   *
+   * The pairing is admitted only when this provider inherits and `provider`
+   * does not — otherwise the flag would describe routes the two providers do
+   * not offer. An explicit child model request is rejected on `fork: true`, so
+   * the inherited conversation prefix stays eligible for reuse.
+   */
+  forkProvider?: string
   /**
    * Model-facing tool name (default `subagent`). Each loaded instance must use
    * a distinct name.
@@ -3374,6 +3731,13 @@ export interface Config {
    * prompting (the deterministic CI/unattended stance).
    */
   readonly policy?: ApprovalPolicy
+  /**
+   * Locale for the model-facing `approval:policy` context (default `auto`).
+   * `auto` follows the assembly language — the interface language the user
+   * picked in settings — and falls back to English when the assembly carries
+   * none. `en`/`zh` pin it regardless of the setting.
+   */
+  readonly contextLocale?: ContextLocale
 }
 
 /**
@@ -3387,6 +3751,8 @@ export interface Config {
  *   the policy whose outcome is knowable without asking.
  */
 export type ApprovalPolicy = 'ask' | 'never'
+
+export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
 来源：[`packages/interaction/user-approval/src/index.ts:128`](../packages/interaction/user-approval/src/index.ts)
@@ -3689,7 +4055,8 @@ export interface Config {
 
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）
-- `@deepseek-ai/dsh-credentials` — 抽象 `Credentials`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）
+- `@deepseek-ai/dsh-computer` — 抽象 `ComputerUse`（[`packages/computer/computer/src/index.ts`](../packages/computer/computer/src/index.ts)）
+- `@deepseek-ai/dsh-credentials` — 抽象 `CredentialProvider`（[`packages/credentials/credentials/src/index.ts`](../packages/credentials/credentials/src/index.ts)）
 - `@deepseek-ai/dsh-file-reference` — 抽象 `FileReferenceService`（[`packages/context/file-reference/src/index.ts`](../packages/context/file-reference/src/index.ts)）
 - `@deepseek-ai/dsh-fs` — 抽象 `FileSystem`（[`packages/fs/fs/src/index.ts`](../packages/fs/fs/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker` — 抽象 `DirectoryPicker`（[`packages/host/directory-picker/src/index.ts`](../packages/host/directory-picker/src/index.ts)）

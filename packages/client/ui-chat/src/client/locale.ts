@@ -35,19 +35,10 @@ export const zh = {
   'fileOpen.unknown': '无法打开此文件',
   'message.extraBlock': '附加内容块',
   'message.systemPrompt': '系统提示词',
-<<<<<<< ours
-  'message.systemPrompt.added': '已新增',
-  'message.systemPrompt.updated': '已更新',
-  'message.systemPrompt.removed': '已移除',
-=======
-<<<<<<< ours
-  'message.systemPrompt.added': '已新增',
-  'message.systemPrompt.updated': '已更新',
-  'message.systemPrompt.removed': '已移除',
-=======
   'message.systemPromptUpdate': '系统提示词更新',
->>>>>>> theirs
->>>>>>> theirs
+  'message.systemPrompt.added': '已新增',
+  'message.systemPrompt.updated': '已更新',
+  'message.systemPrompt.removed': '已移除',
   'message.contextInjection': '上下文注入',
   'message.contextRecall': '跨会话召回',
   'message.referenceSummary': '引用会话 · {labels}',
@@ -158,19 +149,10 @@ export const en = {
   'fileOpen.unknown': 'Couldn’t open this file',
   'message.extraBlock': 'Extra content block',
   'message.systemPrompt': 'System prompt',
-<<<<<<< ours
-  'message.systemPrompt.added': 'added',
-  'message.systemPrompt.updated': 'updated',
-  'message.systemPrompt.removed': 'removed',
-=======
-<<<<<<< ours
-  'message.systemPrompt.added': 'added',
-  'message.systemPrompt.updated': 'updated',
-  'message.systemPrompt.removed': 'removed',
-=======
   'message.systemPromptUpdate': 'System prompt update',
->>>>>>> theirs
->>>>>>> theirs
+  'message.systemPrompt.added': 'added',
+  'message.systemPrompt.updated': 'updated',
+  'message.systemPrompt.removed': 'removed',
   'message.contextInjection': 'Context injection',
   'message.contextRecall': 'Session recall',
   'message.referenceSummary': 'Referenced session · {labels}',

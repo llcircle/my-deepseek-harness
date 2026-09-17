@@ -29,18 +29,9 @@ const SECTION_ORDER_NAMES = [
   'TOOL_GREP', 'TOOL_JOBS', 'TOOL_PTY', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH',
   'TOOL_LSP', 'TOOL_SESSION_QUERY', 'TOOL_GOAL', 'TOOL_CORDIS', 'TOOL_WORKFLOW',
   'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT', 'TOOLS_SDK',
-<<<<<<< ours
   'DELIVERABLE_FILE_REFERENCES', 'MCP_INTRO', 'ERROR_LESSONS', 'STRUCTURED_OUTPUT',
-  'SKILL_CATALOG',
-=======
-<<<<<<< ours
-  'DELIVERABLE_FILE_REFERENCES', 'MCP_INTRO', 'ERROR_LESSONS', 'STRUCTURED_OUTPUT',
-  'SKILL_CATALOG',
-=======
-  'DELIVERABLE_FILE_REFERENCES', 'STRUCTURED_OUTPUT',
   'HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX',
->>>>>>> theirs
->>>>>>> theirs
+  'SKILL_CATALOG',
 ] as const satisfies readonly PromptSectionOrderName[]
 const CONTEXT_ORDER_NAMES = [
   'SANDBOX_POLICY', 'APPROVAL_POLICY', 'SUBAGENT_DELEGATION',
@@ -69,7 +60,7 @@ describe('SystemPrompt', () => {
         ctx.systemPrompt.variable(key, () => environment[key])
       }
       const reusable = SECTION_ORDER_NAMES.filter(name =>
-        !['HARNESS_IDENTITY', 'DEPLOYMENT_PERSONA_PREFIX', 'HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX'].includes(name))
+        !['HARNESS_IDENTITY', 'DEPLOYMENT_PERSONA_PREFIX', 'HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX', 'SKILL_CATALOG'].includes(name))
       for (const name of [...reusable].reverse()) {
         ctx.systemPrompt.section({ name, order: ctx.systemPrompt.getSectionOrder(name), text: name })
       }
@@ -79,12 +70,17 @@ describe('SystemPrompt', () => {
       ctx.systemPrompt.section({
         name: 'web', order: ctx.systemPrompt.getSectionOrder('WEB_SURFACE'), text: () => environment.url,
       })
+      // 技能目录是部署侧清单，排在 persona 后缀之后（见 SECTION_ORDERS 的注释），
+      // 所以它既不属于"可复用指令"，也不在本地路径那一组里，单独钉住位置。
+      ctx.systemPrompt.section({
+        name: 'SKILL_CATALOG', order: ctx.systemPrompt.getSectionOrder('SKILL_CATALOG'), text: 'SKILL_CATALOG',
+      })
       const first = renderPrompt(await ctx.systemPrompt.assemble())
       environment = { model: 'model-a', cwd: 'C:/bob/project', platform: 'win32', source: 'C:/bob/dsh', url: 'http://127.0.0.1:4080' }
       const second = renderPrompt(await ctx.systemPrompt.assemble())
       const prefix = [IDENTITY, 'Model model-a.', ...reusable].join('\n\n') + '\n\n'
-      expect(first).toBe(prefix + '/alice/dsh\n\nhttp://127.0.0.1:3080\n\nIn /alice/project on darwin.')
-      expect(second).toBe(prefix + 'C:/bob/dsh\n\nhttp://127.0.0.1:4080\n\nIn C:/bob/project on win32.')
+      expect(first).toBe(`${prefix}/alice/dsh\n\nhttp://127.0.0.1:3080\n\nIn /alice/project on darwin.\n\nSKILL_CATALOG`)
+      expect(second).toBe(`${prefix}C:/bob/dsh\n\nhttp://127.0.0.1:4080\n\nIn C:/bob/project on win32.\n\nSKILL_CATALOG`)
       environment.model = 'model-b'
       expect(renderPrompt(await ctx.systemPrompt.assemble()))
         .toBe(second.replace('Model model-a.', 'Model model-b.'))
@@ -172,7 +168,7 @@ describe('SystemPrompt', () => {
       expect(providerCalls).toBe(0)
     })
 
-    it('tolerates a schema-bypassing direct construction (persona omitted)', async () => {
+    it('tolerates a schema-bypassing direct construction (personaPrefix omitted)', async () => {
       // ctx.plugin validates + defaults the config first; a direct construction
       // skips the schema, so the ctor's `?? ''` narrowing is what fires.
       const ctx = new Context()
@@ -381,25 +377,14 @@ describe('SystemPrompt', () => {
 
     const passed: AssembleContext = {}
     const assembly = await ctx.systemPrompt.assemble(passed)
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     // Listeners see every registered section, empty optional ones included: the
     // "empty optional disappears" rule is a projection of the final prompt, and
     // it runs after the waterfall so a listener can still fill such a section.
-    expect(seen).toEqual([['harness:identity', 'deployment:persona', 'base', 'from-a']])
-    expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona', 'base', 'from-a'])
+    expect(seen).toEqual([['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a']])
+    expect(assembly.sections.map(s => s.name))
+      .toEqual(['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a'])
     // The caller's context reaches listeners, carrying the locale the registry resolved.
     expect(contexts[0]).toEqual({ ...passed, locale: 'en' })
-<<<<<<< ours
-=======
-=======
-    expect(seen).toEqual([['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a']])
-    expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona-prefix', 'base', 'deployment:persona-suffix', 'from-a'])
-    expect(contexts[0]).toBe(passed) // the caller's context reaches listeners
->>>>>>> theirs
->>>>>>> theirs
   })
 
   it('lets a waterfall listener short-circuit by not calling next()', async () => {
@@ -759,7 +744,7 @@ describe('SystemPrompt', () => {
       await ctx.plugin(SystemPrompt, { completePromptFile: 'Z:\\nonexistent\\prompt.md' })
 
       const assembly = await ctx.systemPrompt.assemble()
-      expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona'])
+      expect(assembly.sections.map(s => s.name)).toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix'])
     })
   })
 
@@ -771,10 +756,10 @@ describe('SystemPrompt', () => {
       await writeFile(file, '你是 DeepSeek Harness 中文代理。', 'utf8')
       try {
         const ctx = new Context()
-        await ctx.plugin(SystemPrompt, { persona: 'English persona.' })
+        await ctx.plugin(SystemPrompt, { personaPrefix: 'English persona.' })
 
         const assembly = await ctx.systemPrompt.assemble({ cwd: dir })
-        expect(assembly.sections.map(section => section.name)).toEqual(['harness:identity', 'deployment:persona'])
+        expect(assembly.sections.map(section => section.name)).toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix'])
       } finally {
         await rm(dir, { recursive: true, force: true })
       }
@@ -783,15 +768,15 @@ describe('SystemPrompt', () => {
     it('keeps the standard assembly when no translation exists or auto selection is disabled', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dsh-untranslated-prompt-'))
       const translated = new Context()
-      await translated.plugin(SystemPrompt, { persona: 'English persona.' })
+      await translated.plugin(SystemPrompt, { personaPrefix: 'English persona.' })
       const disabled = new Context()
       await disabled.plugin(SystemPrompt, {
         autoTranslatedPrompt: false,
-        persona: 'English persona.',
+        personaPrefix: 'English persona.',
       })
       try {
         expect((await translated.systemPrompt.assemble({ cwd: dir })).sections.map(section => section.name))
-          .toEqual(['harness:identity', 'deployment:persona'])
+          .toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix'])
 
         await mkdir(join(dir, '.dsh'), { recursive: true })
         await writeFile(
@@ -800,7 +785,7 @@ describe('SystemPrompt', () => {
           'utf8',
         )
         expect((await disabled.systemPrompt.assemble({ cwd: dir })).sections.map(section => section.name))
-          .toEqual(['harness:identity', 'deployment:persona'])
+          .toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix'])
       } finally {
         await rm(dir, { recursive: true, force: true })
       }
@@ -822,7 +807,7 @@ describe('SystemPrompt', () => {
       )
       const ctx = new Context()
       // The archive is Chinese, so it is only consulted under the Chinese locale.
-      await ctx.plugin(SystemPrompt, { persona: 'English persona.', promptLocale: 'zh' })
+      await ctx.plugin(SystemPrompt, { personaPrefix: 'English persona.', promptLocale: 'zh' })
       ctx.systemPrompt.section({ name: 'skills:catalog', order: 100, text: '<available_skills>...</available_skills>' })
       ctx.systemPrompt.section({ name: 'deployment:error-lessons', order: 150, text: 'Live lessons.' })
       ctx.systemPrompt.section({ name: 'plugin:extra', order: 200, text: 'Extra guidance.' })
@@ -830,10 +815,11 @@ describe('SystemPrompt', () => {
         const assembly = await ctx.systemPrompt.assemble({ cwd: dir })
         expect(assembly.sections.map(section => section.name)).toEqual([
           'harness:identity',
-          'deployment:persona',
+          'deployment:persona-prefix',
           'skills:catalog',
           'deployment:error-lessons',
           'plugin:extra',
+          'deployment:persona-suffix',
         ])
         expect(renderPrompt(assembly)).toBe('翻译后的身份。\n\n翻译后的人设。\n\n<available_skills>...</available_skills>\n\nLive lessons.\n\n翻译后的额外指引。')
       } finally {

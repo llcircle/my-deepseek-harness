@@ -67,9 +67,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-computer`](../computer/README.md) 与 [`dsh-computer-python`](../computer-python/README.md) —— seam 及其随包发布的提供方。
-- [Session 日志](../../../docs/architecture.zh.md#session-日志) —— 为什么启用是一个持久事件而不是内存状态。
-- [`dsh-plan-mode`](../../plan/plan-mode/README.md) —— 另一种按会话的协作状态，也是本包动态提示词分节的范本。
+- [`dsh-computer`](../computer/README.zh.md) 与 [`dsh-computer-python`](../computer-python/README.zh.md) —— seam 及其随包发布的提供方。
+- [Session 日志](../../../docs/architecture.zh.md#session-log) —— 为什么启用是一个持久事件而不是内存状态。
+- [`dsh-plan-mode`](../../plan/plan-mode/README.zh.md) —— 另一种按会话的协作状态，也是本包动态提示词分节的范本。
 
 -----
 

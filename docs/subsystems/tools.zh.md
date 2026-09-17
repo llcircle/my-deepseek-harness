@@ -511,6 +511,56 @@ Tool registry and execution pipeline. Scoped registrations shadow globals; one v
 presentAs(mode: ToolPresentationMode): () => void
 
 /**
+ * Move the SCHEMAS of `names` off the wire for every agent the calling
+ * scope covers, until a `tool_search` call in the agent's own scope fetches
+ * them back.
+ *
+ * Withholding narrows the request and nothing else: the tool stays
+ * registered, stays dispatchable, and stays a known name for `toolOrder`
+ * and `restrict`. That is the whole point — a model that learns the name
+ * and its schema from a `tool_search` result can call it immediately, and a
+ * tool description that names it stays truthful. See
+ * [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the
+ * fetching.
+ *
+ * Scoped only, like {@link presentAs}: whether a tool is resident is a
+ * property of the COMPOSITION, not of the tool, so the row that carries it
+ * is an agent preset's. The same `web_fetch` is a resident tool in one
+ * preset and an on-demand one in another, and a per-tool flag inside its own
+ * package could not express both.
+ *
+ * Names that are not registered are IGNORED, not rejected. A preset defers a
+ * capability group, and a group member whose row is absent or `disabled` in
+ * this deployment is a legitimate absence — indistinguishable, from the
+ * registry's side, from a name the preset no longer uses. A name deferred
+ * and never registered simply withholds nothing.
+ * @param names - tool names whose schemas stay off the wire until fetched.
+ * @returns the exact disposer that makes them resident again.
+ */
+defer(names: readonly string[]): () => void
+
+/**
+ * Record that this scope has fetched `names` through `tool_search`, so their
+ * schemas join every later request. Scoped to the calling context, which for
+ * a fetch is the calling `<agent>.ctx` — so one agent's research does not
+ * spend another's budget, and the record unwinds with that agent.
+ * @param names - tool names whose schemas this scope now shows.
+ * @returns the exact disposer that withholds them again.
+ */
+loadDeferred(names: readonly string[]): () => void
+
+/**
+ * Every tool this scope's composition declares on-demand, with its full
+ * definition, in name order. This is `tool_search`'s search space and what
+ * the on-demand index section lists: a declared name that is not registered
+ * in this scope — an absent or `disabled` row, or one a restriction masked —
+ * has nothing to fetch and is omitted.
+ * @param scope - the scope to read; omitted reads the deployment default.
+ * @returns the on-demand tools, each with whether this scope already loaded it.
+ */
+deferredTools(scope?: ScopeKey): readonly DeferredTool[]
+
+/**
  * Register globally or in the calling agent scope. Scoped tools shadow
  * globals; duplicates within one layer and the reserved `run_code` name fail.
  * @param definition - tool schema, execution, and optional finalization/presentation callbacks.

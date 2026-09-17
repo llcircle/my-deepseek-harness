@@ -9,14 +9,15 @@ import z from '@deepseek-ai/schemastery'
 /** 单次动作的默认超时（毫秒）。 */
 export const DEFAULT_TIMEOUT_MS = 20_000
 
-/** 插件配置。 */
+/** Plugin configuration. */
 export interface Config {
   /**
-   * CPython 解释器的绝对路径或 PATH 名。留空则按 `python` → `python3` →
-   * `py -3` 的顺序探测第一个能完成一次探测调用的解释器。
+   * Absolute path or PATH name of the CPython interpreter. Empty probes the
+   * candidates in order — `python`, then `python3`, then `py -3` — and keeps the
+   * first one that completes a probe call.
    */
   pythonPath?: string
-  /** 单次动作的超时（毫秒），默认 20000。截图含 PNG 编码，不宜设得过小。 */
+  /** Timeout for one action in milliseconds, 20000 by default. Screenshots carry PNG encoding, so do not set this too low. */
   timeoutMs?: number
 }
 

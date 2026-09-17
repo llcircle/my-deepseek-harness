@@ -1,7 +1,3 @@
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
 import { memo, useState } from 'react'
 import type { ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { DisclosureRow, IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -15,6 +11,8 @@ export interface SystemPromptRowProps {
   text: string
   /** Source-preserving sections used for grouped display, tagged when they are a difference. */
   sections?: readonly SystemPromptSection[]
+  /** True when the prompt replaced an earlier one from this position in the history. */
+  update?: boolean
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }
@@ -33,6 +31,7 @@ const SECTION_CHANGE_KEYS = {
  *
  * A row that belongs to a change list carries the word for what moved beside
  * its name: a list of one row out of twenty-four has to say why it is short.
+ * An in-history update uses the same row under its own title.
  * @param props - Complete prompt text and the locale seat.
  * @returns The system-prompt disclosure row.
  */
@@ -71,7 +70,7 @@ function PromptSectionRow({ section, t }: {
   )
 }
 
-export function SystemPromptRow({ text, sections, t }: SystemPromptRowProps) {
+export function SystemPromptRow({ text, sections, update = false, t }: SystemPromptRowProps) {
   const [open, setOpen] = useState(false)
   if (sections !== undefined && sections.length > 0) {
     return (
@@ -80,63 +79,6 @@ export function SystemPromptRow({ text, sections, t }: SystemPromptRowProps) {
       </>
     )
   }
-  return (
-    <DisclosureRow
-      className={css.root}
-      icon={<IconBrowseOutline16 size={14} />}
-      chevronClassName={css.chevron}
-      title={t('message.systemPrompt')}
-      open={open}
-      expandable
-      expandOnRowClick
-      onToggle={() => { setOpen(value => !value) }}
-    >
-      <div className={css.body} data-system-prompt-body>
-        <OpaqueBody content={[{ type: 'text', text }]} source={null} t={t} />
-      </div>
-    </DisclosureRow>
-  )
-}
-
-/** System-prompt keyed Chat renderer. */
-export const SystemPromptNodeView = memo(function SystemPromptNodeView({
-  node, t,
-}: Pick<ChatNodeViewProps<'system-prompt'>, 'node' | 't'>) {
-  return <SystemPromptRow
-    text={node.data.text}
-    {...node.data.sections === undefined ? {} : { sections: node.data.sections }}
-    t={t}
-  />
-})
-<<<<<<< ours
-=======
-=======
-import { memo, useState } from 'react'
-import type { ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
-import { DisclosureRow, IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { OpaqueBody } from './ContextBody.tsx'
-import css from './ContextInjectionRow.module.css'
-
-/** Props for one complete system prompt disclosure. */
-export interface SystemPromptRowProps {
-  /** Complete model-visible prompt text. */
-  text: string
-  /** True when the prompt replaced an earlier one from this position in the history. */
-  update?: boolean
-  /** The owning view's locale seat. */
-  t: ChatViewSlotProps['t']
-}
-
-/**
- * Render one complete system prompt as a collapsed disclosure whose expanded
- * body is the same opaque context chrome: 141px code-block scrollport and
- * model-facing text with its real line breaks. An in-history update uses the
- * same row under its own title.
- * @param props - Complete prompt text, whether it is an update, and the locale seat.
- * @returns The system-prompt disclosure row.
- */
-export function SystemPromptRow({ text, update = false, t }: SystemPromptRowProps) {
-  const [open, setOpen] = useState(false)
   return (
     <DisclosureRow
       className={css.root}
@@ -159,7 +101,10 @@ export function SystemPromptRow({ text, update = false, t }: SystemPromptRowProp
 export const SystemPromptNodeView = memo(function SystemPromptNodeView({
   node, t,
 }: Pick<ChatNodeViewProps<'system-prompt'>, 'node' | 't'>) {
-  return <SystemPromptRow text={node.data.text} update={node.data.update === true} t={t} />
+  return <SystemPromptRow
+    text={node.data.text}
+    {...node.data.sections === undefined ? {} : { sections: node.data.sections }}
+    update={node.data.update === true}
+    t={t}
+  />
 })
->>>>>>> theirs
->>>>>>> theirs

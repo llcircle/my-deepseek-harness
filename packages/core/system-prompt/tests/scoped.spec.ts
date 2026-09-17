@@ -82,7 +82,7 @@ describe('scoped sections', () => {
 
 describe('scoped section suppression', () => {
   it('drops a global section from one scope\'s assembly and leaves every other scope alone', async () => {
-    const ctx = await mount({ persona: 'You are the deployment.' })
+    const ctx = await mount({ personaPrefix: 'You are the deployment.' })
     const scope = await mintScope(ctx, 'suppressing')
     ctx.systemPrompt.section({ name: 'deployment:error-lessons', order: 9100, text: 'Past lessons.' })
     const dispose = scope.ctx.systemPrompt.suppressSection('deployment:error-lessons')

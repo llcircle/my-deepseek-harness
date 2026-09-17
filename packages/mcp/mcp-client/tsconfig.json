@@ -36,15 +36,9 @@
       "path": "../../util/http-proxy"
     },
     {
-<<<<<<< ours
-=======
-<<<<<<< ours
-=======
       "path": "../mcp-resources"
     },
     {
->>>>>>> theirs
->>>>>>> theirs
       "path": "../../core/system-prompt"
     }
   ]

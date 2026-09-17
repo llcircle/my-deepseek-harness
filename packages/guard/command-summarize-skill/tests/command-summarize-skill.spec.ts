@@ -8,8 +8,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -65,17 +66,16 @@ async function harness(options: {
         return Promise.resolve({ id: SessionId('summary-child') })
       }
     }
-    await ctx.plugin(FakeSubagents, {})
+    await ctx.plugin(FakeSubagents)
   }
   await ctx.plugin(SummarizeSkill, options.config ?? {})
   const session = ctx.sessions.create(SessionId('summarize-agent'), { meta: { cwd: dir } })
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
     options: {},
     session,
-    inbox,
+    inbox: unsupportedInbox(),
     ctx: new Context(),
     get status() { return status },
     send: () => {},
@@ -96,20 +96,38 @@ async function harness(options: {
       session.append('assistant/message', {
         turn: 1,
         step: 1,
-        message: createAssistantMessage({ content: [{ type: 'text', text: turn.text }] }),
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: turn.text }],
+          source: { provider: 'mock', model: 'mock' },
+        }),
         stream: [],
       }, { surfaceOp: 'append' })
     }
   }
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return { ctx, agent, subagents }
+}
+
+/**
+ * Run one command line and hand back its settled execution. `execute()` returns
+ * `undefined` only when the line does not resolve to a registered command,
+ * which every test here treats as a broken harness rather than a result.
+ */
+async function run(
+  ctx: Context,
+  agent: Agent,
+  line: string,
+): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
+  const settled = await ctx.commands.execute(agent, line, [], new AbortController().signal)
+  if (settled === undefined) throw new Error(`${line} is not registered`)
+  return settled
 }
 
 describe('the /summarize-skill command', () => {
   it('fails when no conversation text exists yet', async () => {
     const { ctx, agent, subagents } = await harness({})
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill')
 
     expect(settled.result).toEqual({ kind: 'error', text: 'summarize-skill found no conversation text to capture yet' })
     expect(subagents.runs).toHaveLength(0)
@@ -123,7 +141,7 @@ describe('the /summarize-skill command', () => {
       ],
     })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs).toHaveLength(1)
@@ -143,13 +161,13 @@ describe('the /summarize-skill command', () => {
       ],
     })
 
-    await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    await run(ctx, agent, '/summarize-skill')
 
     // 会话记录已经在提示词里给全，子 agent 的活是把它压成一份技能文档写出去：
     // shell、搜索、委派、计划对它没有一处是必需的。
     expect(subagents.runs[0]?.allowTools).toEqual(['read', 'write'])
     expect(subagents.runs[0]?.omitSections)
-      .toEqual(['harness:identity', 'deployment:persona', 'deployment:error-lessons'])
+      .toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons'])
   })
 
   it('an explicit empty list turns trimming off rather than starving the child', async () => {
@@ -161,7 +179,7 @@ describe('the /summarize-skill command', () => {
       config: { childTools: [], childOmitSections: [] },
     })
 
-    await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    await run(ctx, agent, '/summarize-skill')
 
     // 空名单字面上意味着「一个工具都不留」，那样的子 agent 写不出技能文件；
     // 所以它读作「别动工具集」，请求里两个字段都不出现。
@@ -176,7 +194,7 @@ describe('the /summarize-skill command', () => {
     }))
     const { ctx, agent, subagents } = await harness({ turns })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill')
 
     expect(settled.result.kind).toBe('success')
     // Past the former 20-turn default: the child still sees every turn.
@@ -192,7 +210,7 @@ describe('the /summarize-skill command', () => {
     }))
     const { ctx, agent, subagents } = await harness({ turns, config: { maxTurns: 2 } })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs[0]?.prompt).not.toContain('turn 1')
@@ -208,7 +226,7 @@ describe('the /summarize-skill command', () => {
     }))
     const { ctx, agent, subagents } = await harness({ turns })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill 2-3 部署流程的完整步骤', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill 2-3 部署流程的完整步骤')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs).toHaveLength(1)
@@ -227,7 +245,7 @@ describe('the /summarize-skill command', () => {
     }))
     const { ctx, agent, subagents } = await harness({ turns })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill 2 只总结构建命令', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill 2 只总结构建命令')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs[0]?.prompt).toContain('turn 3')
@@ -239,11 +257,11 @@ describe('the /summarize-skill command', () => {
   it('fails loudly on an out-of-range or malformed selection', async () => {
     const { ctx, agent, subagents } = await harness({ turns: [{ role: 'user', text: 'hello' }] })
 
-    const outOfRange = await ctx.commands.execute(agent, '/summarize-skill 5-9', [], new AbortController().signal)
+    const outOfRange = await run(ctx, agent, '/summarize-skill 5-9')
     expect(outOfRange.result).toMatchObject({ kind: 'error' })
     expect((outOfRange.result as { text: string }).text).toContain('exceeds the 1 conversation turns')
 
-    const malformed = await ctx.commands.execute(agent, '/summarize-skill 9-3', [], new AbortController().signal)
+    const malformed = await run(ctx, agent, '/summarize-skill 9-3')
     expect(malformed.result).toMatchObject({ kind: 'error' })
     expect((malformed.result as { text: string }).text).toContain('range end 3 must be >= start 9')
     expect(subagents.runs).toHaveLength(0)
@@ -261,7 +279,7 @@ describe('the /summarize-skill command', () => {
   it('fails loudly when no subagent runtime is mounted', async () => {
     const { ctx, agent, subagents } = await harness({ turns: [{ role: 'user', text: 'hello' }], withSubagents: false })
 
-    const settled = await ctx.commands.execute(agent, '/summarize-skill', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/summarize-skill')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('subagent runtime')

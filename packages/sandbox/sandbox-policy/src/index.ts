@@ -55,23 +55,6 @@ function resolveContextLocale(preference: ContextLocale, assemblyLocale: string 
   return assemblyLocale === 'zh' ? 'zh' : 'en'
 }
 
-/**
- * Locales for the policy context: `auto` follows the language the prompt
- * assembly resolved — the interface language the user picked in settings —
- * while `en`/`zh` pin it. Anything unresolvable falls back to English.
- */
-const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
-export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
-
-/** A locale already resolved for rendering; `auto` never reaches the templates. */
-type ResolvedLocale = 'en' | 'zh'
-
-/** Resolve `auto` against the assembly's language, pinning `en`/`zh` as given. */
-function resolveContextLocale(preference: ContextLocale, assemblyLocale: string | undefined): ResolvedLocale {
-  if (preference !== 'auto') return preference
-  return assemblyLocale === 'zh' ? 'zh' : 'en'
-}
-
 /** Render the policy without claiming which capabilities are mounted. */
 function renderPolicyContext(policy: SandboxExecutionPolicy, locale: ResolvedLocale): string {
   switch (policy.mode) {
@@ -112,10 +95,6 @@ export interface Config {
   /** File-sandbox mode a session starts from (default: `read-only`). */
   mode?: SandboxMode
   /**
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
    * Locale for the model-facing `sandbox:policy` context (default `auto`).
    * `auto` follows the assembly language — the interface language the user
    * picked in settings — and falls back to English when the assembly carries
@@ -123,10 +102,7 @@ export interface Config {
    */
   contextLocale?: ContextLocale
   /**
-   * Fallback root for agentless calls and sessions without a cwd (default:
-=======
    * Absolute fallback root for agentless calls and sessions without a cwd (default:
->>>>>>> theirs
    * `process.cwd()`). Normal agent calls use their session cwd instead.
    */
   workspaceRoot?: string

@@ -47,12 +47,13 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** 系统提示词的可选语言。 */
+/** A selectable system-prompt language. */
 export type PromptLocale = 'zh' | 'en'
 
 /**
- * 语言设置来源的取值。`auto` 表示跟随用户在设置里选择的界面语言；
- * `zh`/`en` 由部署显式锁定，不再跟随设置。
+ * The values a language setting can come from. `auto` follows the interface
+ * language the user picked in settings; `zh`/`en` are locked explicitly by the
+ * deployment and stop following settings.
  */
 export type PromptLocalePreference = 'auto' | PromptLocale
 
@@ -202,20 +203,11 @@ const SECTION_ORDERS = {
   TOOL_RALPH: 2700,
   TOOL_SUBAGENT: 2800,
   TOOL_REPORT: 2900,
-<<<<<<< ours
   // 按需工具的索引紧跟在全部工具用法之后：它是一句"上面还差几个"的补充，
   // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
   TOOLS_ON_DEMAND: 2950,
-=======
-<<<<<<< ours
-  // 按需工具的索引紧跟在全部工具用法之后：它是一句"上面还差几个"的补充，
-  // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
-  TOOLS_ON_DEMAND: 2950,
-=======
   TOOL_COMPUTER_USE: 3000,
   MCP_SERVERS: 3100,
->>>>>>> theirs
->>>>>>> theirs
   TOOLS_SDK: 5000,
   DELIVERABLE_FILE_REFERENCES: 9000,
   MCP_INTRO: 9050,
@@ -224,18 +216,13 @@ const SECTION_ORDERS = {
   COMPUTER_USE_POLICY: 9060,
   ERROR_LESSONS: 9100,
   STRUCTURED_OUTPUT: 9900,
-<<<<<<< ours
-  SKILL_CATALOG: 10000,
-=======
-<<<<<<< ours
-  SKILL_CATALOG: 10000,
-=======
   // Local paths and endpoints follow reusable instructions.
   HARNESS_SOURCE: 10000,
   WEB_SURFACE: 10100,
   DEPLOYMENT_PERSONA_SUFFIX: 10200,
->>>>>>> theirs
->>>>>>> theirs
+  // 技能目录排在最后：它是"有哪些技能可用"的清单，与任何一节的用法说明都无耦合，
+  // 放在尾部既不打散工具用法，也方便整体替换成译文。
+  SKILL_CATALOG: 10300,
 } as const
 
 /** Name of a centrally allocated prompt-section position. */
@@ -346,7 +333,8 @@ const DEFAULT_SECTION_CATALOG = [
   'harness:identity',
   'harness:source',
   'app:web-surface',
-  'deployment:persona',
+  'deployment:persona-prefix',
+  'deployment:persona-suffix',
   'deployment:error-lessons',
   'context:file-reference',
   'tool:pwsh',
@@ -542,10 +530,6 @@ function compareToolNames(a: ToolSchema, b: ToolSchema): number {
   return compareNames(a.name, b.name)
 }
 
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
 /**
  * Split a translated archive into non-empty blank-line paragraphs.
  * Sections are translated one paragraph at a time, so paragraphs are the
@@ -628,10 +612,7 @@ function localizeSection(section: PromptSection, locale: PromptLocale): PromptSe
   }
 }
 
-/** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.persona} for its contract). */
-=======
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
->>>>>>> theirs
 export interface Config {
   /** Include the fixed DeepSeek Harness identity before the deployment persona (default true). */
   includeHarnessIdentity?: boolean
@@ -670,25 +651,14 @@ export interface Config {
    */
   translatedPromptFile?: string
   /**
-   * 系统提示词语言（默认 `auto`）。`auto` 跟随用户在设置里选的界面语言；
-   * `zh`/`en` 由部署锁定，不再跟随设置——用于把某一路部署钉死在一种语言上。
+   * System-prompt language (`auto` by default). `auto` follows the interface
+   * language the user picked in settings; `zh`/`en` are locked by the
+   * deployment and stop following settings — for pinning one deployment to a
+   * single language.
    *
-   * 只影响内置分段与技能目录的文案选择；用户在设置卡片里写的分段替换
-   * 始终按该卡片自己的语言生效，不受这里约束。
-   */
-  promptLocale?: PromptLocalePreference
-  /**
-   * Per-session translation-only prompt file. Relative paths resolve against
-   * the assembling agent's session workspace (default
-   * `.dsh/system-prompt.zh.prompt.md`, the `/translate-system-prompt` output).
-   */
-  translatedPromptFile?: string
-  /**
-   * 系统提示词语言（默认 `auto`）。`auto` 跟随用户在设置里选的界面语言；
-   * `zh`/`en` 由部署锁定，不再跟随设置——用于把某一路部署钉死在一种语言上。
-   *
-   * 只影响内置分段与技能目录的文案选择；用户在设置卡片里写的分段替换
-   * 始终按该卡片自己的语言生效，不受这里约束。
+   * It only picks the wording of built-in sections and the skill catalog;
+   * section overrides the user writes in the settings card always take effect
+   * in that card's own language, unaffected by this.
    */
   promptLocale?: PromptLocalePreference
   /**
@@ -710,13 +680,9 @@ export interface Config {
  */
 export function renderPromptSections(assembly: PromptAssembly): AssembledSection[] {
   return assembly.sections
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     .map(section => ({
       name: section.name,
-      text: interpolate(section, assembly.variables, 'section'),
+      text: section.interpolate === false ? section.text : interpolate(section, assembly.variables, 'section'),
     }))
     .filter(section => section.text.length > 0)
 }
@@ -724,13 +690,6 @@ export function renderPromptSections(assembly: PromptAssembly): AssembledSection
 export function renderPrompt(assembly: PromptAssembly): string {
   return renderPromptSections(assembly)
     .map(section => section.text)
-<<<<<<< ours
-=======
-=======
-    .map(section => section.interpolate === false ? section.text : interpolate(section, assembly.variables, 'section'))
-    .filter(text => text.length > 0)
->>>>>>> theirs
->>>>>>> theirs
     .join('\n\n')
 }
 
@@ -887,17 +846,10 @@ export class SystemPrompt extends Service {
     completePromptFile: z.string().default(undefined as unknown as string),
     autoTranslatedPrompt: z.boolean().default(true),
     includeRuntimeContext: z.boolean().default(true),
-<<<<<<< ours
-    persona: z.string().default(''),
-    translatedPromptFile: z.string().min(1).default(DEFAULT_TRANSLATED_PROMPT_FILE),
-    promptLocale: z.union(PROMPT_LOCALE_PREFERENCES).default('auto'),
-<<<<<<< ours
-=======
-=======
     personaPrefix: z.string().default(''),
     personaSuffix: z.string().default(''),
->>>>>>> theirs
->>>>>>> theirs
+    translatedPromptFile: z.string().min(1).default(DEFAULT_TRANSLATED_PROMPT_FILE),
+    promptLocale: z.union(PROMPT_LOCALE_PREFERENCES).default('auto'),
     // Preserve omission because an explicit empty order lacks the rest marker.
     toolOrder: z.array(z.string()).default(undefined as unknown as string[]),
   })
@@ -941,7 +893,7 @@ export class SystemPrompt extends Service {
       const file = completePromptFile
       this.section({
         name: 'deployment:complete-prompt',
-        order: this.getSectionOrder('DEPLOYMENT_PERSONA'),
+        order: this.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
         complete: true,
         text: () => {
           try {
@@ -1013,9 +965,11 @@ export class SystemPrompt extends Service {
   /**
    * List globally registered section names for prompt editing surfaces.
    *
-   * 这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用
-   * {@link sectionTexts}，它连作用域一起算——两者覆盖的集合本来就不一样，
-   * 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。
+   * This is the **global view** and deliberately excludes scoped registrations.
+   * To learn "which sections an editor may change", use {@link sectionTexts},
+   * which folds scopes in — the two cover different sets by design, and turning
+   * this one into a union would make "what did the global layer register"
+   * unanswerable.
    * @returns sorted section names visible to unscoped assemblies.
    */
   sectionNames(): string[] {
@@ -1024,8 +978,9 @@ export class SystemPrompt extends Service {
 
   /**
    * The sections an editor may address: the global layer plus every scope's own
-   * first-seen children. 具名分段的可见性是"最近的同名者胜"，所以作用域里已经
-   * 有同名分段时保留全局的那个——预览读的是全局文本，不替某个 agent 说话。
+   * first-seen children. A named section's visibility is "the nearest same-name
+   * layer wins", so when a scope already carries that name the global entry is
+   * kept — a preview reads global text and does not speak for any one agent.
    * @returns insertion-ordered name→section map spanning every layer.
    */
   private editorSections(): Map<string, PromptSection> {
@@ -1043,10 +998,12 @@ export class SystemPrompt extends Service {
    * scope's own first-seen contribution, in one merged view. Static sections
    * include their current text; dynamic sections stay visible but not editable.
    *
-   * 作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>`
-   * 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误
-   * 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段，
-   * 所以作用域里的分段同样改得动。
+   * Scoped sections must be listed alongside them, or the editing surface would
+   * miss a whole family of capabilities: every `tool:<name>` registers in the
+   * agent scope, so reading the global layer alone concludes "this deployment
+   * has no tools at all". Listing them is safe — overrides apply by name to the
+   * **merged** sections in the final assembly step, so scoped sections are just
+   * as editable.
    * @param cwd - session workspace whose per-session prompt file supplies the
    * Chinese column; omitted reads leave that column empty.
    * @returns sorted section views for prompt editing.
@@ -1126,23 +1083,26 @@ export class SystemPrompt extends Service {
   }
 
   /**
-   * 接入界面语言的读取来源。
+   * Adopt the source that reads the interface language.
    *
-   * 注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词
-   * 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以
-   * 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来，
-   * 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后
-   * 下一个请求就生效，不必重启。
+   * The registry does not know the concept of "settings" — it never injects a
+   * settings service, because prompt assembly must run in deployments that have
+   * none (headless, ACP, unit tests). So the language is pushed in by the
+   * assembling side: the settings bridge registers "what the current interface
+   * language is" at mount time, and assembly reads it once per request. One read
+   * per request with no caching is what lets a language the user just changed in
+   * the browser take effect on the next request instead of requiring a restart.
    *
-   * @param source - 读取当前界面语言标签的函数；返回空表示没有设置服务。
+   * @param source - reads the current interface language tag; empty means no settings service.
    */
   adoptLocaleSource(source: () => string | undefined): void {
     this.localeSource.current = source
   }
 
   /**
-   * 当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。
-   * @returns `zh` 或 `en`。
+   * The prompt language in effect: an explicit config value wins, otherwise it
+   * follows the interface language, and with neither it is `en`.
+   * @returns `zh` or `en`.
    */
   activeLocale(): PromptLocale {
     if (this.promptLocalePreference !== 'auto') return this.promptLocalePreference
@@ -1194,14 +1154,19 @@ export class SystemPrompt extends Service {
    * disappears from every assembly that scope takes part in, no matter which
    * layer registered it — the global one, an ancestor scope, or this scope.
    *
-   * 与 {@link section} 的同名遮蔽是两回事，不要互相替代：遮蔽要求你提供新的
-   * 正文，适合"换成自己的说法"；抑制表达的是"这一节在本作用域内不存在"，适合
-   * 一个功能单一的 agent 只想要提示词里很少的几段。两者都只影响装配，不注销
-   * 任何人的注册——被抑制的分段在父、兄弟作用域的装配里照旧出现。
+   * This is not the same as same-name shadowing through {@link section}, and the
+   * two are not substitutes: shadowing asks you to supply new body text, which
+   * suits "say it my own way"; suppression states "this section does not exist
+   * in this scope", which suits a single-purpose agent that wants very few
+   * prompt sections. Both affect assembly only and unregister nobody's
+   * registration — a suppressed section still appears in parent and sibling
+   * scope assemblies.
    *
-   * 作用范围是整条链：链上任一层声明抑制，本作用域的装配就看不到这一节，没有
-   * 反向的"取消抑制"语法。这与 {@link suppressRuntimeContext} 同源——都是
-   * "从本作用域起往下，这一块不存在"。
+   * The reach is the whole chain: a suppression declared at any layer hides the
+   * section from this scope's assemblies, and there is no inverse
+   * "unsuppress" syntax. This shares its origin with
+   * {@link suppressRuntimeContext} — "from this scope downward, this block does
+   * not exist".
    * @param name - the section name to suppress.
    * @returns the exact Cordis effect disposer.
    */
@@ -1414,16 +1379,8 @@ export class SystemPrompt extends Service {
       .map((section) => {
         const assembled = {
           name: section.name,
-<<<<<<< ours
           text: typeof section.text === 'function' ? section.text(enriched) : section.text,
-=======
-<<<<<<< ours
-          text: typeof section.text === 'function' ? section.text(enriched) : section.text,
-=======
-          text: typeof section.text === 'function' ? section.text(context) : section.text,
           ...section.interpolate !== undefined ? { interpolate: section.interpolate } : {},
->>>>>>> theirs
->>>>>>> theirs
         }
         if (section.complete === true) completeSection = { ...assembled }
         return assembled

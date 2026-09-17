@@ -108,6 +108,14 @@ flowchart LR
   cfg --> plugin_dsh_base_commands
   plugin_dsh_base_command_feedback["command-feedback<br/>@deepseek-ai/dsh-command-feedback"]
   cfg --> plugin_dsh_base_command_feedback
+  plugin_dsh_base_command_correct_errors["command-correct-errors<br/>@deepseek-ai/dsh-command-correct-errors"]
+  cfg --> plugin_dsh_base_command_correct_errors
+  plugin_dsh_base_command_summarize_skill["command-summarize-skill<br/>@deepseek-ai/dsh-command-summarize-skill"]
+  cfg --> plugin_dsh_base_command_summarize_skill
+  plugin_dsh_base_command_translate_skills["command-translate-skills<br/>@deepseek-ai/dsh-command-translate-skills"]
+  cfg --> plugin_dsh_base_command_translate_skills
+  plugin_dsh_base_command_translate_system_prompt["command-translate-system-prompt<br/>@deepseek-ai/dsh-command-translate-system-prompt"]
+  cfg --> plugin_dsh_base_command_translate_system_prompt
   plugin_dsh_base_goal["goal<br/>@deepseek-ai/dsh-goal"]
   cfg --> plugin_dsh_base_goal
   plugin_dsh_base_goal_round_driver["goal-round-driver<br/>@deepseek-ai/dsh-goal-round-driver"]
@@ -144,6 +152,10 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_workflow
   plugin_dsh_base_timeout_policy["timeout-policy<br/>@deepseek-ai/dsh-tool-call-timeout-policy"]
   cfg --> plugin_dsh_base_timeout_policy
+  plugin_dsh_base_tool_error_journal["tool-error-journal<br/>@deepseek-ai/dsh-tool-error-journal"]
+  cfg --> plugin_dsh_base_tool_error_journal
+  plugin_dsh_base_error_reflection_prompt["error-reflection-prompt<br/>@deepseek-ai/dsh-error-reflection-prompt"]
+  cfg --> plugin_dsh_base_error_reflection_prompt
   plugin_dsh_base_spill_local["spill-local<br/>@deepseek-ai/dsh-spill-local"]
   cfg --> plugin_dsh_base_spill_local
   plugin_dsh_base_spill_policy["spill-policy<br/>@deepseek-ai/dsh-spill-policy"]
@@ -160,6 +172,12 @@ flowchart LR
   cfg --> plugin_dsh_base_tool_goal
   plugin_dsh_base_tool_ralph["tool-ralph<br/>@deepseek-ai/dsh-tool-ralph"]
   cfg --> plugin_dsh_base_tool_ralph
+  plugin_dsh_base_computer_use["computer-use<br/>@deepseek-ai/dsh-computer-use"]
+  cfg --> plugin_dsh_base_computer_use
+  plugin_dsh_base_computer_python["computer-python<br/>@deepseek-ai/dsh-computer-python"]
+  cfg --> plugin_dsh_base_computer_python
+  plugin_dsh_base_computer_tools["computer-tools<br/>@deepseek-ai/dsh-tool-computer-use"]
+  cfg --> plugin_dsh_base_computer_tools
   plugin_dsh_base_repeat_tool_reminder["repeat-tool-reminder<br/>@deepseek-ai/dsh-repeat-tool-reminder"]
   cfg --> plugin_dsh_base_repeat_tool_reminder
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
@@ -176,6 +194,8 @@ flowchart LR
   cfg --> plugin_dsh_base_tools
   plugin_dsh_base_system_prompt["system-prompt<br/>@deepseek-ai/dsh-system-prompt"]
   cfg --> plugin_dsh_base_system_prompt
+  plugin_dsh_base_system_prompt_overrides["system-prompt-overrides<br/>@deepseek-ai/dsh-system-prompt/overrides"]
+  cfg --> plugin_dsh_base_system_prompt_overrides
   plugin_dsh_base_agent_loop["agent-loop<br/>@deepseek-ai/dsh-agent-loop"]
   cfg --> plugin_dsh_base_agent_loop
   plugin_dsh_base_fs_sandbox["fs-sandbox<br/>@deepseek-ai/dsh-fs-sandbox"]
@@ -236,6 +256,10 @@ flowchart LR
 | `tool-skill` | `@deepseek-ai/dsh-tool-skill` |
 | `commands` | `@deepseek-ai/dsh-commands` |
 | `command-feedback` | `@deepseek-ai/dsh-command-feedback` |
+| `command-correct-errors` | `@deepseek-ai/dsh-command-correct-errors` |
+| `command-summarize-skill` | `@deepseek-ai/dsh-command-summarize-skill` |
+| `command-translate-skills` | `@deepseek-ai/dsh-command-translate-skills` |
+| `command-translate-system-prompt` | `@deepseek-ai/dsh-command-translate-system-prompt` |
 | `goal` | `@deepseek-ai/dsh-goal` |
 | `goal-round-driver` | `@deepseek-ai/dsh-goal-round-driver` |
 | `command-goal` | `@deepseek-ai/dsh-command-goal` |
@@ -254,6 +278,8 @@ flowchart LR
 | `workflow-ptc` | `@deepseek-ai/dsh-workflow-ptc` |
 | `tool-workflow` | `@deepseek-ai/dsh-tool-workflow` |
 | `timeout-policy` | `@deepseek-ai/dsh-tool-call-timeout-policy` |
+| `tool-error-journal` | `@deepseek-ai/dsh-tool-error-journal` |
+| `error-reflection-prompt` | `@deepseek-ai/dsh-error-reflection-prompt` |
 | `spill-local` | `@deepseek-ai/dsh-spill-local` |
 | `spill-policy` | `@deepseek-ai/dsh-spill-policy` |
 | `session-checkpoint-policy` | `@deepseek-ai/dsh-session-checkpoint-policy` |
@@ -262,6 +288,9 @@ flowchart LR
 | `tool-todo` | `@deepseek-ai/dsh-tool-todo` |
 | `tool-goal` | `@deepseek-ai/dsh-tool-goal` |
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
+| `computer-use` | `@deepseek-ai/dsh-computer-use` |
+| `computer-python` | `@deepseek-ai/dsh-computer-python` |
+| `computer-tools` | `@deepseek-ai/dsh-tool-computer-use` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
 | `web` | `@deepseek-ai/dsh-web` |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
@@ -270,6 +299,7 @@ flowchart LR
 | `mcp-resources` | `@deepseek-ai/dsh-mcp-resources` |
 | `tools` | `@deepseek-ai/dsh-tools` |
 | `system-prompt` | `@deepseek-ai/dsh-system-prompt` |
+| `system-prompt-overrides` | `@deepseek-ai/dsh-system-prompt/overrides` |
 | `agent-loop` | `@deepseek-ai/dsh-agent-loop` |
 | `fs-sandbox` | `@deepseek-ai/dsh-fs-sandbox` |
 | `llm-deepseek` | `@deepseek-ai/dsh-llm-deepseek` |

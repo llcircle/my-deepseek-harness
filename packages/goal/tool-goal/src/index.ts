@@ -331,6 +331,14 @@ function updateGoal(
         'GOAL_TOOL_INVALID_UPDATE',
       )
     }
+    const current = ctx.goals.get(execution.agent)
+    if (action === 'resume' && current?.id === ref.id && current.revision === ref.revision
+      && current.phase === 'paused') {
+      throw new HarnessError(
+        'the model cannot resume a paused goal; the user must resume it',
+        'GOAL_TOOL_RESUME_PAUSED',
+      )
+    }
     return goalValue(action === 'pause'
       ? ctx.goals.pause(execution.agent, ref)
       : ctx.goals.resume(execution.agent, ref))
@@ -526,91 +534,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     },
     output: GOAL_OUTPUT,
     execute(args, exec) {
-<<<<<<< ours
       return Promise.resolve(updateGoal(ctx, resolved, args.action, args, exec))
-=======
-<<<<<<< ours
-      return Promise.resolve(updateGoal(ctx, resolved, args.action, args, exec))
-=======
-      const execution = goalToolExecution(ctx, exec)
-      const ref = goalRef(args.goal_id, args.revision)
-      const replacements = {
-        ...hasText(args.objective) ? { objective: args.objective } : {},
-        ...hasRoundCap(args.max_goal_rounds) ? { maxGoalRounds: args.max_goal_rounds } : {},
-      }
-      if (args.action === 'edit') {
-        requireDirectHuman(ctx, execution)
-        if (hasText(args.blocked_reason)) {
-          throw new HarnessError('blocked_reason is valid only with action blocked', 'GOAL_TOOL_INVALID_UPDATE')
-        }
-        const goal = ctx.goals.edit(execution.agent, ref, replacements)
-        return Promise.resolve(goalValue(goal))
-      }
-      if (args.action === 'pause' || args.action === 'resume') {
-        requireDirectHuman(ctx, execution)
-        if (hasText(args.objective) || hasRoundCap(args.max_goal_rounds) || hasText(args.blocked_reason)) {
-          throw new HarnessError(
-            'objective and max_goal_rounds are valid only with action edit; blocked_reason is valid only with action blocked',
-            'GOAL_TOOL_INVALID_UPDATE',
-          )
-        }
-        const current = ctx.goals.get(execution.agent)
-        if (args.action === 'resume' && current?.id === ref.id && current.revision === ref.revision
-          && current.phase === 'paused') {
-          throw new HarnessError(
-            'the model cannot resume a paused goal; the user must resume it',
-            'GOAL_TOOL_RESUME_PAUSED',
-          )
-        }
-        const goal = args.action === 'pause'
-          ? ctx.goals.pause(execution.agent, ref)
-          : ctx.goals.resume(execution.agent, ref)
-        return Promise.resolve(goalValue(goal))
-      }
-      const authority = completionAuthority(ctx, execution)
-      if (hasText(args.objective) || hasRoundCap(args.max_goal_rounds)) {
-        throw new HarnessError(
-          'objective and max_goal_rounds are valid only with action edit',
-          'GOAL_TOOL_INVALID_UPDATE',
-        )
-      }
-      if (args.action === 'complete' && hasText(args.blocked_reason)) {
-        throw new HarnessError('blocked_reason is valid only with action blocked', 'GOAL_TOOL_INVALID_UPDATE')
-      }
-      if (args.action === 'blocked'
-        && (args.blocked_reason === undefined || args.blocked_reason.trim().length === 0)) {
-        throw new HarnessError('blocked_reason is required with action blocked', 'GOAL_TOOL_INVALID_UPDATE')
-      }
-      if (args.action === 'blocked' && authority.kind === 'goal-round'
-        && authority.goal.roundsStarted < resolved.blockedAfterConsecutiveRounds) {
-        throw new HarnessError(
-          `blocked requires at least ${resolved.blockedAfterConsecutiveRounds} consecutive goal rounds; `
-          + `current round is ${authority.goal.roundsStarted}`,
-          'GOAL_TOOL_BLOCK_THRESHOLD',
-        )
-      }
-      const goal = args.action === 'complete'
-        ? ctx.goals.complete(execution.agent, ref)
-        : ctx.goals.block(execution.agent, ref, {
-          code: 'model-reported',
-          message: args.blocked_reason as string,
-        })
-      if (authority.kind === 'goal-round') {
-        exec.deferContext(createUserMessage({
-          content: args.action === 'complete'
-            ? renderWrapupContext(goal.objective)
-            : renderWrapupContext(goal.objective, args.blocked_reason as string),
-          source: {
-            kind: 'plugin',
-            plugin: 'tool-goal',
-            form: 'notice',
-            summary: boundContextSummary(`${args.action as string}: ${goal.objective}`),
-          },
-        }))
-      }
-      return Promise.resolve(goalValue(goal))
->>>>>>> theirs
->>>>>>> theirs
     },
     presentCall: args => present(actionTitle(args.action), 'other', actionDetail(args)),
   }))

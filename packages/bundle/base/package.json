@@ -52,16 +52,10 @@
     "@deepseek-ai/dsh-command-translate-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-compaction-basic": "workspace:^",
-<<<<<<< ours
-    "@deepseek-ai/dsh-computer-python": "workspace:^",
-=======
-<<<<<<< ours
-    "@deepseek-ai/dsh-computer-python": "workspace:^",
-=======
     "@deepseek-ai/dsh-compaction-image-offload": "workspace:^",
->>>>>>> theirs
->>>>>>> theirs
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:^",
+    "@deepseek-ai/dsh-computer-use": "workspace:^",
+    "@deepseek-ai/dsh-computer-python": "workspace:^",
     "@deepseek-ai/dsh-credentials-local": "workspace:^",
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:^",
     "@deepseek-ai/dsh-error-reflection-prompt": "workspace:^",
@@ -110,19 +104,10 @@
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-token-meter": "workspace:^",
     "@deepseek-ai/dsh-tool-bash": "workspace:^",
-<<<<<<< ours
     "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:^",
     "@deepseek-ai/dsh-tool-computer-use": "workspace:^",
     "@deepseek-ai/dsh-tool-error-journal": "workspace:^",
-=======
-<<<<<<< ours
-    "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:^",
-    "@deepseek-ai/dsh-tool-computer-use": "workspace:^",
-    "@deepseek-ai/dsh-tool-error-journal": "workspace:^",
-=======
     "@deepseek-ai/dsh-tool-present": "workspace:^",
->>>>>>> theirs
->>>>>>> theirs
     "@deepseek-ai/dsh-tool-fs": "workspace:^",
     "@deepseek-ai/dsh-tool-fs-search": "workspace:^",
     "@deepseek-ai/dsh-tool-goal": "workspace:^",
@@ -143,17 +128,9 @@
     "@deepseek-ai/dsh-web": "workspace:^",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
     "@deepseek-ai/dsh-web-search-deepseek": "workspace:^",
-<<<<<<< ours
-    "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^"
-=======
-<<<<<<< ours
-    "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^"
-=======
     "@deepseek-ai/dsh-workflow-ptc": "workspace:^",
     "@deepseek-ai/dsh-agent-instructions": "workspace:^",
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:^"
->>>>>>> theirs
->>>>>>> theirs
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

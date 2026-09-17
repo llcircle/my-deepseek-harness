@@ -30,47 +30,25 @@ kind: "package-reference"
 <a id="configure-the-prompt"></a>
 ### 配置提示词
 
-<<<<<<< ours
-配置拥有固定开场白、runtime 上下文、部署 persona、工具顺序，以及翻译提示词的自动启用；其余一切来自已注册的贡献。
-=======
-<<<<<<< ours
-配置拥有固定开场白、runtime 上下文、部署 persona、工具顺序，以及翻译提示词的自动启用；其余一切来自已注册的贡献。
-=======
-配置拥有固定开场白、runtime 上下文、部署 persona 前缀与后缀与工具顺序；其余一切来自已注册的贡献。
->>>>>>> theirs
->>>>>>> theirs
+配置拥有固定开场白、runtime 上下文、部署 persona 前缀与后缀、工具顺序，以及翻译提示词的自动启用；其余一切来自已注册的贡献。
 
 ```yaml
 - name: '@deepseek-ai/dsh-system-prompt'
   config:
     includeHarnessIdentity: true
     includeRuntimeContext: true
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     autoTranslatedPrompt: true
     translatedPromptFile: '.dsh/system-prompt.zh.prompt.md'
-    persona: 'You are the deployment assistant.'
-=======
     personaPrefix: 'You are the deployment assistant.'
->>>>>>> theirs
     toolOrder: ['<unlisted-tools>']
 ```
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-<<<<<<< ours
-| `includeHarnessIdentity` | `true` | 是否包含顺序为 −1000 的 first-party 固定开场白 `You are an AI agent powered by DeepSeek Harness.`。仅当兼容性部署拥有完整系统提示词时设为 false。 |
+| `includeHarnessIdentity` | `true` | 是否包含顺序为 −1000 的第一方固定开场白 `You are an AI agent powered by DeepSeek Harness.`。仅当兼容性部署拥有完整系统提示词时设为 false。 |
 | `completePromptFile` | — | UTF-8 文件的绝对路径，其全文成为唯一的系统提示词分节（工具 schema、上下文与变量仍解析）。加载时缺失视为未配置；激活后文件消失会让该次请求显式报错。典型来源：`/translate-system-prompt` 产出的纯翻译文件。 |
 | `autoTranslatedPrompt` | `true` | 会话工作区中的 `translatedPromptFile` 一旦存在，就把其中的空行分段按顺序映射到组装出的静态段，并原位替换匹配段的文本，同时保留原始字段名。`skills:catalog` 与 `deployment:error-lessons` 等实时段不会被翻译档案替换，档案中包含 `<available_skills>` 的段落也会跳过，因此技能简介、错误反思和运行时上下文继续独立更新。 |
 | `translatedPromptFile` | `.dsh/system-prompt.zh.prompt.md` | 纯翻译提示词文件；相对路径按正在组装的会话工作区解析。文件存在但为空或不可读时，组装会显式失败。 |
-<<<<<<< ours
-=======
-=======
-| `includeHarnessIdentity` | `true` | 是否包含顺序为 −1000 的第一方固定开场白 `You are an AI agent powered by DeepSeek Harness.`。仅当兼容性部署拥有完整系统提示词时设为 false。 |
->>>>>>> theirs
->>>>>>> theirs
 | `includeRuntimeContext` | `true` | 是否在组装中包含有序动态 runtime 上下文 |
 | `personaPrefix` | `''` | 全局 persona 前缀模板，顺序为 `0`，位于第一方指导之前 |
 | `personaSuffix` | `''` | 全局 `deployment:persona-suffix` 模板，顺序为 `10200`，位于第一方指导之后 |
@@ -104,10 +82,6 @@ ctx.systemPrompt.variable('cwd', ({ agent }) => agent?.session.header.cwd)
 
 工具 schema 提供方在每次组装时求值，并贡献模型可见的 `ToolSchema` 集合；`ToolRuntime` 会自动注册自身，因此大多数工具在此无需手动接线。提供方返回限制后的可见集合，外加 `toolOrder` 使用的限制前名称全集。
 
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
 ### 在 Web 中编辑提示词
 
 挂载可选设置服务后，`system-prompt-overrides` 设置段会暴露已知可编辑提示词段的中英文分开替换文本，以及用户编写的 `mcp:intro` 段。选中某个段后，编辑器会把英文 provider 当前文本、以及存在时的工作区翻译档案中文文本，分别直接填入两个可编辑字段。Web 保存后会原位替换各段，下一次模型请求即可看到，包括已有会话。`deployment:error-lessons` 与 `skills:catalog` 仍是实时提供方：错误反思来自工具错误反思文档，技能目录由实时 skill 注册表重建。
@@ -121,9 +95,6 @@ ctx.systemPrompt.suppressSection('skills:catalog')
 ```
 
 ### 抑制 runtime 上下文
-=======
-### 抑制运行时上下文
->>>>>>> theirs
 
 `suppressRuntimeContext()` 移除调用作用域的所有动态运行时上下文贡献，但不禁用拥有底层事实的服务；多个抑制器独立组合，当不再存在抑制器时该 effect 会恢复上下文。
 

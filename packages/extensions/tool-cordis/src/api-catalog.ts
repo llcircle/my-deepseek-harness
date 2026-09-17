@@ -721,106 +721,103 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     key: 'computer',
-    summary: '电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类； 调用方只依赖这组语义。',
-    description: '电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类； 调用方只依赖这组语义。\n\n契约：\n\n- 所有坐标处于同一坐标系：ComputerDisplay 描述的虚拟屏幕物理像素。 截图与输入必须共用它，否则点击会落在错误的位置。\n- 每个方法都接受取消信号；中止时必须终止自己启动的进程并尽快 settle。\n- 预期失败抛出带稳定 code 的 `ComputerError`，不抛出平台原始错误。',
+    summary: 'The computer-use capability.',
+    description: 'The computer-use capability. Implementations own platform details, external process lifetimes, and error classification; callers depend only on these semantics.\n\nContract:\n\n- Every coordinate lives in one coordinate system: the physical pixels of the virtual screen ComputerDisplay describes. Capture and input must share it, or a click lands somewhere other than where it was aimed.\n- Every method accepts a cancellation signal; on abort it must terminate the processes it started and settle promptly.\n- Expected failures throw a `ComputerError` carrying a stable code rather than the raw platform error.',
     methods: [
       {
         signature: 'abstract readonly provider: string',
-        description: '提供方标识，用于诊断与提示词叙述。',
+        description: 'Provider identity, for diagnostics and prompt narration.',
         parameters: [],
       },
       {
         signature: 'abstract available(options?: ComputerCallOptions): Promise<ComputerAvailability>',
-        description: '探测当前是否真的可以执行桌面动作。\n\n这是唯一允许"不抛错"的方法：不可用时返回 `available: false` 与原因， 让 Consumer 可以照常加载并只隐藏工具。实现应缓存探测结果， 避免每次调用都付出一次进程启动代价。',
-        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '可用性判定；不可用时带一句给人看的原因。',
+        description: 'Probe whether desktop actions can actually execute right now.\n\nThis is the only method allowed not to throw: when unavailable it returns `available: false` with a reason, so a Consumer can load as usual and merely hide its tools. Implementations should cache the probe result rather than paying a process start on every call.',
+        parameters: [{ name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the availability verdict; when unavailable, with a human-readable reason.',
       },
       {
         signature: 'abstract display(options?: ComputerCallOptions): Promise<ComputerDisplay>',
-        description: '读取虚拟屏幕几何。',
-        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '虚拟屏幕的宽高与（如有）缩放说明。',
+        description: 'Read the virtual screen geometry.',
+        parameters: [{ name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the virtual screen\'s width and height, plus scaling notes when any.',
       },
       {
         signature: 'abstract screenshot(options?: ComputerCallOptions): Promise<ComputerScreenshot>',
-        description: '截取整个虚拟屏幕。',
-        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '截图附件与它的实际像素尺寸。',
+        description: 'Capture the whole virtual screen.',
+        parameters: [{ name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the screenshot attachment and its actual pixel dimensions.',
       },
       {
         signature: 'abstract pointer(options?: ComputerCallOptions): Promise<ComputerPoint>',
-        description: '读取指针当前位置。',
-        parameters: [{ name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '指针当前所在的屏幕坐标。',
+        description: 'Read the pointer\'s current position.',
+        parameters: [{ name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the screen coordinates the pointer currently occupies.',
       },
       {
         signature: 'abstract move(point: ComputerPoint, options?: ComputerCallOptions): Promise<ComputerPoint>',
-        description: '把指针移动到指定位置。',
-        parameters: [{ name: 'point', description: '目标屏幕坐标。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '移动后指针的实际坐标。',
+        description: 'Move the pointer to a position.',
+        parameters: [{ name: 'point', description: 'the target screen coordinates.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the pointer\'s actual coordinates after the move.',
       },
       {
         signature: 'abstract click(input: ComputerClickInput, options?: ComputerCallOptions): Promise<ComputerPoint & { button: string; clicks: number }>',
-        description: '在指定位置（省略则用当前位置）点击。',
-        parameters: [{ name: 'input', description: '点击位置、按键与次数。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '点击落点与生效的按键、次数。',
+        description: 'Click at a position, or at the current position when omitted.',
+        parameters: [{ name: 'input', description: 'click position, button, and count.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'where the click landed, with the button and count that took effect.',
       },
       {
         signature: 'abstract drag(input: ComputerDragInput, options?: ComputerCallOptions): Promise<ComputerDragResult>',
-        description: '从起点拖拽到终点。',
-        parameters: [{ name: 'input', description: '起点、终点与按键。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '起止坐标与生效的按键。',
+        description: 'Drag from an origin to a destination.',
+        parameters: [{ name: 'input', description: 'origin, destination, and button.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the start and end coordinates with the button that took effect.',
       },
       {
         signature: 'abstract typeText(input: ComputerTypeInput, options?: ComputerCallOptions): Promise<{ characters: number }>',
-        description: '输入一段文本。',
-        parameters: [{ name: 'input', description: '待输入的文本。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '实际送入的字符数。',
+        description: 'Type a run of text.',
+        parameters: [{ name: 'input', description: 'the text to type.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'how many characters were actually delivered.',
       },
       {
         signature: 'abstract key(input: ComputerKeyInput, options?: ComputerCallOptions): Promise<{ keys: string[] }>',
-        description: '按下并释放一组组合键。',
-        parameters: [{ name: 'input', description: '组合键序列，如 `[\'ctrl\', \'c\']`。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '实际按下的键序列。',
+        description: 'Press and release one chord of keys.',
+        parameters: [{ name: 'input', description: 'the key sequence, such as `[\'ctrl\', \'c\']`.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'the key sequence actually pressed.',
       },
       {
         signature: 'abstract scroll(input: ComputerScrollInput, options?: ComputerCallOptions): Promise<ComputerPoint & { deltaX: number; deltaY: number }>',
-        description: '在指定位置（省略则用当前位置）滚动。',
-        parameters: [{ name: 'input', description: '滚动位置与纵向/横向位移；纵向正数向下，与 DOM `WheelEvent` 一致。' }, { name: 'options', description: '可选的取消信号与调用元数据。' }],
-        returns: '滚动落点与生效的位移。',
+        description: 'Scroll at a position, or at the current position when omitted.',
+        parameters: [{ name: 'input', description: 'scroll position and vertical/horizontal deltas; a positive vertical delta scrolls down, matching DOM `WheelEvent`.' }, { name: 'options', description: 'optional cancellation signal and call metadata.' }],
+        returns: 'where the scroll landed with the deltas that took effect.',
       },
     ],
   },
   {
-    key: 'computerUse',
-    summary: '`ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令， 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。',
-    description: '`ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令， 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。',
+    key: 'computerController',
+    summary: '`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` section plus tool set loaded into the agent scope while it is enabled.',
+    description: '`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` section plus tool set loaded into the agent scope while it is enabled.\n\nWhy the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis\'s provide collide and would leave the type augmentations unmergeable, so this controller yields the name.',
     methods: [
       {
         signature: 'isActive(session: Session): boolean',
-        description: '读取会话的启用状态，优先返回本进程内刚发生的启用。',
-        parameters: [{ name: 'session', description: '目标会话。' }],
-        returns: '是否启用。',
+        description: 'Read a session\'s enablement state, preferring an enable that just happened inside this process.',
+        parameters: [{ name: 'session', description: 'the target session.' }],
+        returns: 'whether the capability is enabled.',
       },
       {
         signature: 'async activate(agent: Agent, reason: ActivationReason): Promise<{ kind: \'success\' | \'error\'; text: string }>',
-        description: '显式启用（命令路径）。命令在步进之外运行，因此可以先探测宿主能力， 把"这台机器不能用"作为可读的失败返回给用户，而不是留到第一次点击才炸。',
-        parameters: [{ name: 'agent', description: '目标 agent。' }, { name: 'reason', description: '启用原因，用于日志。' }],
-        returns: '命令回执。',
+        description: 'Explicit enablement (the command path). A command runs outside a step, so it can probe host capability first and return "this machine cannot do it" to the user as a readable failure rather than letting it blow up on the first click.',
+        parameters: [{ name: 'agent', description: 'the target agent.' }, { name: 'reason', description: 'why it is being enabled, for the log.' }],
+        returns: 'the command receipt.',
       },
       {
         signature: 'deactivate(agent: Agent): { kind: \'success\' | \'error\'; text: string }',
-        description: '关闭电脑操作：注销工具并写入日志事件。',
-        parameters: [{ name: 'agent', description: '目标 agent。' }],
-        returns: '命令回执。',
-<<<<<<< ours
-=======
-=======
+        description: 'Turn computer use off: unregister the tools and write the log event.',
+        parameters: [{ name: 'agent', description: 'the target agent.' }],
+        returns: 'the command receipt.',
+      },
+    ],
+  },
+  {
     key: 'computerUse',
     summary: 'Owns one optional provider registration in the shared computer-use service.',
     description: 'Owns one optional provider registration in the shared computer-use service.',
@@ -830,8 +827,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Reserve the sole provider slot until the contribution is disposed. A second registration fails even when it repeats the current name. Providers must stop their tools and await owned work before releasing this registration.',
         parameters: [{ name: 'name', description: 'provider-owned name used in registration diagnostics.' }],
         returns: 'the effect disposer for this exact registration.',
->>>>>>> theirs
->>>>>>> theirs
       },
     ],
   },
@@ -2228,13 +2223,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async readReflections(): Promise<ReflectionBlockView[]>',
-        description: 'Read the subject-sectioned lessons of the system-level reflection document.\n\n只返回确实有内容的主题：没有经验的主题不必在界面上占一行空输入框，界面会 把"这次装配里有哪些能力"和这份清单取并集。',
+        description: 'Read the subject-sectioned lessons of the system-level reflection document.\n\nOnly subjects that actually carry content are returned: a subject with no lessons does not need an empty input row in the interface, which unions this list with "which capabilities exist in this assembly".',
         parameters: [],
         returns: 'one entry per subject with recorded lessons; empty when the document does not exist. Text that names no subject belongs to the document\'s global part and is intentionally not projected here.',
       },
       {
         signature: '@Remote async writeReflections(blocks: ReflectionBlockView[]): Promise<void>',
-        description: 'Rewrite the given subjects\' lessons, leaving every other part of the document untouched.\n\n读改写而不是"用界面上的内容重建整份文档"：文档里还有认不出主题的历史小节 与用户备注，界面从来没显示过它们，也就没有资格删掉它们。',
+        description: 'Rewrite the given subjects\' lessons, leaving every other part of the document untouched.\n\nRead-modify-write rather than "rebuild the whole document from what the interface shows": the document still holds historical sections whose subject is unrecognized, plus the user\'s own notes. The interface never displayed them, so it has no standing to delete them.',
         parameters: [{ name: 'blocks', description: 'subjects to write; an empty `text` removes that subject.' }],
       },
       {
@@ -2623,13 +2618,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'sectionNames(): string[]',
-        description: 'List globally registered section names for prompt editing surfaces.\n\n这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用 sectionTexts，它连作用域一起算——两者覆盖的集合本来就不一样， 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。',
+        description: 'List globally registered section names for prompt editing surfaces.\n\nThis is the **global view** and deliberately excludes scoped registrations. To learn "which sections an editor may change", use sectionTexts, which folds scopes in — the two cover different sets by design, and turning this one into a union would make "what did the global layer register" unanswerable.',
         parameters: [],
         returns: 'sorted section names visible to unscoped assemblies.',
       },
       {
         signature: 'async sectionTexts(cwd?: string): Promise<PromptSectionView[]>',
-        description: 'Project the sections a Web editor may address: the global layer plus every scope\'s own first-seen contribution, in one merged view. Static sections include their current text; dynamic sections stay visible but not editable.\n\n作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>` 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段， 所以作用域里的分段同样改得动。',
+        description: 'Project the sections a Web editor may address: the global layer plus every scope\'s own first-seen contribution, in one merged view. Static sections include their current text; dynamic sections stay visible but not editable.\n\nScoped sections must be listed alongside them, or the editing surface would miss a whole family of capabilities: every `tool:<name>` registers in the agent scope, so reading the global layer alone concludes "this deployment has no tools at all". Listing them is safe — overrides apply by name to the **merged** sections in the final assembly step, so scoped sections are just as editable.',
         parameters: [{ name: 'cwd', description: 'session workspace whose per-session prompt file supplies the Chinese column; omitted reads leave that column empty.' }],
         returns: 'sorted section views for prompt editing.',
       },
@@ -2640,14 +2635,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'adoptLocaleSource(source: () => string | undefined): void',
-        description: '接入界面语言的读取来源。\n\n注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来， 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后 下一个请求就生效，不必重启。',
-        parameters: [{ name: 'source', description: '读取当前界面语言标签的函数；返回空表示没有设置服务。' }],
+        description: 'Adopt the source that reads the interface language.\n\nThe registry does not know the concept of "settings" — it never injects a settings service, because prompt assembly must run in deployments that have none (headless, ACP, unit tests). So the language is pushed in by the assembling side: the settings bridge registers "what the current interface language is" at mount time, and assembly reads it once per request. One read per request with no caching is what lets a language the user just changed in the browser take effect on the next request instead of requiring a restart.',
+        parameters: [{ name: 'source', description: 'reads the current interface language tag; empty means no settings service.' }],
       },
       {
         signature: 'activeLocale(): PromptLocale',
-        description: '当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。',
+        description: 'The prompt language in effect: an explicit config value wins, otherwise it follows the interface language, and with neither it is `en`.',
         parameters: [],
-        returns: '`zh` 或 `en`。',
+        returns: '`zh` or `en`.',
       },
       {
         signature: 'getContextOrder(name: PromptContextOrderName): number',
@@ -2665,6 +2660,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'suppressRuntimeContext(): () => void',
         description: 'Suppress every dynamic runtime-context contribution in the calling context\'s scope without changing the services that own or enforce those facts. Multiple suppressors remain independently disposable.',
         parameters: [],
+        returns: 'the exact Cordis effect disposer.',
+      },
+      {
+        signature: 'suppressSection(name: string): () => void',
+        description: 'Suppress one named prompt section in the calling context\'s scope: the name disappears from every assembly that scope takes part in, no matter which layer registered it — the global one, an ancestor scope, or this scope.\n\nThis is not the same as same-name shadowing through section, and the two are not substitutes: shadowing asks you to supply new body text, which suits "say it my own way"; suppression states "this section does not exist in this scope", which suits a single-purpose agent that wants very few prompt sections. Both affect assembly only and unregister nobody\'s registration — a suppressed section still appears in parent and sibling scope assemblies.\n\nThe reach is the whole chain: a suppression declared at any layer hides the section from this scope\'s assemblies, and there is no inverse "unsuppress" syntax. This shares its origin with suppressRuntimeContext — "from this scope downward, this block does not exist".',
+        parameters: [{ name: 'name', description: 'the section name to suppress.' }],
         returns: 'the exact Cordis effect disposer.',
       },
       {
@@ -2911,6 +2912,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Present the calling scope\'s tools in `mode` instead of the deployment default. Nearest scope on the chain wins, so a preset\'s standing declaration covers every agent joined under it.\n\nScoped only, and one declaration per scope: this is how an agent preset composes PTC mode agents beside native ones in the same process, and a process-global override would be the `mode` config field instead.',
         parameters: [{ name: 'mode', description: 'the presentation the covered agents\' models see.' }],
         returns: 'the exact disposer that restores the deployment default.',
+      },
+      {
+        signature: 'defer(names: readonly string[]): () => void',
+        description: 'Move the SCHEMAS of `names` off the wire for every agent the calling scope covers, until a `tool_search` call in the agent\'s own scope fetches them back.\n\nWithholding narrows the request and nothing else: the tool stays registered, stays dispatchable, and stays a known name for `toolOrder` and `restrict`. That is the whole point — a model that learns the name and its schema from a `tool_search` result can call it immediately, and a tool description that names it stays truthful. See [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the fetching.\n\nScoped only, like presentAs: whether a tool is resident is a property of the COMPOSITION, not of the tool, so the row that carries it is an agent preset\'s. The same `web_fetch` is a resident tool in one preset and an on-demand one in another, and a per-tool flag inside its own package could not express both.\n\nNames that are not registered are IGNORED, not rejected. A preset defers a capability group, and a group member whose row is absent or `disabled` in this deployment is a legitimate absence — indistinguishable, from the registry\'s side, from a name the preset no longer uses. A name deferred and never registered simply withholds nothing.',
+        parameters: [{ name: 'names', description: 'tool names whose schemas stay off the wire until fetched.' }],
+        returns: 'the exact disposer that makes them resident again.',
+      },
+      {
+        signature: 'loadDeferred(names: readonly string[]): () => void',
+        description: 'Record that this scope has fetched `names` through `tool_search`, so their schemas join every later request. Scoped to the calling context, which for a fetch is the calling `<agent>.ctx` — so one agent\'s research does not spend another\'s budget, and the record unwinds with that agent.',
+        parameters: [{ name: 'names', description: 'tool names whose schemas this scope now shows.' }],
+        returns: 'the exact disposer that withholds them again.',
+      },
+      {
+        signature: 'deferredTools(scope?: ScopeKey): readonly DeferredTool[]',
+        description: 'Every tool this scope\'s composition declares on-demand, with its full definition, in name order. This is `tool_search`\'s search space and what the on-demand index section lists: a declared name that is not registered in this scope — an absent or `disabled` row, or one a restriction masked — has nothing to fetch and is omitted.',
+        parameters: [{ name: 'scope', description: 'the scope to read; omitted reads the deployment default.' }],
+        returns: 'the on-demand tools, each with whether this scope already loaded it.',
       },
       {
         signature: 'register(definition: ToolDefinition): () => void',
@@ -4199,10 +4218,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
   },
   {
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     name: 'ComputerAvailability',
     declaration: 'export interface ComputerAvailability {\n    readonly available: boolean;\n    readonly provider: string;\n    readonly platform: string;\n    readonly reason?: string;\n}',
   },
@@ -4249,13 +4264,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ComputerTypeInput',
     declaration: 'export interface ComputerTypeInput extends Partial<ComputerPoint> {\n    readonly text: string;\n}',
-<<<<<<< ours
-=======
-=======
+  },
+  {
     name: 'ComputerUseProviderName',
     declaration: 'export type ComputerUseProviderName = Branded<\'ComputerUseProviderName\'>;',
->>>>>>> theirs
->>>>>>> theirs
   },
   {
     name: 'ConfinedArgv',
@@ -4430,6 +4442,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
+    name: 'DeferredTool',
+    declaration: 'export interface DeferredTool {\n    readonly definition: ToolDefinition;\n    readonly loaded: boolean;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -4551,19 +4567,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EpochHeader',
-<<<<<<< ours
-    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    systemSections?: SystemPromptSectionSnapshot[];\n    tools?: ToolSchema[];\n}',
-=======
-<<<<<<< ours
-    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    systemSections?: SystemPromptSectionSnapshot[];\n    tools?: ToolSchema[];\n}',
-=======
-    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
+    declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    systemSections?: SystemPromptSectionSnapshot[];\n    tools?: ToolSchema[];\n}',
   },
   {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
->>>>>>> theirs
->>>>>>> theirs
   },
   {
     name: 'FiberState',
@@ -6135,7 +6143,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly allowTools: boolean;\n    readonly persona: boolean;\n    readonly omitSections: boolean;\n}',
   },
   {
     name: 'SubagentCatalog',
@@ -6207,7 +6215,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly allowTools?: readonly string[];\n    readonly persona?: string;\n    readonly omitSections?: readonly string[];\n}',
   },
   {
     name: 'SubagentStopReason',
@@ -6299,18 +6307,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SystemPrompt',
-    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    getSectionOrder(name: PromptSectionOrderName): number;\n    sectionNames(): string[];\n    async sectionTexts(cwd?: string): Promise<PromptSectionView[]>;\n    installOverrides(owner: Context, settings: PromptOverridesSettingsInstaller): void;\n    adoptLocaleSource(source: () => string | undefined): void;\n    activeLocale(): PromptLocale;\n    getContextOrder(name: PromptContextOrderName): number;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    reflectionSource(source: PromptReflectionSource): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
+    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    getSectionOrder(name: PromptSectionOrderName): number;\n    sectionNames(): string[];\n    async sectionTexts(cwd?: string): Promise<PromptSectionView[]>;\n    installOverrides(owner: Context, settings: PromptOverridesSettingsInstaller): void;\n    adoptLocaleSource(source: () => string | undefined): void;\n    activeLocale(): PromptLocale;\n    getContextOrder(name: PromptContextOrderName): number;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    suppressSection(name: string): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    reflectionSource(source: PromptReflectionSource): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
   },
   {
     name: 'SystemPromptSectionSnapshot',
     declaration: 'export interface SystemPromptSectionSnapshot {\n    name: string;\n    text: string;\n}',
-<<<<<<< ours
-=======
   },
   {
     name: 'SystemPromptUpdate',
     declaration: 'export type SystemPromptUpdate = \'in-history\';',
->>>>>>> theirs
   },
   {
     name: 'TableKeyOf',
@@ -6505,10 +6510,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ToolErrorView {\n    readonly time: string;\n    readonly sessionId: string;\n    readonly seq: number;\n    readonly name: string;\n    readonly callId: string;\n    readonly text: string;\n}',
   },
   {
-    name: 'ToolErrorView',
-    declaration: 'export interface ToolErrorView {\n    readonly time: string;\n    readonly sessionId: string;\n    readonly seq: number;\n    readonly name: string;\n    readonly callId: string;\n    readonly text: string;\n}',
-  },
-  {
     name: 'ToolExecution',
     declaration: 'export interface ToolExecution extends ToolExecutionInput {\n    readonly rootCallId: ToolCallId;\n    readonly token: ToolExecutionToken;\n}',
   },
@@ -6586,7 +6587,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    defer(names: readonly string[]): () => void;\n    loadDeferred(names: readonly string[]): () => void;\n    deferredTools(scope?: ScopeKey): readonly DeferredTool[];\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

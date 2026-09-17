@@ -70,7 +70,7 @@ const DEFAULT_CHILD_TOOLS = ['read', 'write']
  * 它无关，而这三段恰恰是提示词里最长的部分。保留 `tool:write` 那一段就够——
  * 它跟着 `write` 工具自己出现，不需要在这里点名。
  */
-const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona', 'deployment:error-lessons']
+const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons']
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = z.object({

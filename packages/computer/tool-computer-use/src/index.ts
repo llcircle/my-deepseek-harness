@@ -66,16 +66,17 @@ export { computerProjectionDefinition } from './state.ts'
  */
 export const COMPUTER_POLICY_SECTION = 'computer:policy'
 
-/** 插件配置。 */
+/** Plugin configuration. */
 export interface Config {
   /**
-   * 整体替换内置策略文本。这是"第二层"：部署可以用它定制措辞、
-   * 收窄安全边界或换成另一种语言，而不用改代码。
+   * Replaces the built-in policy text wholesale. This is the second layer: a
+   * deployment customizes the wording, narrows the safety boundary, or switches
+   * languages without changing code.
    */
   policy?: string
   /**
-   * 追加触发短语（在内置短语之外）。用于接入团队自己的说法，
-   * 例如某个内部产品或流程的专有名称。
+   * Additional trigger phrases beyond the built-in ones, for a team's own
+   * vocabulary — an internal product or process name, say.
    */
   extraTriggers?: string[]
 }
@@ -121,7 +122,7 @@ type ActivationReason = 'command' | 'trigger'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    computerUse: ComputerUseController
+    computerController: ComputerUseController
   }
 }
 
@@ -132,8 +133,15 @@ interface Installation {
 }
 
 /**
- * `ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令，
- * 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。
+ * `ctx.computerController`: owns the on-demand enablement state, the
+ * model-facing `/computer` command, and the `computer:policy` section plus tool
+ * set loaded into the agent scope while it is enabled.
+ *
+ * Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse`
+ * as a "only one provider may register at a time" slot
+ * (`packages/computer-use`), which is a different concern from this controller.
+ * Coexisting under one name would make cordis's provide collide and would leave
+ * the type augmentations unmergeable, so this controller yields the name.
  */
 export class ComputerUseController extends Service {
   static inject = ['tools', 'systemPrompt', 'sessionProjections']
@@ -150,7 +158,7 @@ export class ComputerUseController extends Service {
   private readonly installations = new WeakMap<Session, Installation>()
 
   constructor(ctx: Context, config: Config = {}) {
-    super(ctx, 'computerUse')
+    super(ctx, 'computerController')
     this.resolved = resolveConfig(config)
 
     ctx.sessionProjections.register(computerProjectionDefinition)
@@ -162,7 +170,7 @@ export class ComputerUseController extends Service {
     })
 
     // 会话恢复/分叉：日志里已经启用过的会话要重新装载工具。
-    ctx.on('agent/session-start', ({ agent }) => {
+    ctx.on('agent/created', ({ agent }) => {
       if (this.isActive(agent.session)) this.install(agent)
     })
 
@@ -201,10 +209,11 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 读取会话的启用状态，优先返回本进程内刚发生的启用。
+   * Read a session's enablement state, preferring an enable that just happened
+   * inside this process.
    *
-   * @param session - 目标会话。
-   * @returns 是否启用。
+   * @param session - the target session.
+   * @returns whether the capability is enabled.
    */
   isActive(session: Session): boolean {
     if (this.justActivated.has(session)) return true
@@ -253,12 +262,14 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 显式启用（命令路径）。命令在步进之外运行，因此可以先探测宿主能力，
-   * 把"这台机器不能用"作为可读的失败返回给用户，而不是留到第一次点击才炸。
+   * Explicit enablement (the command path). A command runs outside a step, so it
+   * can probe host capability first and return "this machine cannot do it" to
+   * the user as a readable failure rather than letting it blow up on the first
+   * click.
    *
-   * @param agent - 目标 agent。
-   * @param reason - 启用原因，用于日志。
-   * @returns 命令回执。
+   * @param agent - the target agent.
+   * @param reason - why it is being enabled, for the log.
+   * @returns the command receipt.
    */
   async activate(agent: Agent, reason: ActivationReason): Promise<{ kind: 'success' | 'error'; text: string }> {
     if (this.isActive(agent.session)) {
@@ -281,10 +292,10 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 关闭电脑操作：注销工具并写入日志事件。
+   * Turn computer use off: unregister the tools and write the log event.
    *
-   * @param agent - 目标 agent。
-   * @returns 命令回执。
+   * @param agent - the target agent.
+   * @returns the command receipt.
    */
   deactivate(agent: Agent): { kind: 'success' | 'error'; text: string } {
     if (!this.isActive(agent.session)) {

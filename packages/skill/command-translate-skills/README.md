@@ -47,7 +47,7 @@ Choose it when users should be able to refresh a per-locale summary archive on d
 | `targetLocale` | `zh` | Target locale BCP-47 tag for the translations |
 | `provider` | `spawn` | Subagent provider that runs the translation child |
 | `childTools` | `["read", "write"]` | Tools this child keeps; every other inherited tool is removed. An empty list leaves its tool set untouched |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | Prompt sections this child does not get |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | Prompt sections this child does not get |
 
 ### Running it
 

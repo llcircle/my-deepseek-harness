@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## Summary
 
-`dsh-computer-python` 在 Windows 上实现 `ctx.computer`：用一小段纯标准库的 Python 脚本驱动真实桌面。它用 GDI 截取整个虚拟屏幕、用 `zlib` 编码 PNG，并通过 `SendInput` 发送指针与键盘输入，全部经由 `ctypes`——不需要第三方包、不需要编译器、不需要原生扩展。它和 [`dsh-tool-computer-use`](../tool-computer-use/README.md) 配套发布，由后者决定模型何时可以启用它。当智能体需要操作 Windows 桌面、而你不希望分发原生二进制时选择它；在其它平台上不必挂载，它会给出诚实的原因而不是留到后面才失败。
+`dsh-computer-python` 在 Windows 上实现 `ctx.computer`：用一小段纯标准库的 Python 脚本驱动真实桌面。它用 GDI 截取整个虚拟屏幕、用 `zlib` 编码 PNG，并通过 `SendInput` 发送指针与键盘输入，全部经由 `ctypes`——不需要第三方包、不需要编译器、不需要原生扩展。它和 [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) 配套发布，由后者决定模型何时可以启用它。当智能体需要操作 Windows 桌面、而你不希望分发原生二进制时选择它；在其它平台上不必挂载，它会给出诚实的原因而不是留到后面才失败。
 
 ## Table of Contents
 
@@ -57,9 +57,9 @@ UTF-8 文本输入走 `KEYEVENTF_UNICODE`，它直接投递字符码，因此中
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-computer`](../computer/README.md) —— 本包实现的 seam，含坐标契约。
-- [`dsh-tool-computer-use`](../tool-computer-use/README.md) —— 决定模型何时可以动手的消费方。
-- [`dsh-native-command`](../../util/native-command/README.md) —— 本提供方刻意没有使用的宿主无 shell 命令边界。
+- [`dsh-computer`](../computer/README.zh.md) —— 本包实现的 seam，含坐标契约。
+- [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) —— 决定模型何时可以动手的消费方。
+- [`dsh-native-command`](../../util/native-command/README.zh.md) —— 本提供方刻意没有使用的宿主无 shell 命令边界。
 
 -----
 

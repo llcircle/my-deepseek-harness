@@ -1,10 +1,12 @@
 /**
- * 电脑操作能力的 Service Definition（`ctx.computer`）：把"看屏幕、点鼠标、
- * 敲键盘"抽象成一个可替换的 seam。
+ * The computer-use Service Definition (`ctx.computer`): abstracts "look at the
+ * screen, move the pointer, type" into a replaceable seam.
  *
- * 为什么是 seam 而不是一个直接调外部程序的工具包：桌面操作天然与执行世界
- * 绑定（宿主桌面、远程桌面、容器内虚拟显示各不相同），Provider 换一个实现，
- * 上层工具与提示词无需改动。本包不含任何实现，也不做平台探测。
+ * Why a seam rather than a toolkit that shells out directly: desktop operation
+ * is inherently bound to the execution world (a host desktop, a remote desktop,
+ * and an in-container virtual display all differ), and swapping the Provider
+ * leaves the tools and prompts above it untouched. This package carries no
+ * implementation and does no platform detection.
  *
  * @module @deepseek-ai/dsh-computer
  */
@@ -51,101 +53,106 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * 电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类；
- * 调用方只依赖这组语义。
+ * The computer-use capability. Implementations own platform details, external
+ * process lifetimes, and error classification; callers depend only on these
+ * semantics.
  *
- * 契约：
- * - 所有坐标处于同一坐标系：{@link ComputerDisplay} 描述的虚拟屏幕物理像素。
- *   截图与输入必须共用它，否则点击会落在错误的位置。
- * - 每个方法都接受取消信号；中止时必须终止自己启动的进程并尽快 settle。
- * - 预期失败抛出带稳定 code 的 `ComputerError`，不抛出平台原始错误。
+ * Contract:
+ * - Every coordinate lives in one coordinate system: the physical pixels of the
+ *   virtual screen {@link ComputerDisplay} describes. Capture and input must
+ *   share it, or a click lands somewhere other than where it was aimed.
+ * - Every method accepts a cancellation signal; on abort it must terminate the
+ *   processes it started and settle promptly.
+ * - Expected failures throw a `ComputerError` carrying a stable code rather
+ *   than the raw platform error.
  */
 export abstract class ComputerUse extends Service {
   constructor(ctx: Context) {
     super(ctx, 'computer')
   }
 
-  /** 提供方标识，用于诊断与提示词叙述。 */
+  /** Provider identity, for diagnostics and prompt narration. */
   abstract readonly provider: string
 
   /**
-   * 探测当前是否真的可以执行桌面动作。
+   * Probe whether desktop actions can actually execute right now.
    *
-   * 这是唯一允许"不抛错"的方法：不可用时返回 `available: false` 与原因，
-   * 让 Consumer 可以照常加载并只隐藏工具。实现应缓存探测结果，
-   * 避免每次调用都付出一次进程启动代价。
+   * This is the only method allowed not to throw: when unavailable it returns
+   * `available: false` with a reason, so a Consumer can load as usual and merely
+   * hide its tools. Implementations should cache the probe result rather than
+   * paying a process start on every call.
    *
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 可用性判定；不可用时带一句给人看的原因。
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the availability verdict; when unavailable, with a human-readable reason.
    */
   abstract available(options?: ComputerCallOptions): Promise<ComputerAvailability>
 
   /**
-   * 读取虚拟屏幕几何。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 虚拟屏幕的宽高与（如有）缩放说明。
+   * Read the virtual screen geometry.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the virtual screen's width and height, plus scaling notes when any.
    */
   abstract display(options?: ComputerCallOptions): Promise<ComputerDisplay>
 
   /**
-   * 截取整个虚拟屏幕。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 截图附件与它的实际像素尺寸。
+   * Capture the whole virtual screen.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the screenshot attachment and its actual pixel dimensions.
    */
   abstract screenshot(options?: ComputerCallOptions): Promise<ComputerScreenshot>
 
   /**
-   * 读取指针当前位置。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 指针当前所在的屏幕坐标。
+   * Read the pointer's current position.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the screen coordinates the pointer currently occupies.
    */
   abstract pointer(options?: ComputerCallOptions): Promise<ComputerPoint>
 
   /**
-   * 把指针移动到指定位置。
-   * @param point - 目标屏幕坐标。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 移动后指针的实际坐标。
+   * Move the pointer to a position.
+   * @param point - the target screen coordinates.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the pointer's actual coordinates after the move.
    */
   abstract move(point: ComputerPoint, options?: ComputerCallOptions): Promise<ComputerPoint>
 
   /**
-   * 在指定位置（省略则用当前位置）点击。
-   * @param input - 点击位置、按键与次数。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 点击落点与生效的按键、次数。
+   * Click at a position, or at the current position when omitted.
+   * @param input - click position, button, and count.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns where the click landed, with the button and count that took effect.
    */
   abstract click(input: ComputerClickInput, options?: ComputerCallOptions): Promise<ComputerPoint & { button: string; clicks: number }>
 
   /**
-   * 从起点拖拽到终点。
-   * @param input - 起点、终点与按键。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 起止坐标与生效的按键。
+   * Drag from an origin to a destination.
+   * @param input - origin, destination, and button.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the start and end coordinates with the button that took effect.
    */
   abstract drag(input: ComputerDragInput, options?: ComputerCallOptions): Promise<ComputerDragResult>
 
   /**
-   * 输入一段文本。
-   * @param input - 待输入的文本。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 实际送入的字符数。
+   * Type a run of text.
+   * @param input - the text to type.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns how many characters were actually delivered.
    */
   abstract typeText(input: ComputerTypeInput, options?: ComputerCallOptions): Promise<{ characters: number }>
 
   /**
-   * 按下并释放一组组合键。
-   * @param input - 组合键序列，如 `['ctrl', 'c']`。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 实际按下的键序列。
+   * Press and release one chord of keys.
+   * @param input - the key sequence, such as `['ctrl', 'c']`.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns the key sequence actually pressed.
    */
   abstract key(input: ComputerKeyInput, options?: ComputerCallOptions): Promise<{ keys: string[] }>
 
   /**
-   * 在指定位置（省略则用当前位置）滚动。
-   * @param input - 滚动位置与纵向/横向位移；纵向正数向下，与 DOM `WheelEvent` 一致。
-   * @param options - 可选的取消信号与调用元数据。
-   * @returns 滚动落点与生效的位移。
+   * Scroll at a position, or at the current position when omitted.
+   * @param input - scroll position and vertical/horizontal deltas; a positive vertical delta scrolls down, matching DOM `WheelEvent`.
+   * @param options - optional cancellation signal and call metadata.
+   * @returns where the scroll landed with the deltas that took effect.
    */
   abstract scroll(input: ComputerScrollInput, options?: ComputerCallOptions): Promise<ComputerPoint & { deltaX: number; deltaY: number }>
 }

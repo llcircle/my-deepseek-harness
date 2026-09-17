@@ -4752,6 +4752,76 @@
       }
     },
     {
+      "key": "event:computer/mode",
+      "kind": "event",
+      "event": "computer/mode",
+      "surface": false,
+      "digest": "b0ac99225dac86c22503bc7bad0b09e704e8ff00c8068895fd8418f7305fe648",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "active",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "computer/mode"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:deliverables/presented",
       "kind": "event",
       "event": "deliverables/presented",
@@ -6393,7 +6463,7 @@
       "kind": "event",
       "event": "request/header",
       "surface": false,
-      "digest": "8ea13bcd983eab596dbfd41c5c2b62a0b318b71cd2a987a6fd752c6ced7e4489",
+      "digest": "2212c188a1c336bcb1cdbbc2523e5595e7f97d3b2369a6c7bd67bad8ed33f457",
       "schema": {
         "root": 0,
         "nodes": [
@@ -6422,7 +6492,7 @@
               },
               {
                 "name": "type",
-                "type": 18,
+                "type": 20,
                 "optional": false
               }
             ],
@@ -6438,7 +6508,7 @@
               },
               {
                 "name": "reason",
-                "type": 13,
+                "type": 15,
                 "optional": false
               },
               {
@@ -6463,8 +6533,13 @@
                 "optional": false
               },
               {
-                "name": "tools",
+                "name": "systemSections",
                 "type": 9,
+                "optional": true
+              },
+              {
+                "name": "tools",
+                "type": 11,
                 "optional": true
               }
             ],
@@ -6546,6 +6621,26 @@
             "kind": "object",
             "properties": [
               {
+                "name": "name",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 12
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
                 "name": "description",
                 "type": 7,
                 "optional": false
@@ -6557,7 +6652,7 @@
               },
               {
                 "name": "parameters",
-                "type": 11,
+                "type": 13,
                 "optional": false
               }
             ],
@@ -6569,7 +6664,7 @@
             "indices": [
               {
                 "key": 7,
-                "value": 12
+                "value": 14
               }
             ]
           },
@@ -6580,10 +6675,10 @@
           {
             "kind": "union",
             "types": [
-              14,
-              15,
               16,
-              17
+              17,
+              18,
+              19
             ]
           },
           {
@@ -16139,7 +16234,7 @@
         "event:assistant/attempt.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/core/session/src/types.ts:349"
       ]
     },
     {
@@ -18018,7 +18113,7 @@
         "event:session/end-seed.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:405"
+        "packages/core/session/src/types.ts:419"
       ]
     },
     {
@@ -19855,7 +19950,7 @@
         "event:system/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:310"
+        "packages/core/session/src/types.ts:324"
       ]
     },
     {
@@ -19881,10 +19976,12 @@
         ]
       },
       "names": [
+        "event:computer/mode.data",
         "event:plan/mode.data"
       ],
       "sources": [
-        "packages/plan/plan-mode/src/index.ts:47"
+        "packages/computer/tool-computer-use/src/state.ts:22",
+        "packages/plan/plan-mode/src/index.ts:48"
       ]
     },
     {
@@ -19953,6 +20050,252 @@
       "sources": [
         "packages/experimental/agent-team/src/types.ts:115"
       ]
+    },
+    {
+      "digest": "2212c188a1c336bcb1cdbbc2523e5595e7f97d3b2369a6c7bd67bad8ed33f457",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 20,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "header",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "reason",
+                "type": 15,
+                "optional": false
+              },
+              {
+                "name": "startsSeries",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 9,
+                "optional": true
+              },
+              {
+                "name": "tools",
+                "type": 11,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 7,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 8,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 6,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 7
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "name",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 12
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 13,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 7,
+                "value": 14
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          },
+          {
+            "kind": "union",
+            "types": [
+              16,
+              17,
+              18,
+              19
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "initial"
+          },
+          {
+            "kind": "literal",
+            "value": "resume"
+          },
+          {
+            "kind": "literal",
+            "value": "series"
+          },
+          {
+            "kind": "literal",
+            "value": "change"
+          },
+          {
+            "kind": "literal",
+            "value": "request/header"
+          }
+        ]
+      },
+      "names": [
+        "event:request/header"
+      ],
+      "sources": []
     },
     {
       "digest": "234142ee4f996f38cc9fa3b8b3e3de29b03c9aefe5ebf6c224eddd564505aa85",
@@ -22443,6 +22786,173 @@
       "sources": []
     },
     {
+      "digest": "2767218c98b1ecf72c0df47a19cd3d862a13396df51064bff876ca5dc5e97517",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 1,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 7,
+                "optional": true
+              },
+              {
+                "name": "tools",
+                "type": 9,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 5
+          },
+          {
+            "kind": "array",
+            "element": 8
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 11,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 5,
+                "value": 12
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          }
+        ]
+      },
+      "names": [
+        "packages/core/session/src/types.ts#EpochHeader"
+      ],
+      "sources": [
+        "packages/core/session/src/types.ts:244"
+      ]
+    },
+    {
       "digest": "277b61f9c6f8170425fa6ffe06cfa14376757a896a4749cb82a687d7364c4fc9",
       "schema": {
         "root": 0,
@@ -23700,194 +24210,6 @@
       },
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "2f0aefb72ab453c4bf21a6687f436775d359dc6f8f10410fd4c0615b20bd9d76",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "header",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "reason",
-                "type": 12,
-                "optional": false
-              },
-              {
-                "name": "startsSeries",
-                "type": 3,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 8,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 3,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 7,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 5,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 6
-          },
-          {
-            "kind": "array",
-            "element": 9
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 6,
-                "value": 11
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          },
-          {
-            "kind": "union",
-            "types": [
-              13,
-              14,
-              15,
-              16
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "resume"
-          },
-          {
-            "kind": "literal",
-            "value": "series"
-          },
-          {
-            "kind": "literal",
-            "value": "change"
-          },
-          {
-            "kind": "literal",
-            "value": "initial"
-          }
-        ]
-      },
-      "names": [
-        "event:request/header.data"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:370"
-      ]
     },
     {
       "digest": "2f1e6a7ebace43d727ae138ddcd352eb3813960009e5805b8c5ac84300c97716",
@@ -27016,7 +27338,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:439"
+        "packages/core/session/src/types.ts:453"
       ]
     },
     {
@@ -27544,7 +27866,7 @@
         "event:tool/result.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:355"
+        "packages/core/session/src/types.ts:369"
       ]
     },
     {
@@ -28775,7 +29097,7 @@
         "packages/core/tools/src/index.ts#ToolRestriction"
       ],
       "sources": [
-        "packages/core/tools/src/index.ts:682"
+        "packages/core/tools/src/index.ts:694"
       ]
     },
     {
@@ -32047,7 +32369,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:375",
+        "packages/api/session-controller/src/types.ts:377",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:19",
@@ -34075,7 +34397,7 @@
         "packages/core/session/src/types.ts#RequestHeaderReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:261"
+        "packages/core/session/src/types.ts:275"
       ]
     },
     {
@@ -35010,9 +35332,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[39].sourceEventSeqs",
-        "SessionEventEnvelope[52].sourceEventSeqs",
-        "SessionEventEnvelope[55].sourceEventSeqs",
+        "SessionEventEnvelope[40].sourceEventSeqs",
+        "SessionEventEnvelope[53].sourceEventSeqs",
+        "SessionEventEnvelope[56].sourceEventSeqs",
         "event:assistant/attempt.data.stream[0][0].dt",
         "event:assistant/attempt.data.stream[0][1].dt",
         "event:assistant/attempt.data.stream[0][2].dt",
@@ -37103,7 +37425,7 @@
         "packages/skill/skill/src/index.ts#SkillInvocationSource"
       ],
       "sources": [
-        "packages/skill/skill/src/index.ts:146"
+        "packages/skill/skill/src/index.ts:168"
       ]
     },
     {
@@ -37981,7 +38303,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[10]"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:380"
+        "packages/api/session-controller/src/types.ts:382"
       ]
     },
     {
@@ -39992,7 +40314,7 @@
         "event:assistant/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:321"
+        "packages/core/session/src/types.ts:335"
       ]
     },
     {
@@ -40972,7 +41294,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:40"
+        "packages/skill/tool-skill/src/index.ts:48"
       ]
     },
     {
@@ -42159,9 +42481,11 @@
         ]
       },
       "names": [
+        "packages/core/session/src/types.ts#SystemPromptSectionSnapshot",
         "packages/llm/llm/src/message.ts#ContextSnapshotSection"
       ],
       "sources": [
+        "packages/core/session/src/types.ts:230",
         "packages/llm/llm/src/message.ts:65"
       ]
     },
@@ -43295,227 +43619,6 @@
       ]
     },
     {
-      "digest": "8ea13bcd983eab596dbfd41c5c2b62a0b318b71cd2a987a6fd752c6ced7e4489",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "data",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "ignorable",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "seq",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "time",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 18,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "header",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "reason",
-                "type": 13,
-                "optional": false
-              },
-              {
-                "name": "startsSeries",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 9,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 7,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 8,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 6,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 7
-          },
-          {
-            "kind": "array",
-            "element": 10
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 11,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 7,
-                "value": 12
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          },
-          {
-            "kind": "union",
-            "types": [
-              14,
-              15,
-              16,
-              17
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "initial"
-          },
-          {
-            "kind": "literal",
-            "value": "resume"
-          },
-          {
-            "kind": "literal",
-            "value": "series"
-          },
-          {
-            "kind": "literal",
-            "value": "change"
-          },
-          {
-            "kind": "literal",
-            "value": "request/header"
-          }
-        ]
-      },
-      "names": [
-        "event:request/header"
-      ],
-      "sources": []
-    },
-    {
       "digest": "8f6d609794bf5afc01d7ccf3e03811d32f4b8047f58a2c9a98db0154c2ad7cb9",
       "schema": {
         "root": 0,
@@ -44479,9 +44582,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[39]",
-        "SessionEventEnvelope[52]",
-        "SessionEventEnvelope[55]"
+        "SessionEventEnvelope[40]",
+        "SessionEventEnvelope[53]",
+        "SessionEventEnvelope[56]"
       ],
       "sources": []
     },
@@ -46362,6 +46465,20 @@
       "names": [
         "event:compaction/summary.data[0]"
       ],
+      "sources": []
+    },
+    {
+      "digest": "a0e4cb3507468ef8fa85abc69fda6545ecd3944e588bf4c6a29b5b8d1f7becf9",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "computer/mode"
+          }
+        ]
+      },
+      "names": [],
       "sources": []
     },
     {
@@ -48301,6 +48418,219 @@
       ]
     },
     {
+      "digest": "a6aaebb4cb6bab73dfa51683bd03137c1163229d81e8ae279d87da943ad44b12",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "header",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "reason",
+                "type": 14,
+                "optional": false
+              },
+              {
+                "name": "startsSeries",
+                "type": 3,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 8,
+                "optional": true
+              },
+              {
+                "name": "tools",
+                "type": 10,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 3,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 7,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 5,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 6
+          },
+          {
+            "kind": "array",
+            "element": 9
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 11
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 12,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 6,
+                "value": 13
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          },
+          {
+            "kind": "union",
+            "types": [
+              15,
+              16,
+              17,
+              18
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "initial"
+          },
+          {
+            "kind": "literal",
+            "value": "resume"
+          },
+          {
+            "kind": "literal",
+            "value": "series"
+          },
+          {
+            "kind": "literal",
+            "value": "change"
+          }
+        ]
+      },
+      "names": [
+        "event:request/header.data"
+      ],
+      "sources": [
+        "packages/core/session/src/types.ts:384"
+      ]
+    },
+    {
       "digest": "a6b41f5bede8094d7bf635be5d69b1bd7a25e006ca9cf9415bceb9322f1a7feb",
       "schema": {
         "root": 0,
@@ -48470,7 +48800,7 @@
         "event:tool/result.data.error"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:363",
+        "packages/core/session/src/types.ts:377",
         "packages/core/tools/src/types.ts:24"
       ]
     },
@@ -49299,6 +49629,76 @@
       "sources": []
     },
     {
+      "digest": "b0ac99225dac86c22503bc7bad0b09e704e8ff00c8068895fd8418f7305fe648",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "active",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "computer/mode"
+          }
+        ]
+      },
+      "names": [
+        "event:computer/mode"
+      ],
+      "sources": []
+    },
+    {
       "digest": "b0b0eb1b16490f6bee135b2377e8f8c39227974c799ad7d49ff418af23ecbc35",
       "schema": {
         "root": 0,
@@ -49451,7 +49851,7 @@
         "packages/core/session/src/types.ts#RequestContext"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:242"
+        "packages/core/session/src/types.ts:256"
       ]
     },
     {
@@ -52108,7 +52508,7 @@
         "SessionEventEnvelope[6].surfaceOp[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:441"
+        "packages/core/session/src/types.ts:455"
       ]
     },
     {
@@ -52568,148 +52968,6 @@
       "sources": []
     },
     {
-      "digest": "c55a891c7aac496de6ee64c91c1fb65728c977314013033e42c863428aada854",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 1,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 7,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 2,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 5
-          },
-          {
-            "kind": "array",
-            "element": 8
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 9,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 5,
-                "value": 10
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          }
-        ]
-      },
-      "names": [
-        "packages/core/session/src/types.ts#EpochHeader"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:232"
-      ]
-    },
-    {
       "digest": "c589e938cc0e4989df8b82abef6339de621f0dc4fe62c230d145b94996af7f92",
       "schema": {
         "root": 0,
@@ -52811,7 +53069,8 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[4].sections"
+        "event:agent/inbox/spliced.data.inserted[0].source[4].sections",
+        "event:request/header.data.header.systemSections"
       ],
       "sources": []
     },
@@ -55728,7 +55987,7 @@
         "event:turn/end.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:285"
+        "packages/core/session/src/types.ts:299"
       ]
     },
     {
@@ -58441,8 +58700,8 @@
         "SessionEventEnvelope[36]",
         "SessionEventEnvelope[37]",
         "SessionEventEnvelope[38]",
+        "SessionEventEnvelope[39]",
         "SessionEventEnvelope[3]",
-        "SessionEventEnvelope[40]",
         "SessionEventEnvelope[41]",
         "SessionEventEnvelope[42]",
         "SessionEventEnvelope[43]",
@@ -58455,9 +58714,10 @@
         "SessionEventEnvelope[4]",
         "SessionEventEnvelope[50]",
         "SessionEventEnvelope[51]",
-        "SessionEventEnvelope[53]",
+        "SessionEventEnvelope[52]",
         "SessionEventEnvelope[54]",
-        "SessionEventEnvelope[56]",
+        "SessionEventEnvelope[55]",
+        "SessionEventEnvelope[57]",
         "SessionEventEnvelope[5]",
         "SessionEventEnvelope[7]",
         "SessionEventEnvelope[8]",
@@ -58557,7 +58817,7 @@
         "event:tool/call.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:341"
+        "packages/core/session/src/types.ts:355"
       ]
     },
     {
@@ -59528,8 +59788,8 @@
         "event:step/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:287",
-        "packages/core/session/src/types.ts:289"
+        "packages/core/session/src/types.ts:301",
+        "packages/core/session/src/types.ts:303"
       ]
     },
     {
@@ -60549,7 +60809,7 @@
         "event:turn/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:276"
+        "packages/core/session/src/types.ts:290"
       ]
     },
     {
@@ -60729,7 +60989,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:34"
+        "packages/skill/tool-skill/src/index.ts:42"
       ]
     },
     {

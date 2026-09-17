@@ -124,9 +124,11 @@ getSectionOrder(name: PromptSectionOrderName): number
 /**
  * List globally registered section names for prompt editing surfaces.
  *
- * 这是**全局视图**，刻意不含作用域里的注册。要看"编辑面能改哪些分段"用
- * {@link sectionTexts}，它连作用域一起算——两者覆盖的集合本来就不一样，
- * 把这里也改成并集只会让"全局层注册了什么"这个问题再也问不出来。
+ * This is the **global view** and deliberately excludes scoped registrations.
+ * To learn "which sections an editor may change", use {@link sectionTexts},
+ * which folds scopes in — the two cover different sets by design, and turning
+ * this one into a union would make "what did the global layer register"
+ * unanswerable.
  * @returns sorted section names visible to unscoped assemblies.
  */
 sectionNames(): string[]
@@ -136,10 +138,12 @@ sectionNames(): string[]
  * scope's own first-seen contribution, in one merged view. Static sections
  * include their current text; dynamic sections stay visible but not editable.
  *
- * 作用域里的分段必须一起列出来，否则编辑面会漏掉整整一族能力：`tool:<名字>`
- * 全部注册在 agent 作用域，只读全局层会得出"这个部署一个工具都没有"的错误
- * 结论。列出来是安全的——覆盖在装配的最后一步按名字作用于**合并后**的分段，
- * 所以作用域里的分段同样改得动。
+ * Scoped sections must be listed alongside them, or the editing surface would
+ * miss a whole family of capabilities: every `tool:<name>` registers in the
+ * agent scope, so reading the global layer alone concludes "this deployment
+ * has no tools at all". Listing them is safe — overrides apply by name to the
+ * **merged** sections in the final assembly step, so scoped sections are just
+ * as editable.
  * @param cwd - session workspace whose per-session prompt file supplies the
  * Chinese column; omitted reads leave that column empty.
  * @returns sorted section views for prompt editing.
@@ -154,21 +158,24 @@ async sectionTexts(cwd?: string): Promise<PromptSectionView[]>
 installOverrides( owner: Context, settings: PromptOverridesSettingsInstaller, ): void
 
 /**
- * 接入界面语言的读取来源。
+ * Adopt the source that reads the interface language.
  *
- * 注册表自己不认识"设置"这个概念——它没有注入 settings 服务，因为提示词
- * 装配必须能在没有设置服务的部署（headless、ACP、单元测试）里跑起来。所以
- * 语言由装配方推过来：设置桥接插件在挂载时把"当前界面语言是什么"注册进来，
- * 装配时按次读取。一次读取、不缓存，是为了让用户在浏览器里改完语言后
- * 下一个请求就生效，不必重启。
+ * The registry does not know the concept of "settings" — it never injects a
+ * settings service, because prompt assembly must run in deployments that have
+ * none (headless, ACP, unit tests). So the language is pushed in by the
+ * assembling side: the settings bridge registers "what the current interface
+ * language is" at mount time, and assembly reads it once per request. One read
+ * per request with no caching is what lets a language the user just changed in
+ * the browser take effect on the next request instead of requiring a restart.
  *
- * @param source - 读取当前界面语言标签的函数；返回空表示没有设置服务。
+ * @param source - reads the current interface language tag; empty means no settings service.
  */
 adoptLocaleSource(source: () => string | undefined): void
 
 /**
- * 当前生效的提示词语言：配置显式指定优先，其次跟随界面语言，都没有则 `en`。
- * @returns `zh` 或 `en`。
+ * The prompt language in effect: an explicit config value wins, otherwise it
+ * follows the interface language, and with neither it is `en`.
+ * @returns `zh` or `en`.
  */
 activeLocale(): PromptLocale
 
@@ -194,6 +201,29 @@ context(context: PromptContext): () => void
  * @returns the exact Cordis effect disposer.
  */
 suppressRuntimeContext(): () => void
+
+/**
+ * Suppress one named prompt section in the calling context's scope: the name
+ * disappears from every assembly that scope takes part in, no matter which
+ * layer registered it — the global one, an ancestor scope, or this scope.
+ *
+ * This is not the same as same-name shadowing through {@link section}, and the
+ * two are not substitutes: shadowing asks you to supply new body text, which
+ * suits "say it my own way"; suppression states "this section does not exist
+ * in this scope", which suits a single-purpose agent that wants very few
+ * prompt sections. Both affect assembly only and unregister nobody's
+ * registration — a suppressed section still appears in parent and sibling
+ * scope assemblies.
+ *
+ * The reach is the whole chain: a suppression declared at any layer hides the
+ * section from this scope's assemblies, and there is no inverse
+ * "unsuppress" syntax. This shares its origin with
+ * {@link suppressRuntimeContext} — "from this scope downward, this block does
+ * not exist".
+ * @param name - the section name to suppress.
+ * @returns the exact Cordis effect disposer.
+ */
+suppressSection(name: string): () => void
 
 /**
  * Register a tool-schema provider in the calling context's scope. Global and

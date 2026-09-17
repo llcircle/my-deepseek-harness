@@ -120,7 +120,15 @@ class CatalogWorkflowEngine extends WorkflowEngine {
 function registerCatalogSubagentProvider(ctx: Context, name: string): void {
   const provider: SubagentProvider = {
     name,
-    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    capabilities: {
+      agentOptions: true,
+      outputSchema: true,
+      depthLimit: true,
+      toolFilter: true,
+      allowTools: true,
+      persona: true,
+      omitSections: true,
+    },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('tool-catalog provider cannot start a child')),
     // Declared so consumers configured for continuable background mode mount.
@@ -673,30 +681,33 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-computer-use',
     source: 'packages/computer/tool-computer-use/src/index.ts',
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.sessionProjections', 'ctx.computer (execution time)'],
-    writes: ['tool/call', 'tool/result', 'computer/mode (每次启用与关闭)'],
+    writes: ['tool/call', 'tool/result', 'computer/mode (on every enable and disable)'],
     onDemandTools: true,
     shippedNames: [...COMPUTER_TOOL_NAMES],
     async mount(ctx) {
       await ctx.plugin(ToolComputerUse)
     },
     note:
-      '电脑操作是启用制：只有用户说"操作电脑"或用 /computer 显式要求，这九个工具才装进该 agent 的作用域，'
-      + '策略分节也才进入提示词。收割进程不会触发启用，因此这里只登记工具名——它们默认对模型不可见，'
-      + '这正是这项能力的设计前提（桌面控制权不该默认授予）。',
+      'Computer use is opt-in: the nine tools enter an agent\'s scope, and the policy section enters the '
+      + 'prompt, only when the user says to operate the computer or asks explicitly with /computer. A '
+      + 'harvesting process never triggers the enable, so only the tool names are registered here — they '
+      + 'are invisible to the model by default, which is this capability\'s design premise (desktop control '
+      + 'is not granted by default).',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-error-journal',
     dir: 'tool-error-journal',
     source: 'packages/guard/tool-error-journal/src/index.ts',
-    requires: ['ctx.sessions（session/event 旁路）'],
+    requires: ['ctx.sessions (session/event sidechannel)'],
     writes: [] as string[],
     onDemandTools: true,
     async mount(ctx) {
       await ctx.plugin(ToolErrorJournal)
     },
     note:
-      '只做旁路记录：它挂 session/event 把核心与 MCP 工具的失败写进 DSH home 下的 JSONL，'
-      + '不向模型暴露任何工具。目录登记它是为了不留下一类看不见的能力。',
+      'Sidechannel recording only: it listens on session/event and writes core and MCP tool failures to '
+      + 'a JSONL under the Harness home, exposing no tool to the model. The catalog registers it so a '
+      + 'class of invisible capability does not go unlisted.',
   },
 ]
 

@@ -3,10 +3,10 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, ToolCallId, type Message } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import {
-  SESSION_FORMAT_VERSION, Session, SessionId, type SessionEvent, type UserMessage,
+  SESSION_FORMAT_VERSION, Session, SessionId, type UserMessage,
 } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -14,15 +14,8 @@ import AgentRegistry, { agentEvents, type Agent, type PreStepDecision } from '@d
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import * as toolSkill from '@deepseek-ai/dsh-tool-skill'
-<<<<<<< ours
 import { catalogTranslationFiles, catalogUsesChinese, loadCatalogTranslations } from '@deepseek-ai/dsh-tool-skill'
-=======
-<<<<<<< ours
-import { catalogTranslationFiles, catalogUsesChinese, loadCatalogTranslations } from '@deepseek-ai/dsh-tool-skill'
-=======
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
->>>>>>> theirs
->>>>>>> theirs
 
 const testToolSignal = new AbortController().signal
 
@@ -44,9 +37,13 @@ async function writeSkill(root: string, name: string, description: string, body:
   await writeFile(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`)
 }
 
-async function setup(home: string, config: toolSkill.Config = {}): Promise<Context> {
+async function setup(
+  home: string,
+  config: toolSkill.Config = {},
+  promptLocale?: 'en' | 'zh',
+): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(SystemPrompt, promptLocale === undefined ? {} : { promptLocale })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SkillRegistry)
@@ -77,47 +74,6 @@ function agentForCwd(cwd: string): Agent {
   }
 }
 
-function sessionAgent(session: Session, id = 'tool-skill-agent'): Agent {
-  const agent: Agent = {
-    id: SessionId(id),
-    options: {},
-    session,
-    inbox: unsupportedInbox(),
-    status: 'running',
-    ctx: new Context(),
-    send: () => {},
-    followup: () => {},
-    steer: () => {},
-    inject: () => { throw new Error('step-boundary catalog must not use agent.inject()') },
-    cancel() {},
-    runMaintenance: task => task(new AbortController().signal),
-    whenIdle: () => Promise.resolve(),
-  }
-  return agent
-}
-
-function openMessageTurn(session: Session, turn = 1): void {
-  session.append('turn/start', { turn })
-  session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text: `turn ${turn}` }],
-    source: { kind: 'user' },
-  }), { surfaceOp: 'append' })
-}
-
-async function fireStep(ctx: Context, agent: Agent, turn: number, step: number): Promise<void> {
-  const signal = new AbortController().signal
-  const decision = await agentEvents(ctx, agent).waterfall(
-    'agent/pre-step',
-    { messages: [], turn, step, signal },
-    () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
-  )
-  if (decision.kind === 'enter') {
-    for (const message of decision.messages) {
-      agent.session.append('user/message', message, { surfaceOp: 'append' })
-    }
-  }
-}
-
 async function proposeStep(
   ctx: Context,
   agent: Agent,
@@ -131,42 +87,23 @@ async function proposeStep(
   )
 }
 
-function catalogMessages(session: Session): Extract<SessionEvent, { type: 'user/message' }>[] {
-  return session.snapshotEvents().filter((event): event is Extract<SessionEvent, { type: 'user/message' }> => event.type === 'user/message'
-    && event.data.source.kind === 'skill-catalog')
+/**
+ * The catalog text the calling agent's own assembly carries.
+ *
+ * The plugin contributes the catalog as the ordered `skills:catalog`
+ * system-prompt section and fills it from the `system-prompt/assemble`
+ * listener, so "what the model is told about available skills" is one assembly
+ * away — keyed by the calling agent, resolved fresh on every assembly, and
+ * never a durable message the session has to carry, deduplicate, or replace.
+ */
+async function catalogFor(ctx: Context, agent: Agent, signal?: AbortSignal): Promise<string> {
+  const assembly = await ctx.systemPrompt.assemble(signal === undefined ? { agent } : { agent, signal })
+  return assembly.sections.find(section => section.name === 'skills:catalog')?.text ?? ''
 }
 
-function readableCatalog(event: Extract<SessionEvent, { type: 'user/message' }>): boolean {
-  const entries = (event.data.source as { entries?: unknown }).entries
-  return Array.isArray(entries)
-    && entries.every(entry => typeof entry === 'object' && entry !== null
-      && typeof (entry as { name?: unknown }).name === 'string'
-      && typeof (entry as { description?: unknown }).description === 'string')
-}
-
-function catalogContent(entries: string[]): Message['content'] {
-  return [{
-    type: 'text',
-    text: ['<system-reminder>', '<available_skills>', ...entries, '</available_skills>', '</system-reminder>'].join('\n'),
-  }]
-}
-
-async function composePrefix(ctx: Context, cwd: string, signal = new AbortController().signal): Promise<Message[]> {
-  return await composePrefixForAgent(ctx, agentForCwd(cwd), signal)
-}
-
-async function composePrefixForAgent(ctx: Context, agent: Agent, signal = new AbortController().signal): Promise<Message[]> {
-  const decision = await agentEvents(ctx, agent).waterfall(
-    'agent/pre-step',
-    { messages: [], turn: 1, step: 1, signal },
-    () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
-  )
-  if (decision.kind === 'enter') {
-    for (const message of decision.messages) {
-      agent.session.append('user/message', message, { surfaceOp: 'append' })
-    }
-  }
-  return agent.session.deriveMessages()
+/** The same lookup for the agent a bare cwd identifies. */
+async function catalogForCwd(ctx: Context, cwd: string, signal?: AbortSignal): Promise<string> {
+  return await catalogFor(ctx, agentForCwd(cwd), signal)
 }
 
 async function mintAgentScope(ctx: Context, subject: string | Agent): Promise<{ agent: Agent; scope: Scope }> {
@@ -191,7 +128,7 @@ describe('dsh-tool-skill', () => {
 
     const fiber = await ctx.plugin(toolSkill)
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
-    expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
+    expect(await catalogForCwd(ctx, '/workspace')).toContain('lifecycle-skill')
     expect(ctx.tools.get('skill')?.presentCall?.({ name: 'project-skill' })).toEqual({
       card: 'generic',
       title: 'Load skill project-skill',
@@ -200,13 +137,13 @@ describe('dsh-tool-skill', () => {
     })
     await fiber.dispose()
     expect(ctx.tools.schemas()).toEqual([])
-    expect(await composePrefix(ctx, '/workspace')).toEqual([])
+    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
 
     toolSkill.apply(ctx)
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
   })
 
-  it('forwards the step abort signal to skill discovery', async () => {
+  it('forwards the assembly signal to skill discovery', async () => {
     const home = await tempDir('tool-prefix-signal')
     const ctx = await setup(home)
     let seenSignal: AbortSignal | undefined
@@ -222,12 +159,12 @@ describe('dsh-tool-skill', () => {
     }))
     const controller = new AbortController()
 
-    await composePrefix(ctx, '/workspace', controller.signal)
+    await catalogForCwd(ctx, '/workspace', controller.signal)
 
     expect(seenSignal).toBe(controller.signal)
   })
 
-  it('injects a stable durable name-and-description catalog at the first step', async () => {
+  it('renders a stable name-and-description catalog from the live snapshot', async () => {
     const home = await tempDir('tool-catalog')
     const ctx = await setup(home, { catalogDescriptionMaxLength: 50 })
     ctx.skills.register({
@@ -275,56 +212,34 @@ describe('dsh-tool-skill', () => {
       }
     })
 
-    const prefix = await composePrefix(ctx, '/workspace')
+    const catalog = await catalogForCwd(ctx, '/workspace')
 
-    expect(prefix).toEqual([
-      {
-        id: expect.any(String) as unknown,
-        role: 'user',
-        content: [{ type: 'text', text: 'later contribution' }],
-        source: { kind: 'plugin', plugin: 'later-contribution' },
-      },
-      {
-        id: expect.any(String) as unknown,
-        role: 'user',
-        source: {
-          kind: 'skill-catalog',
-          form: 'catalog',
-          entries: [
-            { name: 'a-skill', description: 'Use {{placeholder}} <safely> & carefully.' },
-            { name: 'model-only-skill', description: 'Model-only skill.' },
-            { name: 'z-skill', description: 'Long description Long description Long descript...' },
-          ],
-        },
-        content: [{
-          type: 'text',
-          text: [
-            '<system-reminder>',
-            'A skill is a reusable set of task-specific instructions. The following skills are available in this session:',
-            '',
-            '<available_skills>',
-            '- `a-skill`: Use {{placeholder}} &lt;safely&gt; &amp; carefully.',
-            '- `model-only-skill`: Model-only skill.',
-            '- `z-skill`: Long description Long description Long descript...',
-            '</available_skills>',
-            '',
-            "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
-            'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
-            '</system-reminder>',
-          ].join('\n'),
-        }],
-      },
-    ])
-    const rendered = JSON.stringify(prefix[1])
-    expect(rendered).not.toContain('whenToUse')
-    expect(rendered).not.toContain('secret-source')
-    expect(rendered).not.toContain('/secret/path')
-    expect(rendered).not.toContain('Secret body')
-    expect(rendered).not.toContain('user-only-skill')
-    expect(renderPrompt(await ctx.systemPrompt.assemble({ agent: agentForCwd('/workspace') }))).not.toContain('<available_skills>')
+    // 目录是系统提示词里的一段文本，不是会话消息：其它插件往 pre-step 里加多少
+    // 条注入都不影响它，反之亦然。
+    expect(catalog).toContain([
+      '<system-reminder>',
+      'A skill is a reusable set of task-specific instructions. The following skills are available in this session:',
+      '',
+      '<available_skills>',
+      '- `a-skill`: Use {{placeholder}} &lt;safely&gt; &amp; carefully.',
+      '- `model-only-skill`: Model-only skill.',
+      '- `z-skill`: Long description Long description Long descript...',
+      '</available_skills>',
+      '',
+      "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+      'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
+      '</system-reminder>',
+    ].join('\n'))
+    expect(catalog).not.toContain('whenToUse')
+    expect(catalog).not.toContain('secret-source')
+    expect(catalog).not.toContain('/secret/path')
+    expect(catalog).not.toContain('Secret body')
+    expect(catalog).not.toContain('user-only-skill')
+    expect(renderPrompt(await ctx.systemPrompt.assemble({ agent: agentForCwd('/workspace') })))
+      .toContain('<available_skills>')
   })
 
-  it('does not inject a catalog when no model-invocable skills are available', async () => {
+  it('renders no catalog when no model-invocable skills are available', async () => {
     const home = await tempDir('tool-empty-catalog')
     const ctx = await setup(home)
     ctx.skills.register({
@@ -335,14 +250,14 @@ describe('dsh-tool-skill', () => {
       content: 'User-only body.',
     })
 
-    const agent = agentForCwd('/workspace')
-    expect(await composePrefixForAgent(ctx, agent)).toEqual([])
-    expect(await composePrefixForAgent(ctx, agent)).toEqual([])
+    // 段仍然注册着（它总是存在），但文本为空，所以渲染里连 system-reminder 都没有。
+    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
+    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
   })
 
-  it('renders the whole catalog in Chinese from the translation archive by default', async () => {
+  it('renders the whole catalog in Chinese when the assembly language is Chinese', async () => {
     const home = await tempDir('tool-zh-catalog')
-    const ctx = await setup(home)
+    const ctx = await setup(home, {}, 'zh')
     ctx.skills.register({
       name: 'a-skill',
       description: 'English description.',
@@ -365,28 +280,19 @@ describe('dsh-tool-skill', () => {
     )
 
     const agent = agentForCwd(cwd)
-    const catalogMessage = (await composePrefixForAgent(ctx, agent))
-      .find(message => message.source.kind === 'skill-catalog')
-    const rendered = catalogMessage === undefined
-      ? ''
-      : catalogMessage.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+    const catalog = await catalogFor(ctx, agent)
 
-    expect(rendered).toContain('技能是一组可复用的任务专用指令。')
-    expect(rendered).toContain('中文描述。')
-    expect(rendered).toContain('Untranslated description.')
-    expect(rendered).not.toContain('English description.')
-    expect(rendered).not.toContain('A skill is a reusable set')
-    expect(catalogMessage?.source).toMatchObject({
-      entries: [
-        { name: 'a-skill', description: '中文描述。' },
-        { name: 'untranslated-skill', description: 'Untranslated description.' },
-      ],
-    })
+    expect(catalog).toContain('技能是一组可复用的任务专用指令。')
+    expect(catalog).toContain('中文描述。')
+    // 档案没覆盖的技能保留英文描述：目录宁可半译，也不编造。
+    expect(catalog).toContain('Untranslated description.')
+    expect(catalog).not.toContain('English description.')
+    expect(catalog).not.toContain('A skill is a reusable set')
   })
 
-  it('keeps English when no archive exists or catalogLocale is en', async () => {
+  it('lets an explicit catalogLocale of en outrank a Chinese assembly language', async () => {
     const home = await tempDir('tool-en-catalog')
-    const ctx = await setup(home, { catalogLocale: 'en' })
+    const ctx = await setup(home, { catalogLocale: 'en' }, 'zh')
     ctx.skills.register({
       name: 'a-skill',
       description: 'English description.',
@@ -395,28 +301,23 @@ describe('dsh-tool-skill', () => {
       content: 'Body.',
     })
     const cwd = await tempDir('tool-en-cwd')
-    const agent = agentForCwd(cwd)
-    const first = (await composePrefixForAgent(ctx, agent))
-      .find(message => message.source.kind === 'skill-catalog')
-    const firstText = first === undefined ? '' : first.content.map(block => block.type === 'text' ? block.text : '').join('\n')
-    expect(firstText).toContain('A skill is a reusable set')
-
     await mkdir(join(cwd, '.dsh'), { recursive: true })
     await writeFile(
       join(cwd, '.dsh', 'skill-translations.zh.json'),
       JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
     )
-    const secondAgent = agentForCwd(cwd)
-    const second = (await composePrefixForAgent(ctx, secondAgent))
-      .find(message => message.source.kind === 'skill-catalog')
-    const secondText = second === undefined ? '' : second.content.map(block => block.type === 'text' ? block.text : '').join('\n')
-    expect(secondText).toContain('A skill is a reusable set')
-    expect(secondText).not.toContain('中文描述。')
+
+    const catalog = await catalogFor(ctx, agentForCwd(cwd))
+
+    expect(catalog).toContain('A skill is a reusable set')
+    expect(catalog).not.toContain('中文描述。')
   })
 
-  it('appends a Chinese replacement catalog after the translation archive appears', async () => {
+  it('rebuilds the catalog on every assembly, so a later archive switches the whole catalog', async () => {
+    // 目录不再是一条"发布过的"会话消息：译文档案出现后，下一次装配就是中文，
+    // 既没有替换消息，也不需要会话承载任何目录状态。
     const home = await tempDir('tool-zh-replace')
-    const ctx = await setup(home)
+    const ctx = await setup(home, {}, 'zh')
     ctx.skills.register({
       name: 'a-skill',
       description: 'English description.',
@@ -425,45 +326,26 @@ describe('dsh-tool-skill', () => {
       content: 'Body.',
     })
     const cwd = await tempDir('tool-zh-replace-cwd')
-    const session = Session.create(SessionId('tool-zh-replace'), [], {
-      version: SESSION_FORMAT_VERSION,
-      id: SessionId('tool-zh-replace'),
-      createdAt: 0,
-      cwd,
-      isSeeded: false,
-    })
-    const agent = sessionAgent(session)
-    openMessageTurn(session, 1)
-    await fireStep(ctx, agent, 1, 1)
-    expect(catalogMessages(session)).toHaveLength(1)
-    expect(catalogMessages(session)[0]?.data.source).toMatchObject({
-      entries: [{ name: 'a-skill', description: 'English description.' }],
-    })
+    const agent = agentForCwd(cwd)
+    expect(await catalogFor(ctx, agent)).toContain('English description.')
 
     await mkdir(join(cwd, '.dsh'), { recursive: true })
     await writeFile(
       join(cwd, '.dsh', 'skill-translations.zh.json'),
       JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
     )
-    openMessageTurn(session, 2)
-    await fireStep(ctx, agent, 2, 1)
 
-    const replacements = catalogMessages(session)
-    expect(replacements).toHaveLength(2)
-    expect(replacements[1]?.data.source).toMatchObject({
-      update: true,
-      entries: [{ name: 'a-skill', description: '中文描述。' }],
-    })
-    const rendered = replacements[1]!.data.content
-      .map(block => block.type === 'text' ? block.text : '')
-      .join('\n')
-    expect(rendered).toContain('可用技能目录已变化。')
-    expect(rendered).toContain('中文描述。')
+    const switched = await catalogFor(ctx, agent)
+    expect(switched).toContain('技能是一组可复用的任务专用指令。以下技能在当前会话中可用：')
+    expect(switched).toContain('中文描述。')
+    expect(switched).not.toContain('English description.')
+    expect(switched).not.toContain('A skill is a reusable set')
   })
 
-  it('omits an incomplete initial catalog and retries on a later request boundary', async () => {
+  it('omits the catalog while any provider discovery is incomplete', async () => {
     const home = await tempDir('tool-incomplete-prefix')
     const ctx = await setup(home)
+    ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
     let failing = true
     const provider = {
       name: 'recovering',
@@ -480,119 +362,19 @@ describe('dsh-tool-skill', () => {
       invalidate = control.invalidate
       return provider
     })
-    const session = Session.create(SessionId('incomplete-prefix'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
+    const agent = agentForCwd('/workspace')
 
-    await composePrefixForAgent(ctx, agent)
-    expect(catalogMessages(session)).toEqual([])
+    // 一次不完整的发现不能把「可能还有别的技能」安静地说成「技能就这些」：
+    // 宁可这一节空着，也不要给模型一份它无法信任的清单。
+    expect(await catalogFor(ctx, agent)).toBe('')
+
     failing = false
     invalidate()
-    await fireStep(ctx, agent, 1, 1)
 
-    expect(catalogMessages(session)).toEqual([])
+    expect(await catalogFor(ctx, agent)).toContain('listed-skill')
   })
 
-  it('records an empty baseline across repeated step observations', async () => {
-    const home = await tempDir('tool-empty-step')
-    const ctx = await setup(home)
-    const session = Session.create(SessionId('empty-step'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-
-    await fireStep(ctx, agent, 1, 1)
-    await fireStep(ctx, agent, 1, 2)
-
-    expect(catalogMessages(session)).toEqual([])
-  })
-
-  it('deduplicates or replaces a catalog already proposed for the same step', async () => {
-    const home = await tempDir('tool-proposed-catalog')
-    const ctx = await setup(home)
-    const disposeFirst = ctx.skills.register({
-      name: 'first-skill',
-      description: 'First skill',
-      source: 'runtime',
-      content: 'First body.',
-    })
-    const session = Session.create(SessionId('proposed-catalog'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    await fireStep(ctx, agent, 1, 1)
-    const initial = catalogMessages(session)[0]?.data
-    if (initial === undefined) throw new Error('expected initial catalog')
-
-    const duplicate = await proposeStep(ctx, agent, [initial])
-    expect(duplicate).toEqual({ kind: 'enter', messages: [] })
-
-    ctx.skills.register({
-      name: 'second-skill',
-      description: 'Second skill',
-      source: 'runtime',
-      content: 'Second body.',
-    })
-    const companion = createUserMessage({
-      content: [{ type: 'text', text: 'keep this message' }],
-      source: { kind: 'user' },
-    })
-    const replaced = await proposeStep(ctx, agent, [companion, initial])
-    expect(replaced.kind).toBe('enter')
-    if (replaced.kind === 'reject') throw new Error('expected catalog replacement')
-    expect(replaced.messages).toHaveLength(2)
-    expect(replaced.messages[0]).toBe(companion)
-    expect(replaced.messages[1]?.id).not.toBe(initial.id)
-    expect(JSON.stringify(replaced.messages[1]?.content)).toContain('second-skill')
-
-    disposeFirst()
-  })
-
-  it('removes a stale proposed catalog before the first empty baseline', async () => {
-    const home = await tempDir('tool-proposed-empty-catalog')
-    const ctx = await setup(home)
-    const session = Session.create(SessionId('proposed-empty-catalog'))
-    const malformed = createUserMessage({
-      content: [{ type: 'text', text: 'preserve unreadable claimed context' }],
-      source: { kind: 'skill-catalog', form: 'catalog' } as never,
-    })
-    const stale = createUserMessage({
-      content: catalogContent(['- `stale-skill`: Stale skill']),
-      source: {
-        kind: 'skill-catalog',
-        form: 'catalog',
-        entries: [{ name: 'stale-skill', description: 'Stale skill' }],
-      },
-    })
-
-    const decision = await proposeStep(ctx, sessionAgent(session), [malformed, stale])
-
-    expect(decision).toEqual({ kind: 'enter', messages: [malformed] })
-  })
-
-  it('keeps a proposed catalog that already matches the current snapshot', async () => {
-    const home = await tempDir('tool-matching-proposal')
-    const ctx = await setup(home)
-    ctx.skills.register({
-      name: 'first-skill',
-      description: 'First skill',
-      source: 'runtime',
-      content: 'First body.',
-    })
-    const session = Session.create(SessionId('matching-proposal'))
-    const proposed = createUserMessage({
-      content: catalogContent(['- `first-skill`: First skill']),
-      source: {
-        kind: 'skill-catalog',
-        form: 'catalog',
-        entries: [{ name: 'first-skill', description: 'First skill' }],
-      },
-    })
-
-    const decision = await proposeStep(ctx, sessionAgent(session), [proposed])
-
-    expect(decision).toEqual({ kind: 'enter', messages: [proposed] })
-  })
-
-  it('injects complete replacement catalogs for additions and an empty tombstone for removals', async () => {
+  it('rebuilds the catalog from the live registry on every assembly', async () => {
     const home = await tempDir('tool-dynamic-catalog')
     const ctx = await setup(home)
     const disposeFirst = ctx.skills.register({
@@ -601,13 +383,11 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'First body.',
     })
-    const session = Session.create(SessionId('dynamic-catalog'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
+    const agent = agentForCwd('/workspace')
 
-    expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('first-skill')
-    await fireStep(ctx, agent, 1, 1)
-    expect(catalogMessages(session)).toHaveLength(1)
+    const initial = await catalogFor(ctx, agent)
+    expect(initial).toContain('first-skill')
+    expect(initial).not.toContain('second-skill')
 
     const disposeSecond = ctx.skills.register({
       name: 'second-skill',
@@ -615,158 +395,16 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'Second body.',
     })
-    await fireStep(ctx, agent, 1, 2)
-
-    const addition = catalogMessages(session)[1]
-    if (addition?.type !== 'user/message') throw new Error('expected catalog addition')
-    expect(JSON.stringify(addition.data.content)).toContain('first-skill')
-    expect(JSON.stringify(addition.data.content)).toContain('second-skill')
+    const widened = await catalogFor(ctx, agent)
+    expect(widened).toContain('first-skill')
+    expect(widened).toContain('second-skill')
 
     disposeSecond()
     disposeFirst()
-    await fireStep(ctx, agent, 1, 3)
 
-    const removal = catalogMessages(session)[2]
-    if (removal?.type !== 'user/message') throw new Error('expected catalog removal')
-    expect(JSON.stringify(removal.data.content)).toContain('No skills are currently available')
-    expect(JSON.stringify(removal.data.content)).not.toContain('first-skill')
-    expect(JSON.stringify(removal.data.content)).not.toContain('second-skill')
-
-    await fireStep(ctx, agent, 1, 4)
-    expect(catalogMessages(session)).toHaveLength(3)
-  })
-
-  it('resumes from the durable entries of the latest visible catalog', async () => {
-    // Catalog identity lives on `source.entries`: the model-facing prose does
-    // not decide whether a republish is needed, so a seeded message is
-    // recognized by its source alone and malformed prose cannot hide (or fake)
-    // a published catalog. A foreign-sourced message is not this plugin's
-    // catalog at all.
-    const home = await tempDir('tool-catalog-resume')
-    const ctx = await setup(home)
-    ctx.skills.register({
-      name: 'resumed-skill',
-      description: 'Resumed skill',
-      source: 'runtime',
-      content: 'Resumed body.',
-    })
-    const session = Session.create(SessionId('catalog-resume'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'prose a reader cannot rely on' }],
-      source: {
-        kind: 'skill-catalog',
-        form: 'catalog',
-        entries: [{ name: 'old-skill', description: 'Old skill' }],
-      },
-    }), { surfaceOp: 'append' })
-    session.append('user/message', createUserMessage({
-      content: catalogContent(['- `resumed-skill`: Resumed skill']),
-      source: { kind: 'plugin', plugin: 'dsh-tool-skill' },
-    }), { surfaceOp: 'append' })
-
-    await fireStep(ctx, agent, 1, 1)
-
-    // The seeded entries differ from the live snapshot, so one replacement
-    // lands; the foreign-sourced lookalike neither counts as published nor
-    // suppresses it.
-    expect(catalogMessages(session)).toHaveLength(2)
-    const latest = catalogMessages(session).at(-1)
-    expect(latest?.data.source).toMatchObject({
-      kind: 'skill-catalog',
-      form: 'catalog',
-      update: true,
-      entries: [{ name: 'resumed-skill', description: 'Resumed skill' }],
-    })
-    expect(JSON.stringify(latest?.data.content)).toContain('resumed-skill')
-
-    // A second step over unchanged entries republishes nothing.
-    await fireStep(ctx, agent, 1, 2)
-    expect(catalogMessages(session)).toHaveLength(2)
-  })
-
-  it('treats a malformed durable catalog as unrecognizable instead of failing the step', async () => {
-    // Seeds reach `agent.session.snapshotEvents()` from persistence on resume or fork,
-    // and seed validation only guarantees a source object with a non-empty
-    // `kind`. A catalog whose entries are missing or wrongly shaped must be
-    // skipped like any foreign record; throwing here would fail every later
-    // step of that session at the latest possible point.
-    const home = await tempDir('tool-catalog-malformed')
-    const ctx = await setup(home)
-    ctx.skills.register({
-      name: 'live-skill',
-      description: 'Live skill',
-      source: 'runtime',
-      content: 'Live body.',
-    })
-    const session = Session.create(SessionId('catalog-malformed'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    for (const source of [
-      { kind: 'skill-catalog', form: 'catalog' },
-      { kind: 'skill-catalog', form: 'catalog', entries: null },
-      { kind: 'skill-catalog', form: 'catalog', entries: 'not-an-array' },
-      { kind: 'skill-catalog', form: 'catalog', entries: [null] },
-      { kind: 'skill-catalog', form: 'catalog', entries: [{ name: 'x' }] },
-      { kind: 'skill-catalog', form: 'catalog', entries: [{ description: 'no name' }] },
-    ]) {
-      session.append('user/message', createUserMessage({
-        content: [{ type: 'text', text: 'unreadable catalog' }],
-        source: source as never,
-      }), { surfaceOp: 'append' })
-    }
-
-    await expect(fireStep(ctx, agent, 1, 1)).resolves.toBeUndefined()
-
-    // None of the six counted as published, so the live catalog lands as a
-    // first publication rather than a replacement.
-    const published = catalogMessages(session).filter(event => readableCatalog(event))
-    expect(published).toHaveLength(1)
-    expect(published[0]?.data.source).toMatchObject({ kind: 'skill-catalog', form: 'catalog' })
-    expect(published[0]?.data.source).not.toHaveProperty('update')
-    expect(JSON.stringify(published[0]?.data.content)).toContain('live-skill')
-  })
-
-  it('rejects a missing event below the current Session length', async () => {
-    const home = await tempDir('tool-catalog-missing-event')
-    const ctx = await setup(home)
-    const session = Session.create(SessionId('catalog-missing-event'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    Object.defineProperty(session, 'eventAt', { value: () => undefined })
-
-    await expect(fireStep(ctx, agent, 1, 1))
-      .rejects.toThrow('skill catalog cannot read seq 1 below the current Session length')
-  })
-
-  it('re-establishes the current catalog after compaction hides its durable message', async () => {
-    const home = await tempDir('tool-catalog-compaction')
-    const ctx = await setup(home)
-    ctx.skills.register({
-      name: 'first-skill',
-      description: 'First skill',
-      source: 'runtime',
-      content: 'First body.',
-    })
-    const session = Session.create(SessionId('catalog-compaction'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('first-skill')
-    const initial = catalogMessages(session)[0]
-    if (initial === undefined) throw new Error('expected initial catalog')
-    session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'compacted history' }],
-      source: { kind: 'plugin', plugin: 'compact' },
-    }), {
-      surfaceOp: { op: 'replace', startSeq: initial.seq, endSeq: initial.seq },
-      sourceEventSeqs: [initial.seq],
-    })
-
-    await fireStep(ctx, agent, 1, 1)
-
-    expect(catalogMessages(session)).toHaveLength(2)
-    expect(JSON.stringify(catalogMessages(session).at(-1)?.data.content)).toContain('first-skill')
+    // 全部注销后这一节不再有内容——既不保留上一版目录，也不需要墓碑消息去
+    // 撤销它：下一次装配就是事实。
+    expect(await catalogFor(ctx, agent)).toBe('')
   })
 
   it('keeps body-only edits out of the catalog and loads the latest body on demand', async () => {
@@ -774,14 +412,16 @@ describe('dsh-tool-skill', () => {
     const root = join(home, '.dsh/skills')
     await writeSkill(root, 'body-skill', 'Stable description', 'First body.')
     const ctx = await setup(home)
-    const session = Session.create(SessionId('body-refresh'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
+    const agent = agentForCwd('/workspace')
 
-    expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('Stable description')
+    const before = await catalogFor(ctx, agent)
+    expect(before).toContain('Stable description')
+
     await writeSkill(root, 'body-skill', 'Stable description', 'Second body.')
-    await fireStep(ctx, agent, 1, 1)
-    expect(catalogMessages(session)).toHaveLength(1)
+
+    // 正文改动不该让目录变化：目录每次都重新装配，一旦它带上正文，
+    // 每次编辑技能都会把整段系统提示词的缓存打掉。
+    expect(await catalogFor(ctx, agent)).toBe(before)
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -808,8 +448,9 @@ describe('dsh-tool-skill', () => {
       content: 'Preset-only body.',
     })
 
-    expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('preset-only-skill')
-    expect(JSON.stringify(await composePrefix(ctx, '/workspace/other'))).not.toContain('preset-only-skill')
+    // 目录按调用方作用域解析：同一个 ctx，两个 agent 看到两份不同的清单。
+    expect(await catalogFor(ctx, agent)).toContain('preset-only-skill')
+    expect(await catalogForCwd(ctx, '/workspace/other')).not.toContain('preset-only-skill')
 
     const scoped = await ctx.tools.execute({
       signal: testToolSignal,
@@ -832,7 +473,7 @@ describe('dsh-tool-skill', () => {
     await scope.dispose()
   })
 
-  it('retains the last-good catalog while any provider discovery is incomplete', async () => {
+  it('keeps the catalog empty rather than stale when a provider disappears mid-flight', async () => {
     const home = await tempDir('tool-incomplete-catalog')
     const ctx = await setup(home)
     const disposeStable = ctx.skills.register({
@@ -841,10 +482,8 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'Stable body.',
     })
-    const session = Session.create(SessionId('incomplete-catalog'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
-    expect(JSON.stringify(await composePrefixForAgent(ctx, agent))).toContain('stable-skill')
+    const agent = agentForCwd('/workspace')
+    expect(await catalogFor(ctx, agent)).toContain('stable-skill')
 
     ctx.skills.registerProvider(() => ({
       name: 'failing',
@@ -856,28 +495,28 @@ describe('dsh-tool-skill', () => {
       },
     }))
     disposeStable()
-    await fireStep(ctx, agent, 1, 1)
 
-    expect(catalogMessages(session)).toHaveLength(1)
+    // 目录没有「上一版」可言：它每次装配都从当前快照重建，所以发现不完整时
+    // 只会空着，不会端出一份已经过期的清单。
+    expect(await catalogFor(ctx, agent)).toBe('')
   })
 
   it('omits catalog guidance when the calling agent restricts away the shipped skill tool', async () => {
     const home = await tempDir('tool-restricted-catalog')
     const ctx = await setup(home)
     ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
-    const session = Session.create(SessionId('restricted-catalog'))
-    const agent = sessionAgent(session)
-    openMessageTurn(session)
+    const agent = agentForCwd('/workspace')
     const { scope } = await mintAgentScope(ctx, agent)
     scope.ctx.tools.restrict({ deny: ['skill'] })
 
     expect(ctx.tools.get('skill', agent)).toBeUndefined()
-    await composePrefixForAgent(ctx, agent)
-    expect(catalogMessages(session)).toEqual([])
-    await fireStep(ctx, agent, 1, 1)
-    expect(catalogMessages(session)).toEqual([])
-    expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
+
+    // 看不到 `skill` 工具的会话不该被告诉「这些技能可用」：它没有任何办法
+    // 加载其中任何一个。
+    expect(await catalogFor(ctx, agent)).toBe('')
     await scope.dispose()
+
+    expect(await catalogForCwd(ctx, '/workspace')).toContain('listed-skill')
   })
 
   it('does not attach shipped catalog guidance to a scoped same-name tool shadow', async () => {
@@ -895,9 +534,13 @@ describe('dsh-tool-skill', () => {
     }))
 
     expect(ctx.tools.get('skill', agent)).not.toBe(ctx.tools.get('skill'))
-    expect(await composePrefixForAgent(ctx, agent)).toEqual([])
-    expect(await composePrefix(ctx, '/workspace')).toHaveLength(1)
+
+    // 同名工具被替换成语义无关的东西时，目录指引必须跟着消失：它描述的
+    // 是「用那份工具去加载」，而那份工具已经不在了。
+    expect(await catalogFor(ctx, agent)).toBe('')
     await scope.dispose()
+
+    expect(await catalogFor(ctx, agent)).toContain('listed-skill')
   })
 
   it('validates the catalog description cap', async () => {

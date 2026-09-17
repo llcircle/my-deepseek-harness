@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-08-tool-error-journal-observe-never-intercept.md
+2026-09-08-tool-error-journal-observe-never-intercept.md: c2e020f92c3446e58cc5472863dacc4ae4474f79
+2026-09-08-tool-error-journal-observe-never-intercept.zh.md: f03319d07b291fe2eed13269f4016747fb013683

@@ -61,7 +61,9 @@ class StubProvider implements SubagentProvider {
       outputSchema: options?.outputSchema ?? true,
       depthLimit: true,
       toolFilter: true,
+      allowTools: true,
       persona: true,
+      omitSections: true,
     }
     this.inheritsParentContext = options?.inheritsParentContext ?? false
   }

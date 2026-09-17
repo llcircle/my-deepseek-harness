@@ -23,11 +23,13 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## Use this package
 
-挂载的是提供方，而不是本包本身：本包只声明 seam。随包发布的提供方是 [`dsh-computer-python`](../computer-python/README.md)，它通过纯标准库的 Python 运行时驱动 Windows；随包发布的消费方是 [`dsh-tool-computer-use`](../tool-computer-use/README.md)，按需把工具暴露给模型。
+挂载的是提供方，而不是本包本身：本包只声明 seam。随包发布的提供方是 [`dsh-computer-python`](../computer-python/README.zh.md)，它通过纯标准库的 Python 运行时驱动 Windows；随包发布的消费方是 [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md)，按需把工具暴露给模型。
+
+<a id="the-contract"></a>
 
 ### 契约
 
-这个 seam 里的所有坐标都处在同一个坐标系：`ComputerDisplay` 描述的虚拟屏幕物理像素。截屏与输入必须共用它，否则点击会落在模型看到的位置之外。违反这一点的提供方不只是"不准"，而是**危险**的——模型唯一的反馈回路是"先动一次，再看一眼"。
+这个 seam 里的所有坐标都处在同一个坐标系： [`ComputerDisplay`](#the-contract) 描述的虚拟屏幕物理像素。截屏与输入必须共用它，否则点击会落在模型看到的位置之外。违反这一点的提供方不只是"不准"，而是**危险**的——模型唯一的反馈回路是"先动一次，再看一眼"。
 
 `available()` 是唯一报告而不抛错的方法：它回答这台宿主能否操作，让消费方可以正常加载、在没有桌面的地方直接隐藏工具。实现会缓存探测结果，因为这个答案的代价是一次进程启动。
 
@@ -45,9 +47,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-computer-python`](../computer-python/README.md) —— 随包发布的 Windows 提供方。
-- [`dsh-tool-computer-use`](../tool-computer-use/README.md) —— 随包发布的模型侧消费方，含按需启用规则。
-- [新行为应该放在哪里](../../../docs/architecture.zh.md#新行为应该放在哪里) —— 为什么面向模型的能力注册在 `ctx.tools`，而平台能力要有 seam。
+- [`dsh-computer-python`](../computer-python/README.zh.md) —— 随包发布的 Windows 提供方。
+- [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) —— 随包发布的模型侧消费方，含按需启用规则。
+- [新行为应该放在哪里](../../../docs/architecture.zh.md#where-new-behavior-goes) —— 为什么面向模型的能力注册在 `ctx.tools`，而平台能力要有 seam。
 
 -----
 

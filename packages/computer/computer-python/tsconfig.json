@@ -6,6 +6,7 @@
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
-    { "path": "../computer" }
+    { "path": "../computer" },
+    { "path": "../../computer-use/computer-use" }
   ]
 }

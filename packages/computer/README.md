@@ -33,6 +33,7 @@ The computer group lets an agent see and drive the user's real desktop — captu
 <a id="related-documentation"></a>
 ## Related documentation
 
+- [Computer](../../docs/subsystems/computer.md) — the seam's contract, why activation is on demand, and the language the tools follow.
 - [Capability seams](../../docs/capability-seams.md) — why a platform capability is a Service Definition, a provider, and a consumer rather than one tool package.
 - [Tool execution pipeline](../../docs/tool-execution-pipeline.md) — where an action-level approval would attach.
 - [Session log](../../docs/architecture.md#session-log) — why enabling is a durable event.

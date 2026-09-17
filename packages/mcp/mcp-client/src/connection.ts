@@ -108,10 +108,6 @@ export interface ConnectionHandle extends ServerContext {
    */
   ready: Promise<ConnectionOutcome>
   /**
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
    * Public names of the tools this server currently owns. Drives the
    * `mcp:<serverName>` prompt section, which must list what is live right now
    * rather than what was live when the plugin loaded.
@@ -119,14 +115,9 @@ export interface ConnectionHandle extends ServerContext {
    */
   toolNames(): string[]
   /**
-   * Stop reconnection, close the live client, wait for the in-flight attempt
-   * and queued tool syncs to quiesce, then unregister every tool this server
-   * still owns.
-=======
    * Stop reconnection, close the negotiating transport or live client, wait
    * for the in-flight attempt and queued tool syncs to quiesce, then
    * unregister every tool this server still owns.
->>>>>>> theirs
    */
   dispose(): Promise<void>
 }
@@ -378,12 +369,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
 
   return {
     ready,
-<<<<<<< ours
     toolNames: () => [...disposers.keys()].sort(),
-=======
-<<<<<<< ours
-    toolNames: () => [...disposers.keys()].sort(),
-=======
     instructions: () => serverInstructions,
     resources: {
       async request(request, exec): Promise<JsonValue> {
@@ -407,8 +393,6 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         }
       },
     },
->>>>>>> theirs
->>>>>>> theirs
     async dispose(): Promise<void> {
       disposed = true
       serverInstructions = ''

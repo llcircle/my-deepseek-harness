@@ -30,31 +30,16 @@ Mount `dsh-system-prompt` wherever agents run: it provides `ctx.systemPrompt`, t
 <a id="configure-the-prompt"></a>
 ### Configure the prompt
 
-<<<<<<< ours
-The config owns the fixed opener, runtime context, deployment persona, tool order, and automatic use of a translated prompt; everything else comes from registered contributions.
-=======
-<<<<<<< ours
-The config owns the fixed opener, runtime context, deployment persona, tool order, and automatic use of a translated prompt; everything else comes from registered contributions.
-=======
-The config owns the fixed opener, runtime context, deployment persona prefix and suffix, and tool order; everything else comes from registered contributions.
->>>>>>> theirs
->>>>>>> theirs
+The config owns the fixed opener, runtime context, deployment persona prefix and suffix, tool order, and automatic use of a translated prompt; everything else comes from registered contributions.
 
 ```yaml
 - name: '@deepseek-ai/dsh-system-prompt'
   config:
     includeHarnessIdentity: true
     includeRuntimeContext: true
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
     autoTranslatedPrompt: true
     translatedPromptFile: '.dsh/system-prompt.zh.prompt.md'
-    persona: 'You are the deployment assistant.'
-=======
     personaPrefix: 'You are the deployment assistant.'
->>>>>>> theirs
     toolOrder: ['<unlisted-tools>']
 ```
 

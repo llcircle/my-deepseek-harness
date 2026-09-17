@@ -230,7 +230,7 @@ export function applyChildComposition(
       text: composition.persona,
     })
   }
-  // 抑制排在人格注册之后：两者都能作用于 `deployment:persona`，而"这一节不存在"
+  // 抑制排在人格注册之后：两者都能作用于 `deployment:persona-prefix`，而"这一节不存在"
   // 是更强的意图，后注册者胜出正好让 `persona` 与 `omitSections` 同时命中时不打架。
   for (const name of composition.omitSections ?? []) childCtx.systemPrompt.suppressSection(name)
   if (composition.allowTools !== undefined) {

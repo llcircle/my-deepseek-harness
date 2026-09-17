@@ -5,8 +5,9 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -73,17 +74,16 @@ async function harness(options: {
         return Promise.resolve({ id: SessionId('translate-child') })
       }
     }
-    await ctx.plugin(FakeSubagents, {})
+    await ctx.plugin(FakeSubagents)
   }
   await ctx.plugin(TranslateSkills, options.config ?? {})
   const session = ctx.sessions.create(SessionId('translate-agent'), { meta: { cwd: dir } })
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
     options: {},
     session,
-    inbox,
+    inbox: unsupportedInbox(),
     ctx: new Context(),
     get status() { return status },
     send: () => {},
@@ -94,23 +94,39 @@ async function harness(options: {
     runMaintenance: task => task(new AbortController().signal),
     whenIdle() { return Promise.resolve() },
   }
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   if (options.registerSkill === true) {
     ctx.skills.register({
       name: 'deploy-docs',
       description: 'Build and publish the documentation site.',
       whenToUse: 'When the docs need shipping.',
+      source: 'runtime',
       content: 'SECRET BODY THAT MUST NOT LEAK INTO THE PROMPT',
     })
   }
   return { ctx, agent, subagents }
 }
 
+/**
+ * Run one command line and hand back its settled execution. `execute()` returns
+ * `undefined` only when the line does not resolve to a registered command,
+ * which every test here treats as a broken harness rather than a result.
+ */
+async function run(
+  ctx: Context,
+  agent: Agent,
+  line: string,
+): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
+  const settled = await ctx.commands.execute(agent, line, [], new AbortController().signal)
+  if (settled === undefined) throw new Error(`${line} is not registered`)
+  return settled
+}
+
 describe('the /translate-skills command', () => {
   it('reports an empty catalog without starting a child', async () => {
     const { ctx, agent, subagents } = await harness({})
 
-    const settled = await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-skills')
 
     expect((settled.result as { text: string }).text).toContain('No skills catalogued')
     expect(subagents.runs).toHaveLength(0)
@@ -120,7 +136,7 @@ describe('the /translate-skills command', () => {
     const { ctx, agent, subagents } = await harness({ registerSkill: true })
     const listSpy = vi.spyOn(ctx.skills, 'list')
 
-    const settled = await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-skills')
 
     expect(settled.result.kind).toBe('success')
     expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ scope: agent }))
@@ -140,7 +156,7 @@ describe('the /translate-skills command', () => {
   it('fails loudly when no subagent runtime is mounted', async () => {
     const { ctx, agent, subagents } = await harness({ registerSkill: true, withSubagents: false })
 
-    const settled = await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-skills')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('subagent runtime')
@@ -150,7 +166,7 @@ describe('the /translate-skills command', () => {
   it('also targets the shared harness-home archive so one pass covers every workspace', async () => {
     const { ctx, agent, subagents } = await harness({ registerSkill: true })
 
-    const settled = await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-skills')
 
     const shared = join(resolveDshHome(), 'skill-translations.zh.json')
     expect(subagents.runs[0]?.prompt).toContain(shared)
@@ -160,13 +176,13 @@ describe('the /translate-skills command', () => {
   it('trims the child to writing one JSON file and nothing else', async () => {
     const { ctx, agent, subagents } = await harness({ registerSkill: true })
 
-    await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    await run(ctx, agent, '/translate-skills')
 
     // 提示词已经把每条待译摘要列全，原文里也没有技能正文，所以这个子 agent 的
     // 全部工作就是把一份 JSON 写出去——shell、搜索、委派对它没有一处是必需的。
     expect(subagents.runs[0]?.allowTools).toEqual(['read', 'write'])
     expect(subagents.runs[0]?.omitSections)
-      .toEqual(['harness:identity', 'deployment:persona', 'deployment:error-lessons'])
+      .toEqual(['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons'])
   })
 
   it('an explicit empty list turns trimming off rather than starving the child', async () => {
@@ -175,7 +191,7 @@ describe('the /translate-skills command', () => {
       config: { childTools: [], childOmitSections: [] },
     })
 
-    await ctx.commands.execute(agent, '/translate-skills', [], new AbortController().signal)
+    await run(ctx, agent, '/translate-skills')
 
     // 空名单字面上意味着「一个工具都不留」，那样的子 agent 连存档都写不出去；
     // 所以它读作「别动工具集」，请求里两个字段都不出现。
@@ -199,7 +215,7 @@ describe('buildTranslationPrompt', () => {
       '.dsh/skill-translations.zh.json',
       'zh',
     )
-    const text = prompt.map(block => block.text).join('\n')
+    const text = prompt.map(block => block.type === 'text' ? block.text : '').join('\n')
     expect(text).toContain('.dsh/skill-translations.zh.json')
     expect(text).not.toContain('ALSO write')
   })

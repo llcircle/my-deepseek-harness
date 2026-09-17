@@ -60,7 +60,7 @@ async function harness(options: ReflectionPrompt.Config): Promise<Harness> {
     }
   }
   const ctx = new Context()
-  await ctx.plugin(FakeSystemPrompt, {})
+  await ctx.plugin(FakeSystemPrompt)
   await ctx.plugin(ReflectionPrompt, options)
   return { sections, reflection: name => reflection(name) }
 }

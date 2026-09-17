@@ -31,15 +31,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
-<<<<<<< ours
-import type { CommandId } from '@deepseek-ai/dsh-commands'
-import type {} from '@deepseek-ai/dsh-goal'
-<<<<<<< ours
-=======
-=======
 import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands'
->>>>>>> theirs
->>>>>>> theirs
+import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PlanProjection, PlanUnitState } from './types.ts'

@@ -1129,16 +1129,8 @@ export class ToolRuntime extends Service {
     // flavor-table guard would otherwise surface first. This keeps the
     // renderer-table rejection the canonical assembly-time error for a
     // language with no SDK renderer.
-<<<<<<< ours
-    this.requireCodeRuntime(mode)
-    const schemas = wire(view.visible.values())
-<<<<<<< ours
-=======
-=======
     this.requirePtcRuntime(mode)
     const schemas = [...view.visible.values()].map(definition => this.schemaOf(definition, false))
->>>>>>> theirs
->>>>>>> theirs
     if (mode === 'ptc') {
       return {
         schemas: schemas.filter(schema => schema.name === RUN_CODE_NAME),

@@ -103,16 +103,9 @@ async function bench(opts: BenchOptions = {}) {
   // Deterministic key-echo translator: notice assertions read `key{json}`.
   ctx.provide('locale', {
     bind: (ns: string) => (key: string, params?: Record<string, unknown>) =>
-<<<<<<< ours
-      `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
-    getSnapshot: () => ({ active: opts.locale ?? 'zh' }),
-<<<<<<< ours
-=======
-=======
       opts.translate?.(ns, key, params)
       ?? `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
->>>>>>> theirs
->>>>>>> theirs
+    getSnapshot: () => ({ active: opts.locale ?? 'zh' }),
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()

@@ -33,10 +33,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-computer": "workspace:^"
+    "@deepseek-ai/dsh-computer": "workspace:^",
+    "@deepseek-ai/dsh-computer-use": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-computer": "workspace:^"
+    "@deepseek-ai/dsh-computer": "workspace:^",
+    "@deepseek-ai/dsh-computer-use": "workspace:^"
   }
 }

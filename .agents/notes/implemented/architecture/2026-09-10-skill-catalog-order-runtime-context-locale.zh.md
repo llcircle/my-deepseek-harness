@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-10-skill-catalog-order-runtime-context-locale.zh.md)
+[English](2026-09-10-skill-catalog-order-runtime-context-locale.md) | 中文
 
 ## Decision
 

@@ -475,20 +475,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           description: 'Optional short reason for the cancellation, recorded in the log and forwarded to the job (action kill only).',
         },
       },
-      finalizeContent: finalizeTaskContent,
+      finalizeContent: finalizeJobContent,
       output: {
         // One schema for three results: the registered tool name cannot vary by
         // call, so the payload discriminates instead. `job` is present on every
         // single-job result and absent from the list.
         schema: {
           oneOf: [
-            { type: 'array', items: PUBLIC_TASK_SCHEMA },
+            { type: 'array', items: PUBLIC_JOB_SCHEMA },
             {
               type: 'object',
               additionalProperties: false,
               properties: {
                 text: { type: 'string', required: true },
-                job: { ...PUBLIC_TASK_SCHEMA, required: true },
+                job: { ...PUBLIC_JOB_SCHEMA, required: true },
               },
             },
             {
@@ -500,7 +500,7 @@ export function apply(ctx: Context, config: Config = {}): void {
                   required: true,
                   enum: ['cancellation-requested', 'already-finished'],
                 },
-                job: { ...PUBLIC_TASK_SCHEMA, required: true },
+                job: { ...PUBLIC_JOB_SCHEMA, required: true },
               },
             },
           ],
@@ -528,10 +528,10 @@ export function apply(ctx: Context, config: Config = {}): void {
         return killJob(ctx, exec, args)
       },
       presentCall: args => args.action === 'list'
-        ? presentTaskCall('List background jobs', 'read')
+        ? presentJobCall('List background jobs', 'read')
         : args.action === 'output'
-          ? presentTaskCall(`Read output from background job ${args.job_id ?? ''}`, 'read', args.job_id)
-          : presentTaskCall(`Kill background job ${args.job_id ?? ''}`, 'execute', args.job_id),
+          ? presentJobCall(`Read output from background job ${args.job_id ?? ''}`, 'read', args.job_id)
+          : presentJobCall(`Kill background job ${args.job_id ?? ''}`, 'execute', args.job_id),
     }))
     return
   }
@@ -571,12 +571,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     description: 'List your background jobs (running and finished) with their ids, kinds, and statuses.',
     parameters: {},
     output: {
-<<<<<<< ours
-      schema: { type: 'array', items: PUBLIC_TASK_SCHEMA },
-      render: (_args, jobs) => renderJobList(jobs),
-<<<<<<< ours
-=======
-=======
       schema: { type: 'array', items: PUBLIC_JOB_SCHEMA },
       render: (_args, jobs) => [{
         type: 'text',
@@ -584,8 +578,6 @@ export function apply(ctx: Context, config: Config = {}): void {
           ? '(no background jobs)'
           : jobs.map(t => `${t.id} [${t.kind}] ${t.status} — ${t.label}`).join('\n'),
       }],
->>>>>>> theirs
->>>>>>> theirs
     },
     execute(_args, exec) {
       return Promise.resolve(listJobs(ctx, exec))

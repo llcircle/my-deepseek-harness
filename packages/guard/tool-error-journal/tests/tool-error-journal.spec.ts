@@ -35,6 +35,7 @@ function toolResultEvent(seq: number, callId: string, text: string, isError: boo
     type: 'tool/result' as const,
     seq: SessionSeq(seq),
     time: Date.parse('2026-09-08T00:00:00.000Z'),
+    surfaceOp: 'append' as const,
     data: {
       turn: 1,
       step: 1,

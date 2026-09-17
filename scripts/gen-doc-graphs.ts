@@ -126,6 +126,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'One provider-owned name per service instance. Each provider also owns its model tools; the service has no common action API, runtime selection, or Session workflow lock.',
   },
   {
+    key: 'computer',
+    pkg: 'computer',
+    title: 'Computer-use capability seam',
+    mode: 'seam',
+    implementations: ['computer-python'],
+    consumers: ['tool-computer-use'],
+    note: 'A provider-neutral desktop vocabulary — display geometry, screenshot, pointer, click, drag, type, key, and scroll, all in one coordinate system. The declaration starts no process; the on-demand controller decides whether the model ever sees the tools.',
+  },
+  {
+    key: 'computerController',
+    pkg: 'tool-computer-use',
+    title: 'On-demand computer-use activation',
+    mode: 'core',
+    note: 'Owns per-Session activation state, the `/computer` command, and the `computer:policy` section plus tool installation that exist only while a Session has the capability switched on. Named apart from `ctx.computerUse` so the upstream provider-registration slot keeps its name.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

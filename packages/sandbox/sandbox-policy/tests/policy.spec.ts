@@ -99,10 +99,6 @@ describe('SandboxPolicyService', () => {
     })
   })
 
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
   it('renders the policy context in Chinese when contextLocale is zh', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
@@ -141,10 +137,7 @@ describe('SandboxPolicyService', () => {
     expect(text).not.toContain('当前 DSH 文件策略')
   })
 
-  it.skipIf(process.platform === 'win32')('resolves a symlink-sensitive session cwd with POSIX component semantics', async () => {
-=======
   it.skipIf(process.platform === 'win32')('preserves symlink-sensitive session cwd for its enforcing provider', async () => {
->>>>>>> theirs
     const root = mkdtempSync(join(tmpdir(), 'dsh-policy-cwd-'))
     try {
       const lexical = join(root, 'lexical')

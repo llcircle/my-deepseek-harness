@@ -690,61 +690,51 @@ describe('agent loop', () => {
 
     send(agent, 'first')
     await waitForIdle(ctx, agent)
-    expect(contextEvents()).toHaveLength(0)
-    expect(adapter.requests[0]?.system).toContain('Mode: read-only.')
+    expect(contextEvents()).toHaveLength(1)
+    expect(contextEvents()[0]?.data.content).toEqual([{
+      type: 'text',
+      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+    }])
 
     send(agent, 'unchanged')
     await waitForIdle(ctx, agent)
-    expect(contextEvents()).toHaveLength(0)
+    expect(contextEvents()).toHaveLength(1)
 
     mode = 'danger-full-access'
     send(agent, 'changed')
     await waitForIdle(ctx, agent)
-    expect(contextEvents()).toHaveLength(0)
-    expect(adapter.requests[2]?.system).toContain('danger-full-access')
+    expect(contextEvents()).toHaveLength(2)
+    const changedBlock = contextEvents()[1]?.data.content[0]
+    expect(changedBlock?.type).toBe('text')
+    if (changedBlock?.type !== 'text') throw new Error('changed runtime context is not text')
+    expect(changedBlock.text).toContain('danger-full-access')
 
     dispose()
     send(agent, 'cleared')
     await waitForIdle(ctx, agent)
-    expect(contextEvents()).toHaveLength(0)
+    expect(contextEvents()).toHaveLength(3)
+    expect(contextEvents()[2]?.data.content).toEqual([{
+      type: 'text',
+      text: 'Current runtime context: none. Earlier runtime-context snapshots no longer apply.',
+    }])
 
     send(agent, 'still clear')
     await waitForIdle(ctx, agent)
-<<<<<<< ours
-=======
-<<<<<<< ours
->>>>>>> theirs
-    expect(contextEvents()).toHaveLength(0)
-    expect(adapter.requests.map(request => request.system)).toEqual([
-      'You are an AI agent powered by DeepSeek Harness.\n\nCurrent runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
-      'You are an AI agent powered by DeepSeek Harness.\n\nCurrent runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
-      'You are an AI agent powered by DeepSeek Harness.\n\nCurrent runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: danger-full-access.',
-      'You are an AI agent powered by DeepSeek Harness.',
-      'You are an AI agent powered by DeepSeek Harness.',
-    ])
-<<<<<<< ours
-=======
-=======
     expect(contextEvents()).toHaveLength(3)
     expect(adapter.requests.map(systemOf)).toEqual(Array(5).fill(systemOf(adapter.requests[0])))
     expect(agent.session.snapshotEvents().filter(event => event.type === 'system/message')).toHaveLength(1)
->>>>>>> theirs
->>>>>>> theirs
     expect(agent.session.snapshotEvents().flatMap(event =>
-      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial', 'change', 'change'])
+      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
   })
 
-  it('does not materialize runtime context as a user message after a surface replacement', async () => {
+  it('re-emits unchanged runtime context when a surface replacement removed the retained snapshot', async () => {
     const adapter = new MockAdapter([textResponse('one'), textResponse('two')])
     const ctx = await harness(adapter)
     ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'Mode: read-only.' })
     const agent = await ctx.agentLoop.create(SessionId('a-runtime-context-compacted'), { provider: 'mock', model: 'mock' })
+
     send(agent, 'first')
     await waitForIdle(ctx, agent)
-<<<<<<< ours
-=======
-<<<<<<< ours
-=======
     const contextEvent = agent.session.snapshotEvents().find(event =>
       event.type === 'user/message'
       && event.data.source.kind === 'plugin'
@@ -758,14 +748,18 @@ describe('agent loop', () => {
       sourceEventSeqs: [contextEvent.seq],
     })
 
->>>>>>> theirs
->>>>>>> theirs
     send(agent, 'after compaction')
     await waitForIdle(ctx, agent)
-    expect(agent.session.snapshotEvents().some(event =>
-      event.type === 'user/message' && event.data.source.kind === 'plugin' &&
-      event.data.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(false)
-    expect(adapter.requests[1]?.system).toContain('Mode: read-only.')
+    const runtimeContexts = agent.session.snapshotEvents().flatMap(event =>
+      event.type === 'user/message'
+        && event.data.source.kind === 'plugin'
+        && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt'
+        ? [event]
+        : [])
+    expect(runtimeContexts).toHaveLength(2)
+    expect(adapter.requests[1]?.messages.some(message =>
+      message.source.kind === 'plugin'
+      && message.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(true)
   })
 
   it('clears compacted runtime context after the active set becomes empty', async () => {
@@ -776,13 +770,6 @@ describe('agent loop', () => {
 
     send(agent, 'first')
     await waitForIdle(ctx, agent)
-<<<<<<< ours
-    dispose()
-    send(agent, 'after compaction')
-    await waitForIdle(ctx, agent)
-=======
-<<<<<<< ours
-=======
     const contextEvent = agent.session.snapshotEvents().find(event =>
       event.type === 'user/message'
       && event.data.source.kind === 'plugin'
@@ -795,19 +782,10 @@ describe('agent loop', () => {
       surfaceOp: { op: 'replace', startSeq: contextEvent.seq, endSeq: contextEvent.seq },
       sourceEventSeqs: [contextEvent.seq],
     })
->>>>>>> theirs
     dispose()
+
     send(agent, 'after compaction')
     await waitForIdle(ctx, agent)
-<<<<<<< ours
->>>>>>> theirs
-    expect(adapter.requests[1]?.messages.some(message =>
-      message.source.kind === 'plugin'
-      && message.source.plugin === '@deepseek-ai/dsh-system-prompt')).toBe(false)
-    expect(adapter.requests[1]?.system).not.toContain('Mode: read-only.')
-<<<<<<< ours
-=======
-=======
     const clearing = adapter.requests[1]?.messages.find(message =>
       message.role === 'user'
       && message.source.kind === 'plugin'
@@ -816,8 +794,6 @@ describe('agent loop', () => {
       type: 'text',
       text: 'Current runtime context: none. Earlier runtime-context snapshots no longer apply.',
     }])
->>>>>>> theirs
->>>>>>> theirs
   })
 
   it('does not clear runtime context after an unrelated replacement', async () => {
@@ -862,8 +838,11 @@ describe('agent loop', () => {
         && event.data.source.plugin === '@deepseek-ai/dsh-system-prompt'
         ? [event]
         : [])
-    expect(runtimeContexts).toHaveLength(1)
-    expect(adapter.requests[0]?.system).toContain('Mode: read-only.')
+    expect(runtimeContexts).toHaveLength(2)
+    expect(runtimeContexts[1]?.data.content).toEqual([{
+      type: 'text',
+      text: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\nMode: read-only.',
+    }])
   })
 
   it('records exact replay chunks inside the durable assistant message', async () => {

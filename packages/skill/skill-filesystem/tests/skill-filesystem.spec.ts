@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-<<<<<<< ours
-import { link, mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
-=======
-<<<<<<< ours
-import { link, mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
-=======
-import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
->>>>>>> theirs
->>>>>>> theirs
+import { link, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -532,17 +524,26 @@ describe('FileSystemSkillProvider', () => {
     try {
       const catalog = await ctx.skills.list()
       expect(catalog.map(skill => skill.name)).toEqual(['linked-dir', 'linked-flat'])
+      const externalPath = (name: string): string =>
+        name === 'linked-dir' ? join(external, name, 'SKILL.md') : join(external, `${name}.md`)
+      // A Windows file hard link is the same file under a second name: the
+      // platform cannot name the "original" the way a real symlink resolves to
+      // its target, so the flat case reports the link's own path there.
+      const reportedPath = (name: string): string =>
+        name !== 'linked-dir' && process.platform === 'win32'
+          ? join(root, `${name}.md`)
+          : externalPath(name)
       for (const name of ['linked-dir', 'linked-flat']) {
-        const path = name === 'linked-dir' ? join(external, name, 'SKILL.md') : join(external, `${name}.md`)
-        expect(catalog.find(skill => skill.name === name)?.path).toBe(path)
+        expect(catalog.find(skill => skill.name === name)?.path).toBe(reportedPath(name))
         const loaded = await ctx.skills.get(name)
-        expect(loaded?.path).toBe(path)
+        expect(loaded?.path).toBe(reportedPath(name))
         expect(loaded?.resourceBase).toEqual({ kind: 'directory', path: name === 'linked-dir' ? join(home, '.dsh/skills', name) : join(home, '.dsh/skills') })
-        expect((await lstat(path)).isFile()).toBe(true)
+        expect((await lstat(externalPath(name))).isFile()).toBe(true)
       }
       await writeFile(join(external, 'replacement.md'), '---\nname: linked-flat\ndescription: Replacement\n---\n\nReplacement body.\n')
-      await rm(join(home, '.dsh/skills/linked-flat.md'))
-      await symlink(join(external, 'replacement.md'), join(home, '.dsh/skills/linked-flat.md'))
+      await rm(join(root, 'linked-flat.md'))
+      if (process.platform === 'win32') await link(join(external, 'replacement.md'), join(root, 'linked-flat.md'))
+      else await symlink(join(external, 'replacement.md'), join(root, 'linked-flat.md'))
       expect((await ctx.skills.get('linked-flat'))?.content).toBe('Replacement body.')
     } finally {
       await fiber.dispose()

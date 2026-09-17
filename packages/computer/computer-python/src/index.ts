@@ -21,6 +21,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { ComputerError, ComputerUse } from '@deepseek-ai/dsh-computer'
+import { ComputerUseProviderName } from '@deepseek-ai/dsh-computer-use/brand'
+// Side-effect type import: `index.ts` carries the `Context.computerUse` declaration
+// merge, and the `/brand` subpath above does not. Without it `ctx.inject(['computerUse'])`
+// reads the key as unknown.
+import type {} from '@deepseek-ai/dsh-computer-use'
 import type {
   ComputerAvailability,
   ComputerCallOptions,
@@ -138,6 +143,17 @@ export class PythonComputerUse extends ComputerUse {
       // 卸载时清理截图残留；失败只记录，不影响卸载。
       void pending.then(dir => rm(dir, { recursive: true, force: true })).catch(() => undefined)
     }, 'dsh-computer-python: 清理截图临时目录')
+
+    // 上游 0.1.6 的 `ctx.computerUse` 是"一次只允许一个 provider 登记"的槽位，
+    // 用来挡住同一组合里误装两个桌面 provider。这里占住它，和上游的实验性
+    // Cua Driver provider 互斥；用软依赖（`ctx.inject`）而不是 `static inject`，
+    // 因为本包即使没有注册表也要能单独提供 `ctx.computer` seam。
+    const provider = this.provider
+    ctx.inject(['computerUse'], (registryCtx) => {
+      registryCtx.effect(function* () {
+        yield registryCtx.computerUse.register(ComputerUseProviderName(provider))
+      }, 'dsh-computer-python: computerUse 槽位')
+    })
   }
 
   /** 当前生效的解释器；未配置时按候选顺序探测。 */

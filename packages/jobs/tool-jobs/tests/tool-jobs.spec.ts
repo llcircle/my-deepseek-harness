@@ -619,7 +619,7 @@ describe('merged job tool shape', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(LocalJobRegistry)
-    expect(() => ToolTasks.apply(ctx, { toolShape: 'both' as 'split' }))
+    expect(() => ToolJobs.apply(ctx, { toolShape: 'both' as 'split' }))
       .toThrow('toolShape must be "split" or "merged"')
     expect(ctx.tools.get('job')).toBeUndefined()
     expect(ctx.tools.get('job_list')).toBeUndefined()

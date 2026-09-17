@@ -14,6 +14,15 @@ import * as SkillFileSystem from '../src/index.ts'
 
 const NS = SkillFileSystem.SKILL_FILESYSTEM_SETTINGS_NAMESPACE
 
+/**
+ * The resolved value of this plugin's settings namespace. `ctx.settings.get()`
+ * answers `unknown` by design — the reader owns the type — so the assertion
+ * names the namespace's own published shape instead of casting at each site.
+ */
+function resolvedTriggerSettings(ctx: Context): SkillFileSystem.SkillTriggerSettings {
+  return ctx.settings.get(NS) as SkillFileSystem.SkillTriggerSettings
+}
+
 /** Every temp dir created by this file, removed after each test. */
 const tempDirs: string[] = []
 afterEach(async () => {
@@ -50,7 +59,7 @@ describe('the skill-filesystem trigger settings namespace', () => {
 
     await ctx.settings.update(NS, { invocationOverrides: { 'skill-a': 'active-only' } })
 
-    expect(ctx.settings.get(NS).invocationOverrides).toEqual({ 'skill-a': 'active-only' })
+    expect(resolvedTriggerSettings(ctx).invocationOverrides).toEqual({ 'skill-a': 'active-only' })
     expect((await ctx.skills.get('skill-a'))?.invocation).toEqual({
       modelInvocable: false,
       userInvocable: true,

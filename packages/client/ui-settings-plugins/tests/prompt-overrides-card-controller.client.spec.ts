@@ -29,7 +29,7 @@ import {
 
 /** 一次装配里常见的一组分段：两个工具、一个 MCP 服务器，外加一段人格。 */
 const LIVE_SECTIONS = [
-  { name: 'deployment:persona', zh: '人格', en: 'Persona', editable: true },
+  { name: 'deployment:persona-prefix', zh: '人格', en: 'Persona', editable: true },
   { name: 'tool:read', zh: '用 read 读文件', en: 'Use read', editable: true },
   { name: 'tool:write', zh: '用 write 写文件', en: 'Use write', editable: true },
   { name: 'mcp:github', zh: '', en: 'This session has the MCP server "github" connected, providing: mcp__github__search.', editable: true },
@@ -72,7 +72,7 @@ describe('reflectionKindOf', () => {
     expect(reflectionKindOf('computer:policy')).toBe('computer')
     // 前缀单独出现不算能力：没有名字就没有可称呼的对象。
     expect(reflectionKindOf('tool:')).toBeUndefined()
-    expect(reflectionKindOf('deployment:persona')).toBeUndefined()
+    expect(reflectionKindOf('deployment:persona-prefix')).toBeUndefined()
     expect(reflectionKindOf('computer:other')).toBeUndefined()
   })
 })
@@ -88,7 +88,7 @@ describe('PromptOverridesCardController', () => {
     expect(readPromptSections.mock.calls[0]).toEqual(['/ws/one'])
     // 可编辑列表里没有 computer:policy——它的正文是部署给出的安全边界，
     // 不是可润色的措辞；用户写的是同一行后面的经验。
-    expect(stateOf(face).sectionNames).toEqual(['deployment:persona', 'mcp:github', 'tool:read', 'tool:write'])
+    expect(stateOf(face).sectionNames).toEqual(['deployment:persona-prefix', 'mcp:github', 'tool:read', 'tool:write'])
     expect(host.scope.getSnapshot().status).toBe('ready')
   })
 

@@ -44,7 +44,7 @@ Choose it when users should be able to promote a just-finished conversation into
 | `maxTurns` | unlimited | Optional cap on the user/assistant text turns handed to the child; omit for the full conversation |
 | `provider` | `spawn` | Subagent provider that runs the summarization child |
 | `childTools` | `["read", "write"]` | Tools this child keeps; every other inherited tool is removed. An empty list leaves its tool set untouched |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | Prompt sections this child does not get |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | Prompt sections this child does not get |
 
 ### Running it
 

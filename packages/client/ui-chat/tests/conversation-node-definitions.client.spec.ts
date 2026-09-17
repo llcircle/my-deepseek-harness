@@ -1619,27 +1619,32 @@ describe('built-in conversation node Definitions', () => {
     expect(promptTexts(nodeless)).toEqual([{ text: '# Original prompt' }, { text: '# Original prompt' }])
   })
 
-<<<<<<< ours
   it('replaces a mid-session system change with only the sections that moved', () => {
     const base = [
-      { name: 'deployment:persona', text: '# Persona' },
+      { name: 'deployment:persona-prefix', text: '# Persona' },
       { name: 'mcp:codegraph', text: 'graph tools' },
     ]
     const value = assembler([
-      at(1, 'request/header', {
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# Persona\n\ngraph tools'),
+      at(4, 'request/header', {
         reason: 'initial',
         header: {
           config: { provider: 'fake', model: 'fake' },
-          system: '# Persona\n\ngraph tools',
           systemSections: base,
           tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
         },
       }),
-      at(2, 'request/header', {
+      // The next prompt is committed as an in-history update inside step 2; the
+      // header that reports it lands in step 3, where it owns its own card and
+      // can therefore name the sections that moved.
+      systemUpdateAt(6, '# Persona\n\ngraph tools\n\nclick things', 1, 2),
+      at(8, 'step/start', { turn: 1, step: 3 }),
+      at(9, 'request/header', {
         reason: 'change',
         header: {
           config: { provider: 'fake', model: 'fake' },
-          system: '# Persona\n\ngraph tools\n\nclick things',
           systemSections: [...base, { name: 'computer:policy', text: 'click things' }],
           tools: [
             { name: 'read', description: 'Read', parameters: { type: 'object' } },
@@ -1653,8 +1658,10 @@ describe('built-in conversation node Definitions', () => {
       const candidate = snapshot(value).nodes.get(key)
       return candidate?.kind === 'system-prompt' ? [candidate.data] : []
     })
+    // The in-history card keeps the whole text; the header card names what moved.
     expect(prompts).toEqual([
-      { text: '# Persona\n\ngraph tools', sections: base },
+      { text: '# Persona\n\ngraph tools' },
+      { text: '# Persona\n\ngraph tools\n\nclick things', update: true },
       {
         text: '# Persona\n\ngraph tools\n\nclick things',
         sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
@@ -1662,63 +1669,23 @@ describe('built-in conversation node Definitions', () => {
     ])
   })
 
-<<<<<<< ours
-  it('replaces a mid-session system change with only the sections that moved', () => {
-    const base = [
-      { name: 'deployment:persona', text: '# Persona' },
-      { name: 'mcp:codegraph', text: 'graph tools' },
-    ]
-    const value = assembler([
-      at(1, 'request/header', {
-        reason: 'initial',
-        header: {
-          config: { provider: 'fake', model: 'fake' },
-          system: '# Persona\n\ngraph tools',
-          systemSections: base,
-          tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
-        },
-      }),
-      at(2, 'request/header', {
-        reason: 'change',
-        header: {
-          config: { provider: 'fake', model: 'fake' },
-          system: '# Persona\n\ngraph tools\n\nclick things',
-          systemSections: [...base, { name: 'computer:policy', text: 'click things' }],
-          tools: [
-            { name: 'read', description: 'Read', parameters: { type: 'object' } },
-            { name: 'computer_click', description: 'Click', parameters: { type: 'object' } },
-          ],
-        },
-      }),
-    ])
-
-    const prompts = snapshot(value).order.flatMap((key) => {
-      const candidate = snapshot(value).nodes.get(key)
-      return candidate?.kind === 'system-prompt' ? [candidate.data] : []
-    })
-    expect(prompts).toEqual([
-      { text: '# Persona\n\ngraph tools', sections: base },
-      {
-        text: '# Persona\n\ngraph tools\n\nclick things',
-        sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
-      },
-    ])
-  })
-
-=======
->>>>>>> theirs
   it('keeps the whole prompt when a change has no comparable source sections', () => {
     // Headers recorded before source sections existed diff to nothing at all,
     // and an empty list would read as "nothing changed"; the full prompt is the
     // only honest account of a change that cannot be enumerated.
     const value = assembler([
-      at(1, 'request/header', {
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# First'),
+      at(4, 'request/header', {
         reason: 'initial',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# First' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
-      at(2, 'request/header', {
+      systemUpdateAt(5, '# Second', 1, 2),
+      at(7, 'step/start', { turn: 1, step: 3 }),
+      at(8, 'request/header', {
         reason: 'change',
-        header: { config: { provider: 'fake', model: 'fake' }, system: '# Second' },
+        header: { config: { provider: 'fake', model: 'fake' } },
       }),
     ])
 
@@ -1726,13 +1693,14 @@ describe('built-in conversation node Definitions', () => {
       const candidate = snapshot(value).nodes.get(key)
       return candidate?.kind === 'system-prompt' ? [candidate.data] : []
     })
-    expect(prompts).toEqual([{ text: '# First' }, { text: '# Second' }])
+    expect(prompts).toEqual([
+      { text: '# First' },
+      { text: '# Second', update: true },
+      { text: '# Second' },
+    ])
   })
 
-  it('orders the system field before the request messages while preserving message order', () => {
-=======
   it('shows the system node text as the request prompt card before the request messages', () => {
->>>>>>> theirs
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),

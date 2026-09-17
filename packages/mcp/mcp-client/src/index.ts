@@ -239,18 +239,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
   })
 
-  // 每个服务器一节 `mcp:<serverName>`：介绍按语言现算，反思由
-  // `error-reflection-prompt` 追加到同一节的后面。没挂载的服务器没有这一节，
-  // 于是它的介绍和反思都不会出现在提示词里——"未使用不显示"不靠过滤实现，
-  // 而是靠"根本没注册"。
-  ctx.inject(['systemPrompt'], (promptCtx) => {
-    promptCtx.systemPrompt.section({
-      name: mcpServerSectionName(config.serverName),
-      order: promptCtx.systemPrompt.getSectionOrder('MCP_INTRO'),
-      text: context => mcpServerIntro(config.serverName, connection.toolNames(), context.locale),
-    })
-  })
-
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.
   // When failOnStartupError is true, a failed initial attempt rejects the

@@ -1,7 +1,13 @@
 # 移植计划：把本项目在 dsh 基线上的定制搬到 fork 的新版本
 
-> 状态：**移植已应用，未验证**。298 个文件已落到工作树（151 个直接写入 + 147 个三方合并），
-> 其中 **57 个文件仍带冲突标记**，需要人工裁决。生成物（219 个）刻意未移植，待重生成。
+> 状态：**移植已落地，文档门禁全绿**。工作树 208 项变更（171 修改 + 37 新增：36 份 `.i18n.yaml` 记录
+> 与 1 份新译文），57 个冲突已全部裁决（工作区 `grep '^<<<<<<< '` 为空，`conflict-audit.mjs` 判定全部
+> 保留 fork 侧语义）。
+>
+> 文档链已收口：i18n 配对 **955/955 一致**、`verify-md-links` **1909 个文件全解析**、四张生成物目录
+> （config / tool / persistence / cordis）重生成后 `--check` 全部 up to date 且英文侧零中文残留。
+> 测试：`packages/{computer,core/system-prompt,skill}` 314/314 绿；`packages/api` 7 例为本机
+> `EPERM symlink` 环境红灯（与本移植无关，详见「九」）。
 > 详见「六、冲突清单」与「八、剩余阶段」。
 
 ---
@@ -92,7 +98,11 @@
 - **工程化与文档**：`start-web.cmd`、`LOG.md`、`EXPERIENCE.md`、`research/`、`.agents/notes/**`（67 篇设计记录）、
   `.workbuddy/memory/**`、`ADDED-FEATURES.md`。
 
-## 六、冲突清单（57 个，待人工裁决）
+## 六、冲突清单（57 个，已全部裁决）
+
+> 裁决结果已固化在工作树里，工作区不再有任何冲突标记。逐文件核对方式：
+> 把工作区版本与上游 `0d1f50007f` 的同名文件比对，一致即说明 fork 侧被静默丢弃——
+> 57 个文件全部"不一致"，即 fork 语义存活。脚本：`D:\dsh-port\probe\conflict-audit.mjs`。
 
 **核心运行时 / 契约（优先）**
 
@@ -176,11 +186,26 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | 建工作副本、确认基线、算清 delta、机械化移植 | **完成** |
-| P1 | 裁决 57 个冲突（按上面顺序：核心契约 → 接线 → 客户端 → 测试文档） | 待做 |
-| P2 | 重生成 219 个生成物（快照 / cli expected / docs 目录 / i18n 配对 / lockfile） | 待做 |
+| P1 | 裁决 57 个冲突（按上面顺序：核心契约 → 接线 → 客户端 → 测试文档） | **完成**（工作区无标记，全部保留 fork 语义） |
+| P2 | 重生成生成物 + 重录 i18n 配对 | **文档部分完成**：四张目录（config/tool/persistence/cordis）+ 中文侧补 8 个包章节 / 2 个工具章节；配对 955/955。快照与 `cli expected` 未重录 |
 | P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | 待做 |
-| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | 待做 |
+| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | 部分：`{computer,core/system-prompt,skill}` 314/314 绿；`apps/cli` 与 e2e 待做 |
 | P5 | 提交、推送 fork、按需开 PR | 部分（本分支已建） |
+
+### 仍欠的账（按优先级）
+
+1. **生成物里的中文来源**（已修 4 处，余下为**非文档可见**的内部注释）。规则：只有落进
+   英文生成文档的 JSDoc 必须英文化；`packages/**/src` 里其余中文注释（含模块头、`//` 注释、
+   `packages/client/*/locales.ts` 这类**本就该是中文**的 UI 文案）不动。核验脚本：
+   `D:\dsh-port\probe\cjk-sources.mjs`（按 `Source:` 行归因）。
+2. `packages/api/workspace-files/tests/*` 与 `scripts/repo-files.spec.ts`、`scripts/dev-web.spec.ts`
+   在本机因无特权 `symlink()` 报 `EPERM` 而红——属环境不属代码，见「九」。若要本地全绿，
+   按 `credentials-local/tests/local.spec.ts` 的先例加平台守卫（目录用 `junction`、文件用 `fs.link()`），
+   守卫写在**断言**上而非整个用例。
+3. `scripts/oxlint-contract.spec.ts` 在本机因 5s 超时中止，会**留下合成源文件残渣**
+   （`packages/**/src/oxlint-contract-<hash>.ts`），进而让 `scripts/persistence-schema.spec.ts`
+   报 `TS6053: File ... not found`。跑完该 spec 后先确认残渣已清。
+4. `pnpm install` + 全量构建 + `apps/cli` e2e 尚未在本分支跑过。
 
 ## 九、本机环境风险（务必先读，能省几小时）
 

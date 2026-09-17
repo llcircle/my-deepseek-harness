@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-09-10-prompt-editor-current-content-and-failure-log.zh.md)
+[English](2026-09-10-prompt-editor-current-content-and-failure-log.md) | 中文
 
 ## Decision
 

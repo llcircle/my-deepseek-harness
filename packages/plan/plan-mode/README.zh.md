@@ -47,13 +47,6 @@ kind: "package-reference"
 |---|---|---|
 | `section` | 内置引导 | 计划模式激活时作为 `plan:policy` 提示词段落渲染的引导；省略时使用包内置的默认文本 |
 | `goalOnApprove` | `false` | 评审通过时以计划启动持久 goal；需要 goal 服务 |
-<<<<<<< ours
-
-`section` 之所以可选，是因为补丁层替换的是整个 `config` 对象而非合并：只想切换 `goalOnApprove` 的部署否则就必须重复整段引导文本，而漏写的部署会加载到一个完全没有引导的 plan-mode 条目。显式给出空白的 `section` 仍会在加载时被拒绝。
-
-将 `goalOnApprove` 设为 `true` 后，评审通过即把该计划转为一个持久 goal：批准的计划文本成为 goal 的 objective，会话上已有未完成 goal 时批准会失败而不是替换它。该选项要求 goal 服务；未挂载时批准会显式失败，goal 变更失败则计划模式保持激活、不会出现半套用状态。不需要该行为时保持默认关闭；随包发布的 `standard` preset 已开启该项。
-=======
->>>>>>> theirs
 
 `section` 之所以可选，是因为补丁层替换的是整个 `config` 对象而非合并：只想切换 `goalOnApprove` 的部署否则就必须重复整段引导文本，而漏写的部署会加载到一个完全没有引导的 plan-mode 条目。显式给出空白的 `section` 仍会在加载时被拒绝。
 

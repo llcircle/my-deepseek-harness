@@ -60,7 +60,7 @@ const DEFAULT_CHILD_TOOLS = ['read', 'write']
  * 写技能文档不需要部署身份、人格（那是给编码 agent 的措辞）或工具失败反思——
  * 后两者只会把提示词撑长，而子 agent 的判断依据应当只有它收到的这段会话。
  */
-const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona', 'deployment:error-lessons']
+const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons']
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = z.object({

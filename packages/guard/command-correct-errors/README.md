@@ -48,7 +48,7 @@ Choose it when users should be able to invoke a correction pass on demand and le
 | `maxErrors` | `20` | Maximum journal entries handed to the child, newest last |
 | `maxReflectionChars` | `8000` | Tail cap on the existing reflection document handed to the child |
 | `childTools` | `["read", "write"]` | Tools the correction child keeps; every other inherited tool is removed. An empty list leaves its tool set untouched |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | Prompt sections the child does not get |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | Prompt sections the child does not get |
 
 ### Running it
 

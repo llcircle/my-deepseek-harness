@@ -278,6 +278,11 @@
       "@deepseek-ai/dsh-session-log-export/client": ["./packages/session-query/session-log-export/src/client"],
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
+      // The two subpaths below name packages the generated region maps by bare name only.
+      // They stay hand-written because the region's renderer emits just the bare specifier
+      // and `/invariant`; without these, source-mode imports fall through to unbuilt lib/.
+      "@deepseek-ai/dsh-skill/translations": ["./packages/skill/skill/src/translations.ts"],
+      "@deepseek-ai/dsh-computer/types": ["./packages/computer/computer/src/types.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
@@ -316,16 +321,14 @@
       "@deepseek-ai/dsh-compaction-basic": ["./packages/compaction/compaction-basic/src"],
       "@deepseek-ai/dsh-compaction-image-offload": ["./packages/compaction/compaction-image-offload/src"],
       "@deepseek-ai/dsh-compaction-tool-result-pruner": ["./packages/compaction/compaction-tool-result-pruner/src"],
+      "@deepseek-ai/dsh-computer": ["./packages/computer/computer/src"],
+      "@deepseek-ai/dsh-computer-python": ["./packages/computer/computer-python/src"],
       "@deepseek-ai/dsh-credentials": ["./packages/credentials/credentials/src"],
       "@deepseek-ai/dsh-credentials/invariant": ["./packages/credentials/credentials/src/invariant.ts"],
       "@deepseek-ai/dsh-credentials-local": ["./packages/credentials/credentials-local/src"],
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
-<<<<<<< ours
-      "@deepseek-ai/dsh-e2b": ["./packages/e2b/e2b/src"],
       "@deepseek-ai/dsh-error-reflection-prompt": ["./packages/guard/error-reflection-prompt/src"],
-=======
->>>>>>> theirs
       "@deepseek-ai/dsh-file-reference": ["./packages/context/file-reference/src"],
       "@deepseek-ai/dsh-file-reference-local": ["./packages/context/file-reference-local/src"],
       "@deepseek-ai/dsh-fs": ["./packages/fs/fs/src"],
@@ -368,10 +371,6 @@
       "@deepseek-ai/dsh-output-retention": ["./packages/util/output-retention/src"],
       "@deepseek-ai/dsh-package-manifest": ["./packages/util/package-manifest/src"],
       "@deepseek-ai/dsh-permission-presets": ["./packages/interaction/permission-presets/src"],
-      "@deepseek-ai/dsh-computer": ["./packages/computer/computer/src"],
-      "@deepseek-ai/dsh-computer/types": ["./packages/computer/computer/src/types.ts"],
-      "@deepseek-ai/dsh-computer-python": ["./packages/computer/computer-python/src"],
-      "@deepseek-ai/dsh-tool-computer-use": ["./packages/computer/tool-computer-use/src"],
       "@deepseek-ai/dsh-permission-presets/invariant": ["./packages/interaction/permission-presets/src/invariant.ts"],
       "@deepseek-ai/dsh-persona": ["./packages/preset/persona/src"],
       "@deepseek-ai/dsh-plan-mode": ["./packages/plan/plan-mode/src"],
@@ -425,7 +424,6 @@
       "@deepseek-ai/dsh-settings-file": ["./packages/settings/settings-file/src"],
       "@deepseek-ai/dsh-shell": ["./packages/shell/shell/src"],
       "@deepseek-ai/dsh-skill": ["./packages/skill/skill/src"],
-      "@deepseek-ai/dsh-skill/translations": ["./packages/skill/skill/src/translations.ts"],
       "@deepseek-ai/dsh-skill-badge": ["./packages/skill/skill-badge/src"],
       "@deepseek-ai/dsh-skill-filesystem": ["./packages/skill/skill-filesystem/src"],
       "@deepseek-ai/dsh-spill": ["./packages/spill/spill/src"],
@@ -461,6 +459,7 @@
       "@deepseek-ai/dsh-tool-ask-user": ["./packages/interaction/tool-ask-user/src"],
       "@deepseek-ai/dsh-tool-bash": ["./packages/shell/tool-bash/src"],
       "@deepseek-ai/dsh-tool-bash-persistent": ["./packages/shell/tool-bash-persistent/src"],
+      "@deepseek-ai/dsh-tool-computer-use": ["./packages/computer/tool-computer-use/src"],
       "@deepseek-ai/dsh-tool-cordis": ["./packages/extensions/tool-cordis/src"],
       "@deepseek-ai/dsh-tool-error-journal": ["./packages/guard/tool-error-journal/src"],
       "@deepseek-ai/dsh-tool-fs": ["./packages/fs/tool-fs/src"],

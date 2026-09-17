@@ -10,8 +10,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -67,7 +68,7 @@ async function harness(options: {
         return Promise.resolve({ id: SessionId('prompt-translation-child') })
       }
     }
-    await ctx.plugin(FakeSubagents, {})
+    await ctx.plugin(FakeSubagents)
   }
   if (options.withSystemPrompt !== false) {
     class StubSystemPrompt extends FakeSystemPrompt {
@@ -83,19 +84,18 @@ async function harness(options: {
         })
       }
     }
-    await ctx.plugin(StubSystemPrompt, {})
+    await ctx.plugin(StubSystemPrompt)
   }
   await ctx.plugin(TranslateSystemPrompt)
   const dir = await mkdtemp(join(tmpdir(), 'dsh-prompt-translate-'))
   tempDirs.push(dir)
   const session = ctx.sessions.create(SessionId('prompt-translate-agent'), { meta: { cwd: dir } })
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
     options: {},
     session,
-    inbox,
+    inbox: unsupportedInbox(),
     ctx: new Context(),
     get status() { return status },
     send: () => {},
@@ -106,15 +106,30 @@ async function harness(options: {
     runMaintenance: task => task(new AbortController().signal),
     whenIdle() { return Promise.resolve() },
   }
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return { ctx, agent, subagents }
+}
+
+/**
+ * Run one command line and hand back its settled execution. `execute()` returns
+ * `undefined` only when the line does not resolve to a registered command,
+ * which every test here treats as a broken harness rather than a result.
+ */
+async function run(
+  ctx: Context,
+  agent: Agent,
+  line: string,
+): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
+  const settled = await ctx.commands.execute(agent, line, [], new AbortController().signal)
+  if (settled === undefined) throw new Error(`${line} is not registered`)
+  return settled
 }
 
 describe('the /translate-system-prompt command', () => {
   it('reports an empty assembled prompt without starting a child', async () => {
     const { ctx, agent, subagents } = await harness({})
 
-    const settled = await ctx.commands.execute(agent, '/translate-system-prompt', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-system-prompt')
 
     expect(settled.result).toEqual({ kind: 'success', text: 'The assembled system prompt is empty; nothing to translate.' })
     expect(subagents.runs).toHaveLength(0)
@@ -122,10 +137,10 @@ describe('the /translate-system-prompt command', () => {
 
   it('starts one child whose prompt carries the rendered prompt and archive instructions', async () => {
     const { ctx, agent, subagents } = await harness({
-      sections: [{ name: 'deployment:persona', text: 'You are a docs harness assistant. Deploy carefully.' }],
+      sections: [{ name: 'deployment:persona-prefix', text: 'You are a docs harness assistant. Deploy carefully.' }],
     })
 
-    const settled = await ctx.commands.execute(agent, '/translate-system-prompt', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-system-prompt')
 
     expect(settled.result.kind).toBe('success')
     expect(subagents.runs).toHaveLength(1)
@@ -142,7 +157,7 @@ describe('the /translate-system-prompt command', () => {
   it('reports an assembly failure instead of starting a child', async () => {
     const { ctx, agent, subagents } = await harness({ assembleError: new Error('waterfall exploded') })
 
-    const settled = await ctx.commands.execute(agent, '/translate-system-prompt', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-system-prompt')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('could not assemble the system prompt')
@@ -152,7 +167,7 @@ describe('the /translate-system-prompt command', () => {
   it('fails loudly when no system-prompt service is mounted', async () => {
     const { ctx, agent, subagents } = await harness({ withSystemPrompt: false })
 
-    const settled = await ctx.commands.execute(agent, '/translate-system-prompt', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-system-prompt')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('system-prompt service')
@@ -161,11 +176,11 @@ describe('the /translate-system-prompt command', () => {
 
   it('fails loudly when no subagent runtime is mounted', async () => {
     const { ctx, agent, subagents } = await harness({
-      sections: [{ name: 'deployment:persona', text: 'You are a docs harness assistant.' }],
+      sections: [{ name: 'deployment:persona-prefix', text: 'You are a docs harness assistant.' }],
       withSubagents: false,
     })
 
-    const settled = await ctx.commands.execute(agent, '/translate-system-prompt', [], new AbortController().signal)
+    const settled = await run(ctx, agent, '/translate-system-prompt')
 
     expect(settled.result).toMatchObject({ kind: 'error' })
     expect((settled.result as { text: string }).text).toContain('subagent runtime')

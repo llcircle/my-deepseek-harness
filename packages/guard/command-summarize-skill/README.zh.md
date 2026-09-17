@@ -44,7 +44,7 @@ kind: "package-reference"
 | `maxTurns` | 不限 | 交给子代理的 user/assistant 文本轮次可选上限；不设即完整对话 |
 | `provider` | `spawn` | 运行总结子代理的 subagent 提供方 |
 | `childTools` | `["read", "write"]` | 子代理保留的工具；其余继承来的工具一律移除。空列表表示不动它的工具集 |
-| `childOmitSections` | `["harness:identity", "deployment:persona", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
+| `childOmitSections` | `["harness:identity", "deployment:persona-prefix", "deployment:error-lessons"]` | 子代理拿不到的提示词分段 |
 
 ### 运行方式
 

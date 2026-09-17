@@ -79,11 +79,11 @@ const DEFAULT_CHILD_TOOLS = ['read', 'write']
 /**
  * Prompt sections the correction child does not get.
  *
- * `harness:identity` 与 `deployment:persona` 描述的是一个编码 agent，而这里跑的
+ * `harness:identity` 与 `deployment:persona-prefix` 描述的是一个编码 agent，而这里跑的
  * 是一个文档编辑任务；`deployment:error-lessons` 则是**这个子 agent 正在改写的
  * 那份文档本身**——把它连同旧经验一起注入，等于让改写者把自己的输出当成经验读。
  */
-const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona', 'deployment:error-lessons']
+const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons']
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = z.object({

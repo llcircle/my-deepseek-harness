@@ -308,8 +308,9 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 /**
  * Read the subject-sectioned lessons of the system-level reflection document.
  *
- * 只返回确实有内容的主题：没有经验的主题不必在界面上占一行空输入框，界面会
- * 把"这次装配里有哪些能力"和这份清单取并集。
+ * Only subjects that actually carry content are returned: a subject with no
+ * lessons does not need an empty input row in the interface, which unions
+ * this list with "which capabilities exist in this assembly".
  *
  * @returns one entry per subject with recorded lessons; empty when the document
  * does not exist. Text that names no subject belongs to the document's global
@@ -321,8 +322,10 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
  * Rewrite the given subjects' lessons, leaving every other part of the
  * document untouched.
  *
- * 读改写而不是"用界面上的内容重建整份文档"：文档里还有认不出主题的历史小节
- * 与用户备注，界面从来没显示过它们，也就没有资格删掉它们。
+ * Read-modify-write rather than "rebuild the whole document from what the
+ * interface shows": the document still holds historical sections whose subject
+ * is unrecognized, plus the user's own notes. The interface never displayed
+ * them, so it has no standing to delete them.
  *
  * @param blocks - subjects to write; an empty `text` removes that subject.
  */

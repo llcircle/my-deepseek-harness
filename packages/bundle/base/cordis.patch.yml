@@ -452,29 +452,22 @@
         subagentProvider: spawn
         maxRounds: 64
 
-<<<<<<< ours
-    - id: tool-str-replace-editor
-      name: '@deepseek-ai/dsh-tool-str-replace-editor'
-      config:
-        maxOutputChars: 16000
+    # 电脑操作分三行：上游的 dsh-computer-use 是能力登记槽位（一次只允许一个
+    # provider 登记，本身不注册任何工具也不启动任何进程），provider 只负责实现
+    # 操作，工具插件在用户用 `/computer` 或明确要求"操作电脑"之前不会把任何
+    # schema 交给模型。所以常驻这里的成本只有三个插件对象，而不是一组常开的工具。
+    # 目前只有 Windows 桌面实现，其它平台把 provider 与工具整行禁用。
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
 
-    # 电脑操作能力分两行：provider 只负责实现 seam（挂载时不启动任何进程），
-    # 工具插件在用户用 `/computer` 或明确要求"操作电脑"之前不会把任何 schema
-    # 交给模型。所以常驻这里的成本只有两个插件对象，而不是一组常开的工具。
-    # 目前只有 Windows 桌面实现，其它平台整行禁用。
     - id: computer-python
       name: '@deepseek-ai/dsh-computer-python'
       disabled: !!js process.platform !== 'win32'
 
-    - id: computer-use
+    - id: computer-tools
       name: '@deepseek-ai/dsh-tool-computer-use'
       disabled: !!js process.platform !== 'win32'
 
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
->>>>>>> theirs
     # Consecutive-repeat reminders on the tool chain.
     - id: repeat-tool-reminder
       name: '@deepseek-ai/dsh-repeat-tool-reminder'
@@ -529,11 +522,6 @@
       name: '@deepseek-ai/dsh-system-prompt'
       config:
         personaPrefix: ''
-
-    # Runtime-editable section replacements; the optional settings service owns
-    # the document and the browser edits it through the Plugins page.
-    - id: system-prompt-overrides
-      name: '@deepseek-ai/dsh-system-prompt/overrides'
 
     # Runtime-editable section replacements; the optional settings service owns
     # the document and the browser edits it through the Plugins page.

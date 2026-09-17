@@ -2,7 +2,7 @@
 
 [English](computer.md) | 中文
 
-[dsh-computer](../../packages/computer/computer) 与 [dsh-tool-computer-use](../../packages/computer/tool-computer-use) 的电脑操作能力直接驱动机器真实的屏幕、指针与键盘。它拥有 `ctx.computer` 能力服务、按需启用的 `ctx.computerUse` 控制器、九个面向模型的工具，以及那段告诉模型"你正在操作别人的桌面时该如何行事"的策略分节。
+[dsh-computer](../../packages/computer/computer) 与 [dsh-tool-computer-use](../../packages/computer/tool-computer-use) 的电脑操作能力直接驱动机器真实的屏幕、指针与键盘。它拥有 `ctx.computer` 能力服务、按需启用的 `ctx.computerController` 控制器、九个面向模型的工具，以及那段告诉模型"你正在操作别人的桌面时该如何行事"的策略分节。
 
 源码：[`packages/computer/computer/src/index.ts`](../../packages/computer/computer/src/index.ts) 与 [`packages/computer/tool-computer-use/src/index.ts`](../../packages/computer/tool-computer-use/src/index.ts)
 
@@ -60,129 +60,135 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.computer` — `ComputerUse` (abstract seam)
 
-电脑操作能力。实现类负责平台细节、外部进程生命周期与错误归类； 调用方只依赖这组语义。
+The computer-use capability. Implementations own platform details, external process lifetimes, and error classification; callers depend only on these semantics.
 
-契约：
+Contract:
 
-- 所有坐标处于同一坐标系：ComputerDisplay 描述的虚拟屏幕物理像素。 截图与输入必须共用它，否则点击会落在错误的位置。
-- 每个方法都接受取消信号；中止时必须终止自己启动的进程并尽快 settle。
-- 预期失败抛出带稳定 code 的 `ComputerError`，不抛出平台原始错误。
+- Every coordinate lives in one coordinate system: the physical pixels of the virtual screen ComputerDisplay describes. Capture and input must share it, or a click lands somewhere other than where it was aimed.
+- Every method accepts a cancellation signal; on abort it must terminate the processes it started and settle promptly.
+- Expected failures throw a `ComputerError` carrying a stable code rather than the raw platform error.
 
 ```ts cordis-catalog
 /**
- * 探测当前是否真的可以执行桌面动作。
+ * Probe whether desktop actions can actually execute right now.
  *
- * 这是唯一允许"不抛错"的方法：不可用时返回 `available: false` 与原因，
- * 让 Consumer 可以照常加载并只隐藏工具。实现应缓存探测结果，
- * 避免每次调用都付出一次进程启动代价。
+ * This is the only method allowed not to throw: when unavailable it returns
+ * `available: false` with a reason, so a Consumer can load as usual and merely
+ * hide its tools. Implementations should cache the probe result rather than
+ * paying a process start on every call.
  *
- * @param options - 可选的取消信号与调用元数据。
- * @returns 可用性判定；不可用时带一句给人看的原因。
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the availability verdict; when unavailable, with a human-readable reason.
  */
 abstract available(options?: ComputerCallOptions): Promise<ComputerAvailability>
 
 /**
- * 读取虚拟屏幕几何。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 虚拟屏幕的宽高与（如有）缩放说明。
+ * Read the virtual screen geometry.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the virtual screen's width and height, plus scaling notes when any.
  */
 abstract display(options?: ComputerCallOptions): Promise<ComputerDisplay>
 
 /**
- * 截取整个虚拟屏幕。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 截图附件与它的实际像素尺寸。
+ * Capture the whole virtual screen.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the screenshot attachment and its actual pixel dimensions.
  */
 abstract screenshot(options?: ComputerCallOptions): Promise<ComputerScreenshot>
 
 /**
- * 读取指针当前位置。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 指针当前所在的屏幕坐标。
+ * Read the pointer's current position.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the screen coordinates the pointer currently occupies.
  */
 abstract pointer(options?: ComputerCallOptions): Promise<ComputerPoint>
 
 /**
- * 把指针移动到指定位置。
- * @param point - 目标屏幕坐标。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 移动后指针的实际坐标。
+ * Move the pointer to a position.
+ * @param point - the target screen coordinates.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the pointer's actual coordinates after the move.
  */
 abstract move(point: ComputerPoint, options?: ComputerCallOptions): Promise<ComputerPoint>
 
 /**
- * 在指定位置（省略则用当前位置）点击。
- * @param input - 点击位置、按键与次数。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 点击落点与生效的按键、次数。
+ * Click at a position, or at the current position when omitted.
+ * @param input - click position, button, and count.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns where the click landed, with the button and count that took effect.
  */
 abstract click(input: ComputerClickInput, options?: ComputerCallOptions): Promise<ComputerPoint & { button: string; clicks: number }>
 
 /**
- * 从起点拖拽到终点。
- * @param input - 起点、终点与按键。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 起止坐标与生效的按键。
+ * Drag from an origin to a destination.
+ * @param input - origin, destination, and button.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the start and end coordinates with the button that took effect.
  */
 abstract drag(input: ComputerDragInput, options?: ComputerCallOptions): Promise<ComputerDragResult>
 
 /**
- * 输入一段文本。
- * @param input - 待输入的文本。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 实际送入的字符数。
+ * Type a run of text.
+ * @param input - the text to type.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns how many characters were actually delivered.
  */
 abstract typeText(input: ComputerTypeInput, options?: ComputerCallOptions): Promise<{ characters: number }>
 
 /**
- * 按下并释放一组组合键。
- * @param input - 组合键序列，如 `['ctrl', 'c']`。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 实际按下的键序列。
+ * Press and release one chord of keys.
+ * @param input - the key sequence, such as `['ctrl', 'c']`.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns the key sequence actually pressed.
  */
 abstract key(input: ComputerKeyInput, options?: ComputerCallOptions): Promise<{ keys: string[] }>
 
 /**
- * 在指定位置（省略则用当前位置）滚动。
- * @param input - 滚动位置与纵向/横向位移；纵向正数向下，与 DOM `WheelEvent` 一致。
- * @param options - 可选的取消信号与调用元数据。
- * @returns 滚动落点与生效的位移。
+ * Scroll at a position, or at the current position when omitted.
+ * @param input - scroll position and vertical/horizontal deltas; a positive vertical delta scrolls down, matching DOM `WheelEvent`.
+ * @param options - optional cancellation signal and call metadata.
+ * @returns where the scroll landed with the deltas that took effect.
  */
 abstract scroll(input: ComputerScrollInput, options?: ComputerCallOptions): Promise<ComputerPoint & { deltaX: number; deltaY: number }>
 ```
 
 Source: [`packages/computer/computer/src/index.ts`](../../packages/computer/computer/src/index.ts)
 
-<a id="ctxcomputeruse--computerusecontroller"></a>
+<a id="ctxcomputercontroller--computerusecontroller"></a>
 
-### `ctx.computerUse` — `ComputerUseController`
+### `ctx.computerController` — `ComputerUseController`
 
-`ctx.computerUse`：拥有按需启用状态、面向模型的 `/computer` 命令， 以及启用期间装载到 agent 作用域的 `computer:policy` 策略分节与工具集。
+`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` section plus tool set loaded into the agent scope while it is enabled.
+
+Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis's provide collide and would leave the type augmentations unmergeable, so this controller yields the name.
 
 ```ts cordis-catalog
 /**
- * 读取会话的启用状态，优先返回本进程内刚发生的启用。
+ * Read a session's enablement state, preferring an enable that just happened
+ * inside this process.
  *
- * @param session - 目标会话。
- * @returns 是否启用。
+ * @param session - the target session.
+ * @returns whether the capability is enabled.
  */
 isActive(session: Session): boolean
 
 /**
- * 显式启用（命令路径）。命令在步进之外运行，因此可以先探测宿主能力，
- * 把"这台机器不能用"作为可读的失败返回给用户，而不是留到第一次点击才炸。
+ * Explicit enablement (the command path). A command runs outside a step, so it
+ * can probe host capability first and return "this machine cannot do it" to
+ * the user as a readable failure rather than letting it blow up on the first
+ * click.
  *
- * @param agent - 目标 agent。
- * @param reason - 启用原因，用于日志。
- * @returns 命令回执。
+ * @param agent - the target agent.
+ * @param reason - why it is being enabled, for the log.
+ * @returns the command receipt.
  */
 async activate(agent: Agent, reason: ActivationReason): Promise<{ kind: 'success' | 'error'; text: string }>
 
 /**
- * 关闭电脑操作：注销工具并写入日志事件。
+ * Turn computer use off: unregister the tools and write the log event.
  *
- * @param agent - 目标 agent。
- * @returns 命令回执。
+ * @param agent - the target agent.
+ * @returns the command receipt.
  */
 deactivate(agent: Agent): { kind: 'success' | 'error'; text: string }
 ```
