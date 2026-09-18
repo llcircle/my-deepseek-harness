@@ -18,6 +18,7 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { SandboxPwshExecutor } from '../src/index.ts'
 
 const isWin32 = process.platform === 'win32'
@@ -48,6 +49,10 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
 
     const ctx = new Context()
     await ctx.plugin(LocalSandboxProvider, {})
+    // SandboxPolicyService injects `sessionProjections` (it registers the
+    // `sandboxMode` projection), so the registry must be mounted first; the
+    // declared-but-unused devDependency shows this was always the intent.
+    if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: writableDir })
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(SandboxPwshExecutor, {})
@@ -84,7 +89,9 @@ describe.skipIf(!isWin32 || !pwshAvailable())('pwsh-sandbox real ACL confinement
       sandboxPolicy: policy,
     }))
     expect(denied.exitCode).not.toBe(0)
-    expect(denied.sandbox).toEqual({ mode: 'read-only', denied: true, enforcement: 'partial' })
+    // The ACL dialect is English-only today, so a non-English OS locale would
+    // surface here as a missing denial fact rather than a lost confinement.
+    expect(denied.sandbox, `stderr: ${denied.stderr.text}`).toEqual({ mode: 'read-only', denied: true, enforcement: 'partial' })
   }, 60_000)
 
   it('workspace-write: workspace and private temp writable, ambient temp and escape denied', async () => {
