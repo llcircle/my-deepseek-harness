@@ -29,7 +29,7 @@ export interface ComputerUnitState {
   readonly active: boolean
 }
 
-declare module '@deepseek-ai/dsh-session-projection' {
+declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     computer: ComputerUnitState
   }
