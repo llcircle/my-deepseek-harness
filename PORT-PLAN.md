@@ -213,7 +213,10 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 3. `scripts/oxlint-contract.spec.ts` 在本机因 5s 超时中止，会**留下合成源文件残渣**
    （`packages/**/src/oxlint-contract-<hash>.ts`），进而让 `scripts/persistence-schema.spec.ts`
    报 `TS6053: File ... not found`。跑完该 spec 后先确认残渣已清。
-4. `pnpm install` + 全量构建 + `apps/cli` e2e 尚未在本分支跑过。
+4. `pnpm install` 仍未在本分支跑过；构建**部分完成**——tsdown 双面已跑通（host 273 包 /
+   client 184 包，产物齐备后 `publint` 与 `verify-built-package-invariants` 已转绿），
+   但 `tsc -b tsconfig.host.json` 仍是既有红灯（与上游只差新增 project reference，
+   非移植引入，见 11.5）；`apps/cli` 与 e2e 也仍未跑。
 
 ## 九、本机环境风险（务必先读，能省几小时）
 
