@@ -7,7 +7,10 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { mcpServerIntro, mcpServerSectionName } from '../src/index.ts'
+import { registerServerContext } from '../src/server-context.ts'
 
 describe('mcpServerSectionName', () => {
   it('is the server\u2019s own section, so a mounted server is the only way one exists', () => {
@@ -37,5 +40,31 @@ describe('mcpServerIntro', () => {
     expect(en).toContain('This session has the MCP server')
     // 语言未解析时按英文兜底，与其余分段的默认一致。
     expect(mcpServerIntro('github', [], undefined)).toContain('This session has the MCP server')
+  })
+})
+
+describe('mcp:<serverName> 分段的接线', () => {
+  it('介绍与服务器字面指示落在同一节里，并随注册作用域一起撤销', async () => {
+    // 上游 `registerServerContext` 也用这个名字承载服务器的字面指示，所以介绍必须
+    // 与它合成一节。此前这条接线是并行注册，撞名后整节从未注册成功——纯函数测试
+    // 全绿也看不出介绍根本没进提示词，故在此钉住装配结果。
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    const fiber = await ctx.plugin({ apply(inner: Context) {
+      registerServerContext(inner, 'github', {
+        resources: { request: async () => ({ resources: [] }) },
+        instructions: () => 'MCP server: github',
+      }, locale => mcpServerIntro('github', ['mcp__github__search'], locale))
+    } })
+
+    const rendered = renderPrompt(await ctx.systemPrompt.assemble())
+    expect(rendered).toContain('MCP server: github')
+    expect(rendered).toContain('mcp__github__search')
+
+    await fiber.dispose()
+    const withdrawn = renderPrompt(await ctx.systemPrompt.assemble())
+    expect(withdrawn).not.toContain('MCP server: github')
+    expect(withdrawn).not.toContain('mcp__github__search')
+    await ctx.fiber.dispose()
   })
 })

@@ -221,7 +221,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // loop, and the live tool registrations; disposal stops reconnection,
   // quiesces in-flight work, and unregisters the current generation.
   const connection = startConnection(ctx, config, reconnect)
-  registerServerContext(ctx, config.serverName, connection)
   let stopping: Promise<void> | undefined
   const dispose = (): Promise<void> => stopping ??= connection.dispose()
   // Cordis announces unload before awaiting an unfinished apply(). Closing
@@ -237,13 +236,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // `error-reflection-prompt` 追加到同一节的后面。没挂载的服务器没有这一节，
   // 于是它的介绍和反思都不会出现在提示词里——"未使用不显示"不靠过滤实现，
   // 而是靠"根本没注册"。
-  ctx.inject(['systemPrompt'], (promptCtx) => {
-    promptCtx.systemPrompt.section({
-      name: mcpServerSectionName(config.serverName),
-      order: promptCtx.systemPrompt.getSectionOrder('MCP_INTRO'),
-      text: context => mcpServerIntro(config.serverName, connection.toolNames(), context.locale),
-    })
-  })
+  //
+  // 这一节由 `registerServerContext` 注册（它同时并入了该服务器的字面指示：
+  // 同一名字只能有一份 `section()`，第二次注册是撞名错误而不是第二条贡献）。
+  registerServerContext(ctx, config.serverName, connection, locale =>
+    mcpServerIntro(config.serverName, connection.toolNames(), locale))
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.
