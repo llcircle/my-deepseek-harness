@@ -10,6 +10,7 @@ overrides:
 
 patchedDependencies:
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
+  '@huanlin/dsh-plugin-mcp-manager@0.2.0': 1d208b7ba1c8e167e0cfc68f9d5169741dbad8247bc9bca061754b6c2925477b
   '@yao-pkg/pkg@6.21.0': 07f08c630d0d3886d81fd4600116d07e4871ddcd57f92cb22746b6d246cdc337
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
@@ -2183,7 +2184,7 @@ importers:
         version: link:../../../vendor/schemastery
       '@huanlin/dsh-plugin-mcp-manager':
         specifier: ^0.2.0
-        version: 0.2.0(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-app-boot@packages+boot+app-boot)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-ui-primitives@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-client-ui-renderer@packages+client+ui-renderer)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))(react@18.3.1)
+        version: 0.2.0(patch_hash=1d208b7ba1c8e167e0cfc68f9d5169741dbad8247bc9bca061754b6c2925477b)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-app-boot@packages+boot+app-boot)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-ui-primitives@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-client-ui-renderer@packages+client+ui-renderer)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))(react@18.3.1)
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -21116,7 +21117,7 @@ snapshots:
     dependencies:
       hono: 4.12.29
 
-  '@huanlin/dsh-plugin-mcp-manager@0.2.0(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-app-boot@packages+boot+app-boot)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-ui-primitives@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-client-ui-renderer@packages+client+ui-renderer)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))(react@18.3.1)':
+  '@huanlin/dsh-plugin-mcp-manager@0.2.0(patch_hash=1d208b7ba1c8e167e0cfc68f9d5169741dbad8247bc9bca061754b6c2925477b)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-app-boot@packages+boot+app-boot)(@deepseek-ai/dsh-client-locale@packages+client+locale)(@deepseek-ai/dsh-client-ui-primitives@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-client-ui-renderer@packages+client+ui-renderer)(@deepseek-ai/dsh-client-ui-settings@packages+client+ui-settings)(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))(react@18.3.1)':
     dependencies:
       '@deepseek-ai/cordis': link:vendor/cordis
       '@deepseek-ai/dsh-client-ui-primitives': 0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)

@@ -8,6 +8,14 @@
 
 *.pdf binary
 
+# A unified diff's context lines are a space (the marker) followed by the
+# target's own indentation, so every patch against a tab-indented file — bundled
+# esbuild output, Makefiles — carries "space before tab" by construction. That
+# is the diff format, not sloppiness, and the pre-commit whitespace gate is
+# `git diff --check`, which honors this attribute. Keep the check strict for
+# real source.
+patches/*.patch whitespace=-space-before-tab
+
 # Pairing records are generated from the three confirmed owner-blob pairs.
 # The worktree-local installer registers the fail-closed driver command.
 *.i18n.yaml merge=dsh-translation-pairing

@@ -1,0 +1,49 @@
+diff --git a/lib/index.mjs b/lib/index.mjs
+index 0caee51..21fb079 100644
+--- a/lib/index.mjs
++++ b/lib/index.mjs
+@@ -232,7 +232,7 @@ function addServer(config, opts) {
+ 	row.set("config", doc.createNode(configToData(config)));
+ 	targetBlock.add(row);
+ 	writeAndValidate(doc, opts?.loadOverlayPatches);
+-	console.log(`[dsh-mcp-manager] added server ${id} (serverName=${config.serverName})`);
++	console.error(`[dsh-mcp-manager] added server ${id} (serverName=${config.serverName})`);
+ 	return id;
+ }
+ /**
+@@ -253,7 +253,7 @@ function updateServer(id, config, opts) {
+ 	}
+ 	target.row.set("config", doc.createNode(configToData(config)));
+ 	writeAndValidate(doc, opts?.loadOverlayPatches);
+-	console.log(`[dsh-mcp-manager] updated server ${id}`);
++	console.error(`[dsh-mcp-manager] updated server ${id}`);
+ }
+ /**
+ * 删除一个服务器行。空掉的 insert 块一并删除（空 insert 是脏 patch）。
+@@ -277,7 +277,7 @@ function deleteServer(id, opts) {
+ 		}
+ 	}
+ 	writeAndValidate(doc, opts?.loadOverlayPatches);
+-	console.log(`[dsh-mcp-manager] deleted server ${id}`);
++	console.error(`[dsh-mcp-manager] deleted server ${id}`);
+ 	return true;
+ }
+ /**
+@@ -296,7 +296,7 @@ function setServerDisabled(id, disabled, opts) {
+ 	if (disabled) target.row.set("disabled", true);
+ 	else if (target.row.has("disabled")) target.row.delete("disabled");
+ 	writeAndValidate(doc, opts?.loadOverlayPatches);
+-	console.log(`[dsh-mcp-manager] set server ${id} disabled=${disabled}`);
++	console.error(`[dsh-mcp-manager] set server ${id} disabled=${disabled}`);
+ 	return true;
+ }
+ //#endregion
+@@ -741,7 +741,7 @@ function apply(ctx) {
+ 			selfId: "@huanlin/dsh-plugin-mcp-manager"
+ 		});
+ 		const disposeTools = ctx.tools?.register !== void 0 ? mcpTools.map((tool) => ctx.tools.register(tool)) : [];
+-		if (disposeTools.length > 0) console.log(`[dsh-mcp-manager] registered mcp tools: ${mcpTools.map((t) => t.name).join(", ")}`);
++		if (disposeTools.length > 0) console.error(`[dsh-mcp-manager] registered mcp tools: ${mcpTools.map((t) => t.name).join(", ")}`);
+ 		const webServer = ctx.webServer;
+ 		if (webServer === void 0) return () => {
+ 			for (const dispose of disposeTools) dispose();

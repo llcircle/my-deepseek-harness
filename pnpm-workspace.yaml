@@ -88,5 +88,10 @@ minimumReleaseAgeExclude:
   - '@trycua/cua-driver@0.28.0'
 patchedDependencies:
   '@electron/osx-sign@1.3.3': patches/@electron__osx-sign@1.3.3.patch
+  # The MCP manager's lifecycle notices went to stdout, which `dsh web` owns
+  # for its launch line (`dsh web: <url>?token=…`) — the launcher contract the
+  # built-bin smoke pins. The plugin ships no config to quiet them, so the log
+  # calls move to stderr, where operator notices belong.
+  '@huanlin/dsh-plugin-mcp-manager@0.2.0': patches/@huanlin__dsh-plugin-mcp-manager@0.2.0.patch
   '@yao-pkg/pkg@6.21.0': patches/@yao-pkg__pkg@6.21.0.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
