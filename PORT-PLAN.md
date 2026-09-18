@@ -194,9 +194,9 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 | P0 | 建工作副本、确认基线、算清 delta、机械化移植 | **完成** |
 | P1 | 裁决 57 个冲突（按上面顺序：核心契约 → 接线 → 客户端 → 测试文档） | **完成**（工作区无标记，全部保留 fork 语义） |
 | P2 | 重生成生成物 + 重录 i18n 配对 | **文档部分完成**：四张目录（config/tool/persistence/cordis）+ 中文侧补 8 个包章节 / 2 个工具章节；配对 955/955。快照与 `cli expected` 未重录 |
-| P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | **部分**：tsdown 两面已跑通（host 273 包 / client 184 包）；`tsc -b tsconfig.host.json` 仍是既有红灯（见 11.5，非移植引入） |
-| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | **部分**：八个包族 99 文件 / 1872 通过 / 0 失败（见 11.3）；`apps/cli` 与 e2e 待做 |
-| P5 | 提交、推送 fork、按需开 PR | 部分（本分支已建；本轮修复待提交，**不推送**） |
+| P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | **完成**：`pnpm install --frozen-lockfile` 成功（10.2s，lockfile 未改）；`tsc -b tsconfig.host.json` **EXIT 0**、`tsdown host` EXIT 0、`tsc -b tsconfig.client.json` EXIT 0（修复见 11.5，09-18 更正） |
+| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | **部分**：八个包族 99 文件 / 1872 通过 / 0 失败（见 11.3）+ 本轮修复涉及的两包 9 文件 / 169 例全绿；`apps/cli` 与 e2e 待做 |
+| P5 | 提交、推送 fork、按需开 PR | **门禁已通**：lefthook `run pre-push` EXIT 0、pre-commit 全绿；三个提交 `5e2c0ad40b` / `c30f6b5372` / `014d8982cb` 待推——本机无 GitHub 非交互凭据，**需由用户带凭据推** |
 
 ### 仍欠的账（按优先级）
 
@@ -213,10 +213,12 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 3. `scripts/oxlint-contract.spec.ts` 在本机因 5s 超时中止，会**留下合成源文件残渣**
    （`packages/**/src/oxlint-contract-<hash>.ts`），进而让 `scripts/persistence-schema.spec.ts`
    报 `TS6053: File ... not found`。跑完该 spec 后先确认残渣已清。
-4. `pnpm install` 仍未在本分支跑过；构建**部分完成**——tsdown 双面已跑通（host 273 包 /
-   client 184 包，产物齐备后 `publint` 与 `verify-built-package-invariants` 已转绿），
-   但 `tsc -b tsconfig.host.json` 仍是既有红灯（与上游只差新增 project reference，
-   非移植引入，见 11.5）；`apps/cli` 与 e2e 也仍未跑。
+4. ~~`pnpm install` 未跑过；`tsc -b tsconfig.host.json` 仍是既有红灯~~ **均已结清（09-18）**：
+   `pnpm install --frozen-lockfile` 成功；宿主/客户端两条 tsc 与 tsdown 三步全 EXIT 0；
+   产物齐备后 `publint` 与 `verify-built-package-invariants` 亦转绿。**剩 `apps/cli` 与 e2e 未跑。**
+   本机 `pnpm run` 会先做依赖校验（≈再跑一次 install），因此 `core.hooksPath` 必须归位到受管目录，
+   否则根 `postinstall` 的 `install-lefthook.mjs` 会 `refusing to replace user-owned core.hooksPath`
+   并让**整条命令在跑脚本前失败**。处方见 `.workbuddy/memory/2026-09-18.md` 第八节。
 
 ## 九、本机环境风险（务必先读，能省几小时）
 
@@ -325,9 +327,10 @@ node D:/dsh-port/port.mjs --apply
   `packages/**/src/oxlint-contract-<hash>.ts`，让并发跑的 `persistence-schema.spec.ts` 报
   `TS6053: File ... not found`。跑完确认现场已清（本轮已核，无残渣）。
 
-**既有红灯（与本工作无关，未修）**：`build:lib:host` 在 `test-support/client-runtime` 报 TS6307；
-客户端 `tsconfig.client.json` 2 处类型漂移；oxlint 在 `session-controller/src/skill-catalog.ts`
-的 20 条 `no-unsafe-assignment`。
+**~~既有红灯（与本工作无关，未修）~~ 更正（09-18）**：`build:lib:host` 在 `test-support/client-runtime`
+报 TS6307、客户端 `tsconfig.client.json` 的 2 处类型漂移，**都与 `tsc -b tsconfig.host.json` 同源**，
+已随 11.5 的两处修复一起消失（host tsc / tsdown host / client tsc 三步全 EXIT 0）。
+仍存的是 oxlint 在 `session-controller/src/skill-catalog.ts` 的 20 条 `no-unsafe-assignment`（与本工作无关）。
 
 ### 11.4 两条客户端回归用例的裁决（与「优先改代码」原则的偏离说明）
 
@@ -367,10 +370,28 @@ env -u NODE_OPTIONS node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE c
 | `node-next types` | **环境**：脚本 `verify-node-next-types.ts:87` 用 `symlinkSync(pkg.dir, link, 'dir')` 搭临时安装，本机禁止真链接 → 在 `execFileSync` 之前就抛，所以报错**没有任何诊断文本**（只有一行 "NodeNext consumer typecheck failed."）。不是类型错误 |
 | `Cordis config` | **环境**：`apps/cli/tests/profiles/acp/cordis.yml` 在 git index 里 mode=`120000`（符号链接），本机无法建真链接，工作树落成 59 字节纯文本（内容恰是链接目标路径）→ 校验器把路径串当 YAML 读，报 `root must be a Loader entry array` |
 
-**`tsc -b tsconfig.host.json` 仍是红的（238 TS6307 + 115 TS6142），但与本工作无关**：
+**~~`tsc -b tsconfig.host.json` 仍是红的（238 TS6307 + 115 TS6142），但与本工作无关~~ —— 此结论已被推翻（09-18）**
 
-- 与上游 `dsh-v0.1.6-alpha.1` 的 `tsconfig.host.json` **逐行对比只差我们新增的 9 条 project
-  reference**，`include` / `exclude` 完全一致 → 不是移植引入的。
-- 报错形态是 `packages/*/*/src/client/**` 被 `packages/*/*/tests/**` 传递引入，而该路径既不在
-  `include` 也不在 `exclude`（上游只排除 `packages/client/*/src/**`）→ 属既有配置面问题。
-- **实测排除产物假设**：生成 typert 产物前后错误数**完全一致**（238 / 115），所以不是产物缺失。
+当时的判断依据（配置 diff 与上游一致、产物前后错误数不变）**不足以下这个结论**。当日用导入图溯源
+查出两个**移植引入**的真缺陷并修掉后，该命令 **EXIT 0**：
+
+1. **两个新测试缺 `.client.` 面后缀**。`packages/client/ui-settings-plugins`（上游已有包）在移植时新增
+   3 个测试，`prompt-overrides-card-controller.client.spec.ts` 合规，而
+   `llm-retry-card-controller.spec.ts`、`skill-trigger-card-controller.spec.ts` 沿用 fork 旧命名。
+   宿主 aggregate 的 `exclude` 只排 `*.client.*`，于是这两个文件被 `packages/*/*/tests/**/*.ts`
+   收进**宿主** program；它们 import `../src/client/*` 后把 `packages/client/*/src/**` 整片（含 `.tsx`）
+   拖入宿主 → **238 TS6307 + 115 TS6142**。按仓库契约改名即修复
+   （`scripts/oxlint-contract.spec.ts`："A test under packages/client states its face in the filename"）。
+2. **一个新包的 augment 目标漂移**。`SessionProjectionStateMap` 在
+   `packages/session/session-projection/src/types.ts` 是空接口、纯靠声明合并；全仓 36 处写
+   `'@deepseek-ai/dsh-session-projection/types'`，只有 `packages/computer/tool-computer-use/src/state.ts`
+   写成包根 → 合并进不同模块身份，宿主测试里 `'timeContext'`/`'agentTeam'`/`'test/marks'` 整片键丢失
+   → **39 TS2769/TS2344/TS2345**。改成 `.../types` 即修复。
+
+修复后：`tsc -b tsconfig.host.json` EXIT 0、`tsdown --env.DSH_BUILD_FACE host` EXIT 0、
+`tsc -b tsconfig.client.json` EXIT 0；受影响包 9 文件 / 169 例单测全绿。提交 `014d8982cb`。
+**lefthook `run pre-push` 实测 EXIT 0**（typecheck 43.45s）。
+
+> 方法论：判"红灯是不是我弄的"，**不能**只看配置文件 diff，也**不能**只看"独立旧副本跑同一命令
+> 也失败"——旧副本失败只证明那个副本也红。要把 **program 文件集与导入图**拉出来溯源。
+> 工具：`D:\dsh-port\probe\leak-chain.mjs`、`host-client-leaks.mjs`。
