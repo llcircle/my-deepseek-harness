@@ -215,10 +215,45 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
    报 `TS6053: File ... not found`。跑完该 spec 后先确认残渣已清。
 4. ~~`pnpm install` 未跑过；`tsc -b tsconfig.host.json` 仍是既有红灯~~ **均已结清（09-18）**：
    `pnpm install --frozen-lockfile` 成功；宿主/客户端两条 tsc 与 tsdown 三步全 EXIT 0；
-   产物齐备后 `publint` 与 `verify-built-package-invariants` 亦转绿。**剩 `apps/cli` 与 e2e 未跑。**
+   产物齐备后 `publint` 与 `verify-built-package-invariants` 亦转绿。~~**剩 `apps/cli` 与 e2e 未跑。**~~
+   → **e2e 已跑并结清，见下节「e2e 车道实况」。**
    本机 `pnpm run` 会先做依赖校验（≈再跑一次 install），因此 `core.hooksPath` 必须归位到受管目录，
    否则根 `postinstall` 的 `install-lefthook.mjs` 会 `refusing to replace user-owned core.hooksPath`
    并让**整条命令在跑脚本前失败**。处方见 `.workbuddy/memory/2026-09-18.md` 第八节。
+
+### e2e 车道实况（09-18，`DSH_EXAMPLE_MODE=lib`）
+
+首跑 `20 failed | 117 passed | 121 skipped (258)` + **7 条未处理拒绝** → 收尾 `4 failed | 133 passed |
+121 skipped (258)`、**0 条未处理拒绝**。剩下的 4 条**全部是本机平台限制**，逐条有实证：
+
+| 失败 | 定性 | 证据 |
+|---|---|---|
+| `mcp-client.e2e.ts` 7 条未处理拒绝 | **移植引入的功能性回归（已修）** | 见下「MCP 介绍分段的撞名回归」 |
+| `pwsh-sandbox/acl.e2e.ts` 2 例 | **上游潜伏缺陷（已修）** | 上游 tag 的 `acl.e2e.ts` blob 与 HEAD **完全相同**（`b2ceff46`），且其中 `sessionProjections` 出现 **0 次**；而引入该 inject 的 `1a72ae202a` **是上游 tag 的祖先** → 缺陷属上游。`e2e.yml` 只在 `ubuntu-latest` 跑，`isWin32` 守卫让该用例在 CI 里**整段跳过**，故从未暴露。修法：按仓库既有 `if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)` 惯例补注册 |
+| `inspector`/`webworker-packer` 的 `built-lib.e2e.ts` | **本机 PATH 解析** | PATH 上 `tar` = Git Bash 的 GNU tar 1.35（`/usr/bin/tar`），Windows 自带 bsdtar 3.8.8 在 System32。GNU tar 不认 `C:` 盘路径 → `tar: Cannot connect to C: resolve failed`。把 bsdtar 放 PATH 最前 + 注入 `npm_execpath` 后，`inspector`/`remotes`/`lsp-stdio`/`agent-team`/`webworker-packer` 五个 built-lib 用例 **4/4 全绿**（第三个被跳过） |
+| `apps/cli/web-auth.e2e.ts` | **本机 POSIX 文件模式不生效** | `expected 438 to be 384` 是 `expect(credentialMode).toBe(0o600)`：384 = `0o600`、438 = `0o666`。Windows 不实现 POSIX 模式，`chmod` 是空操作。上游同款文件（blob 相同） |
+| `pwsh-sandbox/acl` 偶发（约 1/5，偏首跑） | **本机受限语言模式** | 失败时 stderr 是 `CannotCreateTypeConstrainedLanguage`：`pwsh-local` 的 `ENCODING_PREAMBLE`（`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`）在受限语言模式下被拒，**命令根本没执行**，故无拒绝签名可匹配（`denied:false` 是正确分类，但暴露出上游 `runnerFailureRules` 未把"runner 自身前置语句失败"归为 runner 失败）。`pwsh-local` 全目录与上游逐字节一致 |
+
+**web 车道（`apps/web`）不适用本机**：`webSnapshotGate`（`DSH_SNAPSHOT=replay` 跑整条 `vitest.web.config.ts`）
+**只挂在 `ci-linux-primary`**，从未在 Windows 上跑过；`git diff dsh-v0.1.6-alpha.1 HEAD -- apps/web`
+只有 **1 行**（`settings-chrome.e2e.ts`）→ 其余全为上游文件。实跑 5 个文件后确认失败形态是跨平台
+golden 差异（`{{cwd}}\a.txt` vs `{{cwd}}/a.txt`；golden 录制于 Linux），**不是移植问题**，故不再追。
+**不要把 Windows 上 `--write` 出的 golden 提交进去**，那会污染 Linux CI 的比对基线。
+
+### MCP 介绍分段的撞名回归（移植引入，已修）
+
+- fork 基线（0.1.3）**没有** `packages/mcp/mcp-client/src/server-context.ts`；当时 `mcp:<serverName>`
+  分段只有 fork 一处注册，功能正常。
+- **上游 0.1.6 新增了** `server-context.ts`，用**同一个分段名** `mcp:<server>` 承载服务器的字面指示
+  （order `MCP_SERVERS`）。移植搬来的 fork 代码在 `apply()` 里又注册了一次同名分段 → `section()`
+  的同名检查抛错 `prompt section "mcp:<server>" is already registered`。
+- 后果：**fork 的"每服务器介绍段"从未注册成功**，`mcpServerIntro` 那段工具清单一直没进提示词，
+  而纯函数单测全绿掩盖了它（无任何用例断言装配结果）。以未处理拒绝的形式冒出 7 条，用例本身却全过。
+- 修法：`registerServerContext` 新增可选 `intro` 参数，把**介绍与字面指示合成同一节**
+  （`[instructions, intro].filter(非空).join('\n\n')`），order 取 fork 的 `MCP_INTRO`（尾部放置是 fork
+  的既有决定，理由见其注释）；`intro` 默认空，故上游 `server-context.spec.ts` **一行未改**。
+  另在 `tests/intro.spec.ts` 补一条**接线**回归测试：断言介绍与指示同时出现在装配结果里、并随作用域撤销。
+
 
 ## 九、本机环境风险（务必先读，能省几小时）
 
