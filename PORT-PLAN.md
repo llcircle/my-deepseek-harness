@@ -430,3 +430,81 @@ env -u NODE_OPTIONS node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE c
 > 方法论：判"红灯是不是我弄的"，**不能**只看配置文件 diff，也**不能**只看"独立旧副本跑同一命令
 > 也失败"——旧副本失败只证明那个副本也红。要把 **program 文件集与导入图**拉出来溯源。
 > 工具：`D:\dsh-port\probe\leak-chain.mjs`、`host-client-leaks.mjs`。
+
+## 十二、实跑验证：真的跑起来并用了（09-19 凌晨）
+
+前面全部是门禁与单测。这一节是**把 fork 当作产品跑一遍**：真 profile 树 + 真模型 + 真 MCP + 真落盘。
+
+### 12.1 跑起来的样子
+
+用用户自己的真实 provider（`settings.yaml` 里的 `llm-pi-ai` + `glm/glm-5.3-flash`）和真实 MCP
+（`codegraph serve --mcp`）跑通了一轮完整对话：
+
+| 观察项 | 结果 |
+|---|---|
+| 启动 | 3 行日志干净退出到监听；`dsh web: http://127.0.0.1:3090/?token=…` |
+| 宿主装配 | 全套 bundle 组合成功，无堆栈、无 `already registered` |
+| MCP | `[CodeGraph MCP] Attached to shared daemon on \\.\pipe\codegraph-… (v0.9.9)` |
+| 界面 | Web UI 正常渲染（暗色 + 中文，跟随 `settings.yaml` 的 locale/theme） |
+| 真实回合 | 2 次工具调用 / 1 轮 3 步 / 42K tok / 36 秒 / 缓存命中 44% |
+| 落盘 | `sessions/--D-dsh-port-probe-live-ws--/session.v3.jsonl.zstd`，2 个会话 60K |
+| 仓库 | 跑完 `git status` 仍只有那 11 个符号链接路径，**宿主没被模型写脏** |
+
+### 12.2 这一轮实跑直接印证了本轮最关键的那个修复
+
+取「系统提示词」标签页的真实装配结果（`33-system-prompt.txt`，17KB），`mcp:codegraph` 分段里同时
+出现了**服务器自己的字面指示**（codegraph 的 `### MCP server: codegraph` 长文）与 **fork 的介绍段**：
+
+```
+本会话装有 MCP 服务器 "codegraph"，它提供这些工具：mcp__codegraph__codegraph_callees、
+mcp__codegraph__codegraph_callers、…、mcp__codegraph__codegraph_status。
+```
+
+这正是 `mcpServerIntro()` 的输出。**修之前这条永远进不了提示词**（同名分段重复注册直接抛
+`already registered`，介绍是死代码）。所以 11.2 里那条结论现在有了运行期证据，不再只是单测。
+
+### 12.3 跑法（可复现）
+
+```bash
+mkdir -p D:/dsh-port/probe/live/dsh-home
+cp ~/.dsh/.credentials.yaml ~/.dsh/settings.yaml D:/dsh-port/probe/live/dsh-home/   # 真凭据 + 真设置
+# overlay.patch.yml：① insert mcp-codegraph（复刻用户的 ~/.dsh/profiles/web/cordis.patch.yml）
+#                    ② 关掉 directory-picker(auto)，钉 directory-picker-browse
+cd my-deepseek-harness
+env -u NODE_OPTIONS DSH_HOME='D:/dsh-port/probe/live/dsh-home' \
+  node --import tsx/esm apps/cli/src/bin.ts web \
+  --patch 'D:/dsh-port/probe/live/overlay.patch.yml' \
+  --host 127.0.0.1 --port 3090 --no-open
+```
+
+四个非显然点，都踩过：
+
+1. **必须隔离 `DSH_HOME`**——用户真实 `~/.dsh` 里有一把**过期写锁**（见 12.4），直接用真 home
+   起不来。
+2. **目录选择器必须钉 `-browse`**。默认 `auto` 在本机解析到 `-native`，即宿主弹 Windows 系统
+   对话框：无头驱动既看不到也点不到，界面表现为"点了没反应"（只多一层空遮罩）。web-app 的
+   `cordis.patch.yml` 注释原话就是"Mount -native or -browse directly in an overlay to pin the
+   interaction"。
+3. **Web UI 有空工作区门禁**：没有工作区时"新会话"是死按钮、编辑器根本不渲染（占位符写着
+   "选择一个工作区开始"）。无头场景直接把 `storages/workspace.json` 按 unit `{name:"workspace",
+   version:2}` 预置一条即可（path 要 `realpath` 规范化，因为是去重键）。
+4. **浏览器用仓库自带 `playwright@1.61.1`**：它对应已下载的 `chromium-1228`；`1.63.0-alpha`
+   要 `1243`，本机没有，会直接报 "Executable doesn't exist"。入口是
+   `node_modules/.pnpm/playwright@1.61.1/node_modules/playwright/index.mjs`（顶层 `.bin/playwright`
+   没有链接）。
+
+### 12.4 两个**环境侧**发现（不是移植缺陷，但会咬人）
+
+- **`~/.dsh/profiles/node_modules.lock` 是一把过期锁**：内容 `49792\n`，该 PID 已 `ESRCH`，
+  mtime 停在 09-14 15:44。它会让 `healProfilesModuleFallback` 抛
+  `atomic-write: timed out waiting for the writer lock`，**整个 `dsh web` 起不来**。
+  `withFileLock` 的注释明说这是设计：*"The contender never removes an existing lock … orphan
+  recovery is an operator action"*——即**删锁是操作者的活**，工具永远不会自愈。
+  处置：确认无 dsh 进程后删掉该文件（6 字节纯锁，不含状态）。
+- **`system-prompt-overrides` 的语义是"整段替换"**（`system-prompt/src/overrides.ts`："UI-authored
+  prompt replacements"）。用户的 `settings.yaml` 里对 `mcp:codegraph` 写了覆盖，于是**整段**
+  `mcp:codegraph`——包括上游 0.1.6 新增的服务器字面指示（codegraph 那篇长文）和 fork 的介绍段
+  ——都被那段中文覆盖掉。对照两次实跑可以逐行看出差异：
+  带覆盖时该分段只剩用户那 4 段中文；去掉覆盖后同位置出现 codegraph 原文 + `本会话装有 MCP
+  服务器 "codegraph"…`。**这是用户的设置选择，不是缺陷**，但 0.1.6 之后这条覆盖很可能已经多余
+  （服务器自己带了更详尽的指示），值得复核。
