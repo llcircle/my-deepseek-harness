@@ -397,10 +397,18 @@
 
 # The `skill` REGISTRY stays in the host plane. It is host+per-scope layered
 # (the tools-registry shape): deployment-level providers — repository plugins,
-# The host skill-filesystem provider owns local discovery and its settings API.
-# It resolves each request with the session cwd, so one host registration serves
-# different projects without duplicating the row in agent presets. `tool-skill`
-# remains preset-owned because it is the model-facing catalog and loader.
+# a host skill-filesystem row — register into its global layer, while a preset's
+# `skill-filesystem` registers into that preset's layer, and each agent reads the
+# merged catalog its scope chain selects. Only the per-agent rows move behind
+# presets: `tool-skill` is what a preset mounts to give its agent the catalog and
+# loader at all.
+#
+# The host `skill-filesystem` row stays ENABLED here: it owns local discovery and
+# its settings API, and it resolves each request with the session cwd, so one
+# host registration serves every project without a row per preset. A preset adds
+# only what travels inside its own directory, under its own row id
+# (`skill-filesystem-preset`) — a read runs every provider in the chain and
+# merges by skill name, so the two add rather than collide.
 
 - id: skill-filesystem
   name: '@deepseek-ai/dsh-skill-filesystem'

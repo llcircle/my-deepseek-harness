@@ -174,16 +174,25 @@ The request envelope — the `EpochHeader` (call config + markers for adapter-su
 
 ```ts type-equiv
 /**
- * Logged request state outside derived history: call config and tools. The
- * system prompt is derived history — surface node 0, a `system/message` event.
- * The latest full `request/header` snapshot reconstructs the header; canonical
- * empty optional fields are absent.
+ * Logged request state outside derived history: call config, the captured
+ * system-prompt sections, and tools. The system prompt text itself is derived
+ * history — surface node 0, a `system/message` event. The latest full
+ * `request/header` snapshot reconstructs the header; canonical empty optional
+ * fields are absent.
  */
 interface EpochHeader {
   /** The conversation's call configuration (provider, model, reasoning effort, and sampling scalars). */
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
+  /**
+     * Source-preserving, fully rendered sections for UI display; absent in older
+     * session logs. Display metadata, not envelope identity: it is recorded with
+     * each snapshot but excluded from header comparison, because the prompt it
+     * mirrors is derived history and a prompt edit surfaces as a new request
+     * series instead.
+     */
+  systemSections?: SystemPromptSectionSnapshot[]
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }

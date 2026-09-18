@@ -266,8 +266,12 @@
 #
 # It names itself because a provider name is unique within a layer and the host
 # row already claims `filesystem`; `cordis-preset` also says which plane a
-# catalog entry came from.
-- id: skill-filesystem
+# catalog entry came from. The row ID differs from the host row's for the same
+# reason: `verify-cordis-config` reads a preset row that repeats a host row id as
+# one row mounted on both planes, so the two would have to be the same row. They
+# are not — this one is a second provider beside the host's, scoped to this
+# preset's layer — so it carries its own id.
+- id: skill-filesystem-preset
   name: '@deepseek-ai/dsh-skill-filesystem'
   config:
     providerName: cordis-preset

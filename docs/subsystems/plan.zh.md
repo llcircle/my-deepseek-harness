@@ -21,12 +21,16 @@ agent 运行时，唯一的追加点是前置（prepend）注册的 `agent/pre-s
 ```ts type-equiv
 /** Deployment-owned plan guidance. */
 interface PlanModeConfig {
-  /** Guidance rendered as the `plan:policy` prompt section while plan mode is active. */
-  section: string
   /**
-   * Create a durable goal from the plan on review approval. Requires the goal
-   * service; approval fails loudly when it is not mounted.
-   */
+     * Guidance rendered as the `plan:policy` prompt section while plan mode is
+     * active. Omit to use the built-in {@link DEFAULT_SECTION}; it stays optional
+     * so a patch layer can adjust a sibling switch without repeating this text.
+     */
+  section?: string
+  /**
+     * Create a durable goal from the plan on review approval. Requires the goal
+     * service; approval fails loudly when it is not mounted.
+     */
   goalOnApprove?: boolean
 }
 ```

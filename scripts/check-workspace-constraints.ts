@@ -161,6 +161,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
+  // Same ruling for the Windows desktop provider: its ctypes backend runs as a
+  // source script the package resolves by URL beside the emitted lib.
+  '@deepseek-ai/dsh-computer-python': ['runtime/computer_agent.py'],
   // The isolated Node bootstrap is a separately launched bundle.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js'],
   // The Host entry starts its sibling Worker by URL rather than a package export.
@@ -218,6 +221,9 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // Packages with an invariant export publish its runtime as a separate
     // bundle; the package-invariant gate validates the source/export pairing.
     ...manifest.exports?.['./invariant'] ? ['lib/invariant.js'] : [],
+    // The deployment-owned prompt override seam publishes its runtime as its own
+    // bundle beside the entry, keyed on the artifact path like ./client below.
+    ...exportDefault(manifest, './overrides') === './lib/overrides.js' ? ['lib/overrides.js'] : [],
     ...manifest.bin ? ['lib/bin.js'] : [],
     // Worker-thread packages ship a CJS worker entry; the browser worker
     // bundle is an ES module a page loads with `new Worker(type: 'module')`.

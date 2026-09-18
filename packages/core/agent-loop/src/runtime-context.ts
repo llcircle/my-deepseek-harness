@@ -9,10 +9,11 @@ import { createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextSnapshotSection, Message } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionSeq, SurfaceIntent, SystemMessage, UserMessage } from '@deepseek-ai/dsh-session'
 import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
+import { contextSnapshotCleared } from '@deepseek-ai/dsh-system-prompt'
+import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
 import type { Context } from '@deepseek-ai/cordis'
 
 const SOURCE = '@deepseek-ai/dsh-system-prompt'
-const CLEARED = '当前运行时上下文：无。较早的运行时上下文快照不再生效。'
 
 function isOwned(message: UserMessage): boolean {
   return message.source.kind === 'plugin' && message.source.plugin === SOURCE
@@ -142,11 +143,17 @@ export class RuntimeContextProjection {
    * Create an uncommitted snapshot only when the retained value differs.
    * @param current - fully rendered dynamic context.
    * @param sections - named contributions that formed the current snapshot.
+   * @param locale - locale of the accompanying heading, used for the cleared
+   *   marker so a withdrawal is written in the snapshot's own language.
    * @returns a candidate user message, or `undefined` when no update is needed.
    */
-  project(current: string, sections: readonly ContextSnapshotSection[]): UserMessage | undefined {
+  project(
+    current: string,
+    sections: readonly ContextSnapshotSection[],
+    locale: PromptLocale = 'zh',
+  ): UserMessage | undefined {
     if (this.retained === undefined && current.length === 0) return
-    const snapshot = current.length === 0 ? CLEARED : current
+    const snapshot = current.length === 0 ? contextSnapshotCleared(locale) : current
     if (this.retained?.text === snapshot) return
     return createUserMessage({
       content: [{ type: 'text', text: snapshot }],

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-日志里堆满失败记录本身解决不了问题，散落在各次运行里的经验则是丢掉的经验。`/correct-errors` 运行一次纠错：命令读取工具错误日志里最近的失败调用与既有的系统级反思文档（默认 `<dshHome>/error-reflections.md`），启动一个后台一次性子代理，指示它把两者融合后重写反思文档；随后命令把日志原始内容追加到只追加写的归档（`<dshHome>/tool-error-log-archive.jsonl`）并清空日志，让下一轮从零开始。命令本身不运行模型工作，子代理独立于主对话运行——其结果落在 subagent 表面，而不是你的聊天里。
+日志里堆满失败记录本身解决不了问题，散落在各次运行里的经验则是丢掉的经验。`/correct-errors` 运行一次纠错：它读取工具错误日志里最近的失败调用与既有的反思文档（默认 `<dshHome>/error-reflections.md`），启动一个后台一次性子代理，指示它把两者融合后重写该文档；随后把日志原始内容归档（`<dshHome>/tool-error-log-archive.jsonl`）并清空日志。命令本身不运行模型工作，子代理的结果落在 subagent 表面，而不是你的聊天里。
 
 ## 目录
 
@@ -123,3 +123,5 @@ Indirectly, through 纠错子代理：命令自身的确认只面向人类，而
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: an automatic trigger that starts the same reflection after a configurable number of journal entries, reusing the same prompt builder.
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该命令自身不跑模型、不在进程内保存状态；所有写入由子 agent 完成，日志与反思文档都是运维方拥有的文件。

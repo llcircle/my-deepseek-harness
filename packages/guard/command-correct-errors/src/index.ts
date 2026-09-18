@@ -98,7 +98,12 @@ export const Config: Schema<Config> = z.object({
 })
 
 
-/** Resolve and validate configuration; misconfiguration fails at load. */
+/**
+ * Resolve and validate configuration; misconfiguration fails at load.
+ * @param config - plugin configuration; every field is optional.
+ * @returns absolute journal, archive, and reflection paths plus the provider,
+ * the two caps, and the child composition the command propagates.
+ */
 export function resolveConfig(config: Config): {
   journalPath: string
   archivePath: string
@@ -135,7 +140,11 @@ export function resolveConfig(config: Config): {
   }
 }
 
-/** Read the whole journal file; an absent journal reads as empty. */
+/**
+ * Read the whole journal file; an absent journal reads as empty.
+ * @param path - absolute journal path.
+ * @returns the raw journal text, or `''` when the file does not exist.
+ */
 export async function readJournalFile(path: string): Promise<string> {
   let raw: string
   try {
@@ -147,7 +156,12 @@ export async function readJournalFile(path: string): Promise<string> {
   return raw
 }
 
-/** Parse the newest journal entries out of raw journal text, newest last. */
+/**
+ * Parse the newest journal entries out of raw journal text, newest last.
+ * @param raw - raw JSONL journal text.
+ * @param max - number of newest entries to keep.
+ * @returns the parsed entries, oldest first; `[]` for blank input.
+ */
 export function parseRecentEntries(raw: string, max: number): ToolErrorEntry[] {
   return raw
     .split('\n')
@@ -156,7 +170,12 @@ export function parseRecentEntries(raw: string, max: number): ToolErrorEntry[] {
     .map(line => JSON.parse(line) as ToolErrorEntry)
 }
 
-/** Read the capped tail of the reflection document; an absent document reads as empty. */
+/**
+ * Read the capped tail of the reflection document; an absent document reads as empty.
+ * @param path - absolute reflection document path.
+ * @param maxChars - maximum number of trailing characters to return.
+ * @returns the document tail, or `''` when the file does not exist.
+ */
 export async function readReflectionsTail(path: string, maxChars: number): Promise<string> {
   let raw: string
   try {
@@ -172,6 +191,10 @@ export async function readReflectionsTail(path: string, maxChars: number): Promi
  * Append the raw journal content to the archive (creating parent directories)
  * and clear the journal. The archive is the only place every recorded failure
  * survives; the journal restarts empty for the next pass.
+ * @param journalPath - absolute journal path to clear once archived.
+ * @param archivePath - absolute archive path to append to; parents are created.
+ * @param raw - raw journal text; a blank value is a no-op.
+ * @returns a promise that settles after the archive append and the clear.
  */
 export async function archiveAndClearJournal(journalPath: string, archivePath: string, raw: string): Promise<void> {
   if (raw.trim() === '') return
@@ -183,10 +206,16 @@ export async function archiveAndClearJournal(journalPath: string, archivePath: s
 /**
  * Build the child's prompt: reflection instructions plus the failure records.
  *
- * 文档按**主题**分节，不按日期。经验是"属于某个能力"的：模型在调用 `read` 时
- * 需要的是 `read` 自己的坑，把 `read` 和 `mcp__github__search` 的教训混在一节里，
- * 等于让它在现场自己挑。主题键与提示词分段同名，注入侧才能把一节经验追加到对应
- * 能力的分段后面。
+ * The document is sectioned by SUBJECT, not by date. A lesson belongs to one
+ * ability: when the model calls `read` it needs `read`'s own pitfalls, and
+ * mixing them with `mcp__github__search`'s in one section leaves it to sort
+ * them out on the spot. The subject key matches the prompt section name, which
+ * is what lets the injecting side append one subject's lessons to that
+ * ability's own section.
+ * @param entries - newest failed tool calls, oldest first.
+ * @param priorReflections - capped tail of the existing reflection document.
+ * @param reflectionDocPath - absolute path the child must write the merged document to.
+ * @returns the child's prompt blocks.
  */
 export function buildReflectionPrompt(
   entries: readonly ToolErrorEntry[],

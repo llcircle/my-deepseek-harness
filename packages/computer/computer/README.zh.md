@@ -7,21 +7,22 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
 `dsh-computer` 声明 `ctx.computer`：一个用于观察并操作真实桌面的接口——读取屏幕、移动与点击指针、输入文本、按键、滚动。它不附带任何实现，也不提供面向模型的工具：提供方在某个平台上实现这个接口，消费方（随包发布的 `dsh-tool-computer-use`）把它变成工具。当部署需要桌面控制、且你希望平台细节可替换时选择它；没有任何东西触达桌面时不必挂载。
 
-## Table of Contents
+## 目录
 
-- [Use this package](#use-this-package)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [使用本包](#use-this-package)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用本包
 
 挂载的是提供方，而不是本包本身：本包只声明 seam。随包发布的提供方是 [`dsh-computer-python`](../computer-python/README.zh.md)，它通过纯标准库的 Python 运行时驱动 Windows；随包发布的消费方是 [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md)，按需把工具暴露给模型。
 
@@ -45,7 +46,7 @@ kind: "package-reference"
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 进一步探索
 
 - [`dsh-computer-python`](../computer-python/README.zh.md) —— 随包发布的 Windows 提供方。
 - [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) —— 随包发布的模型侧消费方，含按需启用规则。
@@ -54,16 +55,32 @@ kind: "package-reference"
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-无。本包不贡献任何提示词、工具 schema 或上下文。模型永远不知道它存在，只会看到消费方从它派生出来的工具。
+无，因为本包只声明 seam 的提供方操作，自身不注册任何提示词、工具 schema 或会话事件。
 
------
+#### KV Cache 影响
+
+seam 本身不贡献 token；只有消费方的分节与 schema 才会改变请求前缀。
+
+## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **只有 Windows，且只经由随包发布的提供方。** seam 本身与平台无关，但还没有 macOS 或 Linux 实现；在那些平台上 `available()` 会给出诚实的原因，而不是等到第一次点击才失败。
 - **没有无障碍树。** 模型靠看像素定位目标。这就是"点 (640, 400)"与"点保存按钮"之间的差别，也是陌生界面上脆弱性的主要来源。
 - **没有区域截图或窗口定向。** 每次截屏都是整个虚拟屏幕；多显示器下会送出一张很宽的图。
 - **没有逐动作的审批接线。** 需要对破坏性点击加确认的部署应通过 `tools/pre-execute` 加；本 seam 不决定策略。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+- seam 刻意与提供方无关：`src/` 里没有任何地方指名 Windows。新平台提供方只需实现 `ComputerUse`，本包无需改动；`available()` 必须给出原因而不是抛错，部署才能无条件挂载提供方。
+- 随包发布的组合是 `dsh-computer-python`（提供方）+ `dsh-tool-computer-use`（消费方）。两者都是独立包，部署可替换任一半。
+
+</details>
+
+**运行时不变式：** 不发布伴生入口。本包只拥有一份接口与一个提供方注册表：平台事实全在提供方手里，因此不存在可供交叉校验的、属于本包的持久关系。

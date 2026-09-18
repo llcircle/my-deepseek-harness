@@ -2,10 +2,10 @@
 
 > 状态：**移植已落地并已提交，文档门禁全绿**。
 >
-> - `55214de25b` 移植主体（该提交把 57 个文件的嵌套冲突标记一起提交了进去）。
-> - **`ad1ad578ba` 收口**：209 文件 / +4879 −8984。解决全部 57 处冲突标记、i18n 配对归零、
+> - **移植主体提交**（`port: 把本项目在 dsh 基线之上的定制移植到 fork 的最新版本`；该提交把 57 个文件的嵌套冲突标记一起提交了进去）。
+> - **收口提交**（`port: 收口冲突解决并把 i18n 派生文档清零`）：209 文件 / +4879 −8984。解决全部 57 处冲突标记、i18n 配对归零、
 >   四张生成物目录重生成、英文侧中文泄漏在源头修掉、md 锚点语言定案。
-> - `09ea2d9b46` 经验记录（`EXPERIENCE.md` 四类新判据）。
+> - **经验记录提交**（`docs(experience)`；`EXPERIENCE.md` 四类新判据）。
 >
 > 现态：工作树干净、`git grep -l '^<<<<<<< ' HEAD` 为空、`git rev-list --objects HEAD` exit 0。
 >
@@ -32,8 +32,8 @@
 
 | 项 | 值 | 依据 |
 |---|---|---|
-| 我们原来的基线 | **`dsh-v0.1.3-alpha.1`**（`d347e70390`） | 原副本 264 个包的 `version` 全是 `0.1.3-alpha.1`；且以该 tag 为基线时 delta 最小（536 文件），换成 `0.1.3-alpha.2` 会飙到 4249 文件 |
-| 本次移植目标 | **`master` = `0d1f5000`** | fork 的唯一分支、即最新上游状态；= `dsh-v0.1.6-alpha.1` + 5 条已合并的 perf 提交 |
+| 我们原来的基线 | **`dsh-v0.1.3-alpha.1`** | 原副本 264 个包的 `version` 全是 `0.1.3-alpha.1`；且以该 tag 为基线时 delta 最小（536 文件），换成 `0.1.3-alpha.2` 会飙到 4249 文件 |
+| 本次移植目标 | **`master`（= `dsh-v0.1.6-alpha.1` + 5 条已合并的 perf 提交）** | fork 的唯一分支、即最新上游状态 |
 | 上游在这期间的移动量 | **1962 个提交 / 7916 个文件 / 94 万行新增** | `git diff --shortstat dsh-v0.1.3-alpha.1 dsh-v0.1.6-alpha.1` |
 | 我们的定制量 | **536 个文件**（176 新增 / 341 修改 / 19 类型改动） | 25539 行新增、1526 行删除 |
 | 双方都改过的文件 | **188 个，且全部是「修改 / 修改」** | 没有 add/add、没有 modify/delete，这是这次移植能机械化的关键 |
@@ -107,7 +107,7 @@
 ## 六、冲突清单（57 个，已全部裁决）
 
 > 裁决结果已固化在工作树里，工作区不再有任何冲突标记。逐文件核对方式：
-> 把工作区版本与上游 `0d1f50007f` 的同名文件比对，一致即说明 fork 侧被静默丢弃——
+> 把工作区版本与上游 `dsh-v0.1.6-alpha.1`（+5 perf）的同名文件比对，一致即说明 fork 侧被静默丢弃——
 > 57 个文件全部"不一致"，即 fork 语义存活。脚本：`D:\dsh-port\probe\conflict-audit.mjs`。
 
 **核心运行时 / 契约（优先）**
@@ -194,13 +194,13 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 | P0 | 建工作副本、确认基线、算清 delta、机械化移植 | **完成** |
 | P1 | 裁决 57 个冲突（按上面顺序：核心契约 → 接线 → 客户端 → 测试文档） | **完成**（工作区无标记，全部保留 fork 语义） |
 | P2 | 重生成生成物 + 重录 i18n 配对 | **文档部分完成**：四张目录（config/tool/persistence/cordis）+ 中文侧补 8 个包章节 / 2 个工具章节；配对 955/955。快照与 `cli expected` 未重录 |
-| P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | 待做 |
-| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | 部分：`{computer,core/system-prompt,skill}` 314/314 绿；`apps/cli` 与 e2e 待做 |
-| P5 | 提交、推送 fork、按需开 PR | 部分（本分支已建） |
+| P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | **部分**：tsdown 两面已跑通（host 273 包 / client 184 包）；`tsc -b tsconfig.host.json` 仍是既有红灯（见 11.5，非移植引入） |
+| P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | **部分**：八个包族 99 文件 / 1872 通过 / 0 失败（见 11.3）；`apps/cli` 与 e2e 待做 |
+| P5 | 提交、推送 fork、按需开 PR | 部分（本分支已建；本轮修复待提交，**不推送**） |
 
 ### 仍欠的账（按优先级）
 
-1. ~~生成物里的中文来源~~ **已收口**（`ad1ad578ba`）。4 处落进英文生成文档的中文 JSDoc 已英文化，
+1. ~~生成物里的中文来源~~ **已收口**（收口提交）。4 处落进英文生成文档的中文 JSDoc 已英文化，
    英文侧 `config-catalog.md` / `tool-catalog.md` / `persistence-catalog.md` CJK 行数 = 0，
    `docs/subsystems/*.md` 只剩语言切换行（设计内）。规则仍成立：只有落进英文生成文档的 JSDoc 必须
    英文化；`packages/**/src` 里其余中文注释（含模块头、`//` 注释、`packages/client/*/locales.ts`
@@ -250,3 +250,124 @@ node D:/dsh-port/port.mjs --apply
 - `ours` = `D:/VS_Projects/deepseek-harness`（旧副本）
 - `theirs` = `D:/VS_Projects/deepseek-harness/my-deepseek-harness`（本 fork 副本）
 - `base` = tag `dsh-v0.1.3-alpha.1`
+
+---
+
+## 十一、功能对照与验证结果（09-18）
+
+### 11.1 对照：基线之上的定制是否都落到 0.1.6
+
+对 `ADDED-FEATURES.md`（fork 侧的能力清单）逐项在**本分支源码**里找落点，结论是**九类全部在位**，
+没有一项在移植中丢失：
+
+| 清单项 | 核对落点 | 结果 |
+|---|---|---|
+| 9 个新插件包 | `packages/{guard,skill,computer}/*` 逐个读 `package.json` 的 `name` | 9/9 存在且包名一致 |
+| 技能三态 / 触发卡 | `dsh-skill` 的 `SkillTriggerState`：`ui-settings-plugins/src/client/skill-trigger-card-controller.ts` | 在位 |
+| 技能目录迁系统提示词 | `tool-skill/src/index.ts` 注册分段 `skills:catalog`；`system-prompt` 把 `skills:catalog` 与 `deployment:error-lessons` 列为 `DYNAMIC_SECTION_NAMES` | 在位（迁移 1 完成） |
+| 纠错闭环 | `tool-error-journal` → `command-correct-errors`（命令 `correct-errors`）→ `error-reflection-prompt` | 在位 |
+| 反思按能力分节 | `error-reflection-prompt` 模块头写明按 `## tool:` / `## mcp:` / `## computer:` 路由；`mcp__<server>__<raw>` 折叠回 `mcp:<server>` | 在位（迁移 3 完成） |
+| 电脑操作 | `tool-computer-use` 的 9 个原子工具（`computer_{click,display,drag,key,move,pointer,screenshot,scroll,type}`）；`COMPUTER_COMMAND_NAME='computer'`；`computer/mode` 会话事件 | 在位 |
+| 运行时上下文进 system 字段 | `agent-loop/src/agent.ts` 的 `RuntimeContextProjection` / `SystemPromptProjection` | 在位（迁移 2 完成） |
+| 系统提示词与本地化 | `commands-translate-system-prompt` 双产物；`catalogLocale`；`completePromptFile`；`promptSectionChanges`（客户端 `ui-conversation/src/client/contract/request-inspection.ts`） | 在位 |
+| 子代理裁剪 | `subagent/src/types.ts` 的 `allowTools` / `omitSections`；`system-prompt` 的 `suppressSection` | 在位 |
+| plan → goal | `plan-mode/src/index.ts` 的 `goalOnApprove` | 在位 |
+| lean 预设 | `packages/preset/agent-presets/presets/lean/agent.cordis.yml`；`display.ts` 的 `presetLeanName` / `presetLeanDescription` | 在位 |
+| lean 的工具合并 | `tool-goal` / `tool-jobs` 的 `Config.toolShape`；`dsh-tools/search` 子入口（`tool_search`） | 在位 |
+| 提示词编辑器分栏 | `NON_EDITABLE_SECTION_NAMES` 含 `computer:policy`；按 `tool:` / `mcp:` / `computer:` 前缀一能力一行 | 在位 |
+| `start-web.cmd` 最短依赖路径 | 根目录 `start-web.cmd`（纯 ASCII + 端口预检） | 在位 |
+
+### 11.2 修掉的真实缺陷
+
+1. **9 个新包沿用 fork 的旧版本号**（7 个 `0.1.3-alpha.1` + 2 个 `0.1.0-alpha.1`），与根
+   `0.1.6-alpha.1` 不一致 → 全部对齐。此前 `check-workspace-constraints` 报 12 条，现在 0 条。
+2. **`files` 沿用 fork 的旧构建形态**：`computer/computer-python` 与 `computer/tool-computer-use`
+   多写了 `lib/types/**/*.js`——0.1.6 的 tsdown 不再往 `lib/types/` 出 JS，这两个包的 `exports`
+   也没有指向 `lib/types/` 的运行时默认值。**`computer/computer` 的 `./types` 导出确实指向
+   `lib/types/types.js`，所以它的这一条是正确声明，保留不动。**
+3. **约束脚本的规则表缺两条**（不是包声明的错）：
+   - `@deepseek-ai/dsh-computer-python` 的 `runtime/computer_agent.py` 是真实运行时资产
+     （`src/index.ts` 以 `import.meta.url` 相对解析），必须随包发布 → 补 `packageFileExtras`
+     条目（与既有 `dsh-experimental-ptc-runtime-python` 的 `py/**/*.py` 同理）。
+   - `@deepseek-ai/dsh-system-prompt` 新增的 `./overrides` 子入口（`bundle/base/cordis.patch.yml`
+     有装配行）发布独立的 `lib/overrides.js` → 在 `expectedDshPackageFiles` 里按产物路径补一条
+     通用规则（与 `./client` / `./loader` 同形）。
+4. **`systemSections` 被算进了请求头相等判定**（移植引入的语义 bug）：v0.1.6 把系统提示词移出请求头
+   改成派生历史后，`headerEquals` 仍比较 `systemSections`，导致每次提示词变更都判为"换头"。
+   已把它降为展示元数据（`canonicalHeader` 仍规范化、`headerEquals` 不再比较），并在
+   `EpochHeader.systemSections` 的 JSDoc 写明它不参与身份判定。
+5. **运行时上下文的中文抬头硬编码**：`agent-loop/src/runtime-context.ts` 里 `CLEARED` 是写死的中文，
+   与 `joinContextSections(sections, locale)` 的 locale 脱节 → 改为从 `@deepseek-ai/dsh-system-prompt`
+   导出 `contextSnapshotCleared(locale)`（中英双语表），`project()` 接受 locale 并由 `agent.ts` 传入。
+
+### 11.3 测试取信号
+
+| 范围 | 结果 |
+|---|---|
+| `packages/{guard,computer,skill,preset,core/system-prompt,core/agent-loop,subagent,bundle/base}` | **99 文件 / 1872 通过 / 3 跳过 / 0 失败** |
+| `packages/subagent` | 853 通过 / 2 跳过 / 0 失败 |
+| `packages/skill/tool-skill` | 36/36（`ADDED-FEATURES.md` §7 记的"18 例待迁移"在移植提交里已迁移完） |
+| `packages/core/agent-loop` | 417 通过 / 1 跳过 / 0 失败 |
+| `run-gates doc-quick` | **20 passed / 0 failed** |
+
+**`scripts/` 整目录的 25 例红——全部环境型，且低于基线**（`LOG.md` 记录的基线是 14 文件 / 27 例）：
+
+- **`EPERM: operation not permitted, symlink`（11 例）**：`repo-files` 9、`project-doc-site` 1、`dev-web` 1。
+  本机禁止创建真实符号链接（只允许 junction），测试夹具用 `fs.symlinkSync` 建文件链接直接 EPERM。
+- **5s 超时（11 例）**：`benchmark-npm-resolution` 3、`change-scope` 2、`client-build-environment` 1、
+  `oxlint-contract` 1、`test-invariants` 1、`translation-pairing` 1、`verify-repository-references` 1
+  ——都在等 npm / git / oxlint 子进程。
+- **`translation-pairing-merge` 3 例**：报 `runtime is unavailable`（合并驱动要 `lib/` 产物）。
+- **跨用例污染 1 例**：`oxlint-contract.spec.ts` 超时中止时留下合成源文件
+  `packages/**/src/oxlint-contract-<hash>.ts`，让并发跑的 `persistence-schema.spec.ts` 报
+  `TS6053: File ... not found`。跑完确认现场已清（本轮已核，无残渣）。
+
+**既有红灯（与本工作无关，未修）**：`build:lib:host` 在 `test-support/client-runtime` 报 TS6307；
+客户端 `tsconfig.client.json` 2 处类型漂移；oxlint 在 `session-controller/src/skill-catalog.ts`
+的 20 条 `no-unsafe-assignment`。
+
+### 11.4 两条客户端回归用例的裁决（与「优先改代码」原则的偏离说明）
+
+`packages/client/ui-chat/tests/conversation-node-definitions.client.spec.ts` 有 2 条用例在本轮前
+就是红的（用 `git checkout` 把生产代码还原到改动前复跑，仍红）。它们断言"同一次系统提示词变更
+渲染 3 张卡（含一张 `update: true`）"，而**上游 v0.1.6 自有用例（1499 断言）直接要求同系列的工具
+/配置变更不出卡片**。改生产代码去满足这 2 条会破坏上游不变量，所以按上游语义把测试迁到
+"派生历史节点 0 被替换"这条上游确实渲染的路径（期望 2 张卡），保留 fork"只显示变动段落"的意图。
+
+### 11.5 构建产物与 `hygiene` 聚合
+
+**先补了构建产物**（此前本分支只跑过 `tsc -b`，`lib/` 里只有 `tsconfig.tsbuildinfo` 与 `types/`，
+没有 `lib/*.js`，属于 P3 未做）：
+
+```bash
+env -u NODE_OPTIONS node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE host    # 273 包
+env -u NODE_OPTIONS node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE client  # 184 包
+```
+
+- **tsdown 的正确入口是 `node_modules/tsdown/dist/run.mjs`**（`package.json` 的 `bin`）。
+  `node node_modules/tsdown/dist/index.mjs` 会**静默退出 0 且什么都不做**——别用它。
+- **客户端包的 `lib/invariant.js` 由 `--env.DSH_BUILD_FACE client` 产出**，宿主面不管；
+  只跑宿主面时 `verify-built-package-invariants` 会报 `packages/client/{hmr,modules,ui-renderer}`
+  找不到 `lib/invariant.js`。
+- **Typert 产物有先有后**：`typertPlugin` 消费 tsc 产出的 `lib/types` 再写 `lib/typert.*`，
+  所以干净树上 `tsc -b` 会先因 `@deepseek-ai/dsh-*/remote` 解析不到而报 TS2307。先跑 tsdown
+  再跑 tsc 即可（本轮实测：生成产物后 TS2307 从 27 条降到 6 条）。
+- 产物落 `lib/`，已被 `.gitignore` 覆盖（`lib/`），不污染提交。
+
+**`hygiene` 聚合：11 passed / 5 failed → 14 passed / 2 failed**（补齐产物 + 修 `constraints` 之后）。
+
+| 门禁 | 归因 |
+|---|---|
+| `constraints` | **真实缺陷，已修**（见 11.2 的 1–3）→ 现 0 错误 |
+| `built package invariants` | 缺产物 → 补齐后 **PASS**（39 个编译伴生包通过） |
+| `publint` | 缺产物 → 补齐后 **PASS**（`pkg.exports["./src/*"] … does not match any files` 是警告，非失败） |
+| `node-next types` | **环境**：脚本 `verify-node-next-types.ts:87` 用 `symlinkSync(pkg.dir, link, 'dir')` 搭临时安装，本机禁止真链接 → 在 `execFileSync` 之前就抛，所以报错**没有任何诊断文本**（只有一行 "NodeNext consumer typecheck failed."）。不是类型错误 |
+| `Cordis config` | **环境**：`apps/cli/tests/profiles/acp/cordis.yml` 在 git index 里 mode=`120000`（符号链接），本机无法建真链接，工作树落成 59 字节纯文本（内容恰是链接目标路径）→ 校验器把路径串当 YAML 读，报 `root must be a Loader entry array` |
+
+**`tsc -b tsconfig.host.json` 仍是红的（238 TS6307 + 115 TS6142），但与本工作无关**：
+
+- 与上游 `dsh-v0.1.6-alpha.1` 的 `tsconfig.host.json` **逐行对比只差我们新增的 9 条 project
+  reference**，`include` / `exclude` 完全一致 → 不是移植引入的。
+- 报错形态是 `packages/*/*/src/client/**` 被 `packages/*/*/tests/**` 传递引入，而该路径既不在
+  `include` 也不在 `exclude`（上游只排除 `packages/client/*/src/**`）→ 属既有配置面问题。
+- **实测排除产物假设**：生成 typert 产物前后错误数**完全一致**（238 / 115），所以不是产物缺失。

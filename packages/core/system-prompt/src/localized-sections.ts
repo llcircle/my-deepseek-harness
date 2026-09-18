@@ -375,7 +375,10 @@ export function localizedSectionText(
   })
 }
 
-/** 收录了译文的全部分段名，排序后返回，供测试穷举。 */
+/**
+ * 收录了译文的全部分段名，排序后返回，供测试穷举。
+ * @returns 按字典序排序的全部分段名。
+ */
 export function localizedSectionNames(): string[] {
   return Object.keys(LOCALIZED_SECTIONS).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
 }

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The system prompt a deployment injects is written once, usually in English, and the user never sees it as text — only its effects. `/translate-system-prompt` makes it readable in both languages: the command assembles the receiving agent's exact agent-scoped system prompt through the system-prompt service, starts ONE background one-shot subagent carrying the rendered text, and the child writes two files: a bilingual markdown archive (default `.dsh/system-prompt.zh.md` in the workspace) with an `## Original` section and a full `## <locale>` translation, plus a translation-only prompt (default `.dsh/system-prompt.zh.prompt.md`) that `dsh-system-prompt` automatically uses for later assemblies in that project. The command runs no model work itself and never touches the main conversation.
+The system prompt a deployment injects is written once, usually in English, and the user never sees it as text — only its effects. `/translate-system-prompt` makes it readable in both languages: the command assembles the receiving agent's exact agent-scoped system prompt, starts ONE background one-shot subagent carrying the rendered text, and the child writes two files: a bilingual markdown archive (default `.dsh/system-prompt.zh.md`) with an `## Original` section and a full `## <locale>` translation, plus a translation-only prompt (default `.dsh/system-prompt.zh.prompt.md`) that `dsh-system-prompt` uses for later assemblies in that project. The command runs no model work itself.
 
 ## Table of Contents
 
@@ -128,3 +128,5 @@ Independent of the main conversation: the child is its own session with its own 
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: a client-side reader that shows the archived bilingual prompt in settings.
 
 </details>
+
+**Runtime invariant:** No companion is published. The command only renders the current prompt and hands it to the child; the files the child writes are consumed by `dsh-system-prompt`, which owns the assembly path.

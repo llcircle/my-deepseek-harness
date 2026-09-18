@@ -83,7 +83,12 @@ export const Config: Schema<Config> = z.object({
 })
 
 
-/** Resolve and validate configuration; misconfiguration fails at load. */
+/**
+ * Resolve and validate configuration; misconfiguration fails at load.
+ * @param config - plugin configuration; every field is optional.
+ * @returns the workspace archive path, the optional shared archive path, the
+ * target locale, the provider, and the child composition the command propagates.
+ */
 export function resolveConfig(config: Config): {
   archivePath: string
   sharedArchivePath: string | undefined
@@ -111,14 +116,25 @@ export interface SkillSummaryEntry {
   readonly whenToUse?: string
 }
 
-/** Keep only the translatable summary fields of one catalogued skill. */
+/**
+ * Keep only the translatable summary fields of one catalogued skill.
+ * @param skill - one catalog entry from `ctx.skills.list()`.
+ * @returns the entry the translator sees: name, description, and `whenToUse` when present.
+ */
 export function toSummaryEntry(skill: SkillSummary): SkillSummaryEntry {
   return skill.whenToUse === undefined
     ? { name: skill.name, description: skill.description }
     : { name: skill.name, description: skill.description, whenToUse: skill.whenToUse }
 }
 
-/** Build the child's prompt: translation instructions plus the summary entries. */
+/**
+ * Build the child's prompt: translation instructions plus the summary entries.
+ * @param entries - catalog summaries to translate; never true names or bodies.
+ * @param archivePath - workspace file the child must write the JSON object to.
+ * @param targetLocale - locale the summaries are translated into.
+ * @param sharedArchivePath - second copy for the user-level registry, or omitted.
+ * @returns the child's prompt blocks.
+ */
 export function buildTranslationPrompt(
   entries: readonly SkillSummaryEntry[],
   archivePath: string,

@@ -3199,8 +3199,8 @@ export function TrajectoryTable({
                 ? <p className={css.noPayload}>{t('record.systemPromptMissing')}</p>
                 : (
                   <div className={`${css.markdownPayload} ${css.systemPrompt}`}>
-                    {(selectedPrompt.systemSections ?? []).length > 0
-                      ? (selectedPrompt.systemSections ?? []).map(section => (
+                    {(selectedPrompt?.systemSections ?? []).length > 0
+                      ? (selectedPrompt?.systemSections ?? []).map(section => (
                         <section key={section.name} data-system-prompt-section>
                           <h4 data-system-prompt-source>{section.name}</h4>
                           <MarkdownText text={section.text} labels={markdownLabels(t)} />

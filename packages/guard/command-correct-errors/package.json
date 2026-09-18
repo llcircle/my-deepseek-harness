@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-command-correct-errors",
   "description": "The /correct-errors command: starts a background one-shot subagent that reflects on recent tool errors and writes a reflection document",
-  "version": "0.1.3-alpha.1",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -349,7 +349,10 @@ export class PromptOverridesCardController {
     this.publish()
   }
 
-  /** Build the face the card's slot registration injects. */
+  /**
+   * Build the face the card's slot registration injects.
+   * @returns The store plus the select, refresh, and edit callbacks the card slot consumes.
+   */
   inject(): PromptOverridesCardFace {
     return {
       hooks: { promptOverridesCard: this.store },

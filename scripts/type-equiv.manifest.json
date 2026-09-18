@@ -2161,6 +2161,12 @@
       "doc": "docs/subsystems/mcp.md",
       "symbol": "McpResourceProvider",
       "source": "packages/mcp/mcp-resources/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/computer.md",
+      "symbol": "ComputerUse",
+      "source": "packages/computer/computer/src/index.ts",
+      "projection": "public-api"
     }
   ]
 }

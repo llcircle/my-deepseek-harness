@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-command-translate-skills",
   "description": "The /translate-skills command: starts a background one-shot subagent that translates every skill description into a locale archive file (descriptions only, never bodies)",
-  "version": "0.1.3-alpha.1",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

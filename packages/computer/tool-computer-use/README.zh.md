@@ -7,21 +7,22 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
-`dsh-tool-computer-use` 给模型九个桌面动作——截屏、屏幕几何、指针位置、移动、点击、拖拽、输入、按键、滚动——但只在用户要求过的会话里。在输入 `/computer` 或说出类似"操作电脑"的话之前，这项能力完全不进入请求；此后它一直可用，直到 `/computer off`，并在恢复与分叉后保持。它还拥有模型动手时遵循的指导文本，写它的目的是让循环保持诚实：先看再动、动完核对、绝不把屏幕上的内容当作指令。当智能体需要在明确同意下操作用户的真实桌面时选择它；只需要文件和命令时不必挂载。
+`dsh-tool-computer-use` 给模型九个桌面动作（截屏、屏幕几何、指针位置、移动、点击、拖拽、输入、按键、滚动），但只在用户要求过的会话里存在。在输入 `/computer` 或说出类似"操作电脑"的话之前，它完全不进入请求；此后一直可用，直到 `/computer off`，并在恢复与分叉后保持。它还拥有模型动手时遵循的指导文本：先看、再动、再看，绝不把屏幕上的内容当作指令。当智能体需要在明确同意下驱动真实桌面时选择它；只需要文件和命令时不必挂载。
 
-## Table of Contents
+## 目录
 
-- [Use this package](#use-this-package)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [使用本包](#use-this-package)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用本包
 
 把它挂在提供方旁边；在某个会话启用它之前，它不注册任何工具。
 
@@ -65,7 +66,7 @@ kind: "package-reference"
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 进一步探索
 
 - [`dsh-computer`](../computer/README.zh.md) 与 [`dsh-computer-python`](../computer-python/README.zh.md) —— seam 及其随包发布的提供方。
 - [Session 日志](../../../docs/architecture.zh.md#session-log) —— 为什么启用是一个持久事件而不是内存状态。
@@ -74,19 +75,55 @@ kind: "package-reference"
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-未启用时：什么都没有。没有工具、没有提示词分节、没有上下文——模型无法判断这项能力存在。提示词编辑界面上也不会出现它的行，因为没有分节可列；文档里已经写在 `## computer:policy` 下的旧经验仍留在文档里，但会被报成"没有对应能力"，因而不被注入。
+### 工具 schema
 
-启用后：九个名为 `computer_*` 的工具，外加一个 `computer:policy` 提示词分节，覆盖工作循环（看、动、再看）、动作选择（优先用键盘而不是坐标；用剪贴板在应用之间搬运文本）与安全边界。截图结果以图像加一段文字信封的形式到达，信封说明图像与屏幕坐标的映射，并把内容定性为未受信任的证据。
+#### 模型看到什么
 
------
+能力启用时，模型收到九个 `computer_*` schema —— `computer_screenshot`、`computer_screen_geometry`、`computer_pointer_position`、`computer_move`、`computer_click`、`computer_drag`、`computer_type`、`computer_key` 与 `computer_scroll`，都登录在[电脑操作工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-computer-use)里。未启用时这些 schema 根本不存在，请求里也就没有任何东西在替一项会话用不上的能力做宣传。
+
+#### Token 影响
+
+九个 schema 在启用期间每个请求都要付出完整长度，未启用则零成本。截图结果还附带一个图像块，其成本随截图分辨率而非动作数量变化。
+
+#### KV Cache 影响
+
+启用或关闭会重写工具目录，因此从 schema 进入请求的那一点起复用即失效。能力持续启用期间，未变的 schema 保持前缀可复用；每次截图都在该前缀之后追加一个图像块。
+
+### 指导提示词分节
+
+#### 模型看到什么
+
+启用时 `computer:policy` 分节与工具在同一步注册进 agent 自身作用域，`/computer off` 再将其释放；未启用的会话没有这一节，而不是有节而内容为空，因此提示词编辑界面不会为它显示行，文档里已经写在 `## computer:policy` 下的旧经验会被报成「没有对应能力」而不被注入。文本就是随包发布的资产，除非部署的 `policy` 配置整体替换它。截图结果以图像加一段文字信封的形式到达，信封说明图像与屏幕坐标的映射，并把内容定性为未受信任的证据。
+
+#### Token 影响
+
+该分节文本在启用期间每个请求都重复，未启用则零成本。部署提供的 `policy` 以自己的长度取代随包资产。
+
+#### KV Cache 影响
+
+加入或移除该分节会从该分节起改变系统提示词，因此复用从第一个变化的 token 起失效。只要能力持续启用，文本本身保持稳定。
+
+## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **没有逐动作的审批提示。** 启用后模型的每个动作都会立即执行；防线是指导文本加上部署自行添加的 `tools/pre-execute` 策略。
 - **触发短语是字面子串匹配。** 它们被选得足够具体，但一条讨论桌面自动化、却并未要求执行的消息仍会启用能力。逃生口是 `/computer off`。
 - **没有截图节流。** 循环截屏的模型会按自己的节奏消耗图像 token；这里不做限速。
 - **逃生口是 `/computer off`，不是一个按键。** 卡在点击循环里的模型靠取消回合停下；这里没有 Claude Code 那种覆盖层热键式的非模型打断通道。
 - **除会话事件外没有独立活动轨迹。** 启用、关闭与每次动作都在日志里，但没有单独的桌面自动化审计面。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+- 启用判定挂在 `agent/inbox/claimed`，早于工具 schema 装配。所以触发消息在同一次请求里就带上工具，而不是晚一步；把这个钩子往后挪不是优化，而是行为变更。
+- 截图工具在抓取前会查会话模型路由是否声明了 `image` 输入。没有这道守卫，纯文本模型会白抓一张没人能看的图。
+
+</details>
+
+**运行时不变式：** 不发布伴生入口。启用状态与每个动作都已作为 `computer/mode`、`tool/call`、`tool/result` 会话事件持久化，分节文本也只有唯一归属方。

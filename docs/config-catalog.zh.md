@@ -239,7 +239,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/api/settings-controller/src/index.ts:36`](../packages/api/settings-controller/src/index.ts)
+来源：[`packages/api/settings-controller/src/index.ts:48`](../packages/api/settings-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-terminal-controller"></a>
 
@@ -1853,7 +1853,7 @@ export interface ReconnectConfig {
 }
 ```
 
-来源：[`packages/mcp/mcp-client/src/index.ts:104`](../packages/mcp/mcp-client/src/index.ts)
+来源：[`packages/mcp/mcp-client/src/index.ts:146`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -1963,7 +1963,7 @@ export interface PlanModeConfig {
 }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:87`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
@@ -2169,12 +2169,17 @@ export interface Config {
   workspaceRoot?: string
 }
 
+/**
+ * Locales for the policy context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
 依赖：[`SandboxMode`](subsystems/sandbox.zh.md)
 
-来源：[`packages/sandbox/sandbox-policy/src/index.ts:71`](../packages/sandbox/sandbox-policy/src/index.ts)
+来源：[`packages/sandbox/sandbox-policy/src/index.ts:95`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2511,7 +2516,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/skill/src/index.ts:278`](../packages/skill/skill/src/index.ts)
+来源：[`packages/skill/skill/src/index.ts:300`](../packages/skill/skill/src/index.ts)
 
 <a id="deepseek-aidsh-skill-filesystem"></a>
 
@@ -3015,7 +3020,7 @@ export type PromptLocalePreference = 'auto' | PromptLocale
 export type PromptLocale = 'zh' | 'en'
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:616`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3281,7 +3286,7 @@ export interface Config {
 export type GoalToolShape = 'split' | 'merged'
 ```
 
-来源：[`packages/goal/tool-goal/src/index.ts:25`](../packages/goal/tool-goal/src/index.ts)
+来源：[`packages/goal/tool-goal/src/index.ts:42`](../packages/goal/tool-goal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-jobs"></a>
 
@@ -3328,7 +3333,7 @@ export type CompletionDelivery = 'quiet' | 'wakeup'
 export type JobToolShape = 'split' | 'merged'
 ```
 
-来源：[`packages/jobs/tool-jobs/src/index.ts:31`](../packages/jobs/tool-jobs/src/index.ts)
+来源：[`packages/jobs/tool-jobs/src/index.ts:48`](../packages/jobs/tool-jobs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
@@ -3473,10 +3478,15 @@ export interface Config {
   catalogTranslationsFile?: string
 }
 
+/**
+ * Locale the published skill catalog renders in. `auto` follows the assembly
+ * locale so a Chinese deployment gets a Chinese catalog, while `en` and `zh`
+ * pin it regardless of the surrounding prompt language.
+ */
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 ```
 
-来源：[`packages/skill/tool-skill/src/index.ts:61`](../packages/skill/tool-skill/src/index.ts)
+来源：[`packages/skill/tool-skill/src/index.ts:102`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="deepseek-aidsh-tool-str-replace-editor"></a>
 
@@ -3577,7 +3587,7 @@ export interface Config {
 
 依赖：[`AgentOptions`](subsystems/core.zh.md)
 
-来源：[`packages/subagent/tool-subagent/src/index.ts:48`](../packages/subagent/tool-subagent/src/index.ts)
+来源：[`packages/subagent/tool-subagent/src/index.ts:54`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-terminal"></a>
 
@@ -3752,10 +3762,15 @@ export interface Config {
  */
 export type ApprovalPolicy = 'ask' | 'never'
 
+/**
+ * Locales for the approval context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
-来源：[`packages/interaction/user-approval/src/index.ts:128`](../packages/interaction/user-approval/src/index.ts)
+来源：[`packages/interaction/user-approval/src/index.ts:153`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 

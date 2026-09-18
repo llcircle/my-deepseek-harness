@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-computer",
   "description": "Desktop-control capability seam for DeepSeek Harness: screen capture and pointer/keyboard input behind one swappable provider interface",
-  "version": "0.1.3-alpha.1",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

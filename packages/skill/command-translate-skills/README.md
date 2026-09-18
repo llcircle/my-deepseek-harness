@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Skill descriptions are written in whatever language their author used, so a catalog mixes languages and a reader scanning it fights vocabulary before they ever reach a workflow. `/translate-skills` produces one locale archive: the command reads every catalogued skill's `description` and optional `whenToUse` from `ctx.skills.list()`, starts ONE background one-shot subagent with those summaries and an explicit scope — descriptions only, never skill names, never bodies — and the child writes the translations as one JSON file (default `.dsh/skill-translations.zh.json` in the workspace, keyed by skill name). The command runs no model work itself; bodies stay untouched by construction because they never enter the prompt. `dsh-tool-skill` consumes the archive automatically, so one completed pass makes the session catalog render in Chinese.
+Skill descriptions are written in whatever language their author used, so a catalog mixes languages. `/translate-skills` produces one locale archive: the command reads every catalogued skill's `description` and optional `whenToUse` from `ctx.skills.list()`, starts ONE background one-shot subagent with those summaries and an explicit scope — descriptions only, never names, never bodies — and the child writes the translations as one JSON file (default `.dsh/skill-translations.zh.json`, keyed by skill name). The command runs no model work itself, and bodies stay untouched because they never enter the prompt. `dsh-tool-skill` consumes the archive, so one pass renders the session catalog in Chinese.
 
 ## Table of Contents
 
@@ -125,3 +125,5 @@ Independent of the main conversation: the child is its own session with its own 
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: a client-side reader that overlays archived summaries onto skill menus when the UI locale matches.
 
 </details>
+
+**Runtime invariant:** No companion is published. The command runs no model work of its own; the child writes one archive file, and the consuming catalog provider owns its read path.

@@ -116,3 +116,5 @@ Lessons from past tool failures (auto-generated reflections; newest at the end):
 本 Dev Note 是维护者的工作上下文；明确不具权威性。开放方向：从会话项目根解析的按项目经验库，以及让用户一眼区分新旧经验的时间戳标记行。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该分节只是对运维方文档做有界截尾后的纯投影，因此不存在可供比对的第二种观测。

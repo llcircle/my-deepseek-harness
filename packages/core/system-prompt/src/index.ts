@@ -687,6 +687,11 @@ export function renderPromptSections(assembly: PromptAssembly): AssembledSection
     .filter(section => section.text.length > 0)
 }
 
+/**
+ * Render the complete system prompt: every non-empty section joined in order.
+ * @param assembly - the assembly whose sections and variables to render.
+ * @returns the model-facing prompt text, or `''` when no section renders to text.
+ */
 export function renderPrompt(assembly: PromptAssembly): string {
   return renderPromptSections(assembly)
     .map(section => section.text)
@@ -703,24 +708,52 @@ export function renderContextSnapshot(assembly: PromptAssembly): string {
 }
 
 /**
- * The model-facing snapshot text for an already-rendered section list.
- *
- * A caller that also needs the sections renders them once and joins here, so a
- * request does not interpolate every context twice.
- * @param sections - sections from {@link renderContextSections}.
- * @returns the current full snapshot, or `''` when no context is active.
+ * Snapshot heading. It shares one model message with the policy prose, so the
+ * language must match.
  */
-/** 快照抬头。它与政策正文同属一条模型消息，语言必须一致。 */
 const CONTEXT_SNAPSHOT_HEADING: Record<PromptLocale, string> = {
   zh: '当前运行时上下文。此快照取代较早的运行时上下文快照。',
   en: 'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.',
 }
 
+/**
+ * Snapshot body used once no dynamic context remains. It answers the heading
+ * above in the same message, so it draws its language from the same locale.
+ */
+const CONTEXT_SNAPSHOT_CLEARED: Record<PromptLocale, string> = {
+  zh: '当前运行时上下文：无。较早的运行时上下文快照不再生效。',
+  en: 'Current runtime context: none. Earlier runtime-context snapshots no longer apply.',
+}
+
+/**
+ * The model-facing body that clears a stale runtime-context snapshot, in the
+ * language the accompanying heading is written in.
+ *
+ * A loop that joins sections through {@link joinContextSections} passes the
+ * same locale here; hardcoding one language would leave a Chinese heading
+ * announcing an English withdrawal.
+ * @param locale - locale picking the wording; defaults to `zh`, matching the
+ *   {@link joinContextSections} default so callers that pass no locale keep a
+ *   single-language snapshot.
+ * @returns the cleared-snapshot body for that locale.
+ */
+export function contextSnapshotCleared(locale: PromptLocale = 'zh'): string {
+  return CONTEXT_SNAPSHOT_CLEARED[locale]
+}
+
+/**
+ * The model-facing snapshot text for an already-rendered section list.
+ *
+ * A caller that also needs the sections renders them once and joins here, so a
+ * request does not interpolate every context twice.
+ * @param sections - sections from {@link renderContextSections}.
+ * @param locale - locale picking the heading; defaults to `zh` to preserve the
+ * behaviour hand-built assemblies (offline renders, older callers) received
+ * before a locale existed — an assembled `assembly` always passes its own.
+ * @returns the current full snapshot, or `''` when no context is active.
+ */
 export function joinContextSections(
   sections: readonly ContextSnapshotSection[],
-  // 缺省中文 preserving 该函数既有行为：手工构造的装配（离线渲染、旧调用方）
-  // 不携带语言，而它们此前得到的就是中文抬头。装配产出的 assembly 一定有
-  // locale，所以真实路径永远是显式传入的。
   locale: PromptLocale = 'zh',
 ): string {
   const body = sections.map(section => section.text).join('\n\n')

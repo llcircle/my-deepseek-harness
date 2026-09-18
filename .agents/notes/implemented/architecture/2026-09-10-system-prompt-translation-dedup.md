@@ -16,6 +16,16 @@ Agent Loop runtime facts remain a separate dynamic `runtime:context` section, so
 
 Without a translated archive, preserve the existing English source sections. Request headers continue to store interpolated `systemSections`; older sessions without that field fall back to the full system text in the client. Section names are UI grouping metadata and are not injected into model text.
 
+## Alternatives considered
+
+**Register the whole archive as one additional translated section.** Rejected: the English static providers would stay registered, so the model and the UI would read the same prompt twice in two languages.
+
+**Replace the whole prompt with the translated archive.** Rejected: the live `skills:catalog` and `deployment:error-lessons` sections are rebuilt per request, and a wholesale replacement would freeze them at whatever the archive said.
+
+**Fold the per-request runtime facts into the archive.** Rejected: working directory and model change per request, so the archive could not track them and would go stale silently.
+
+**Name the replaced sections `deployment:translated-prompt:N`.** Rejected: it worked, but it discarded the original section identity — a reader could no longer tell which provider the text came from, and every UI grouping key changed with the language.
+
 ## Consequences
 
 The archive is not an additional locale section. Update the project `.dsh/system-prompt.zh.prompt.md` when the static prompt changes; paragraphs beyond the source-paragraph count are ignored, so a stale archive cannot overwrite later sections. Runtime context remains separately expandable without duplicating the static prompt in Chinese and English.

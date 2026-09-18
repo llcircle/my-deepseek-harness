@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-agent（智能体）可以在会话期间发现并加载 skill（技能）。在首次请求前，如果存在模型可调用 skill 且 `skill` 工具可见，agent 会收到一份持久目录，列出可用 skill 的名称与有长度上限的描述，并可用 `skill` 工具加载完整指令。用户可以用 `/name` 调用某个用户可调用的 skill，把相同的指令注入该步骤。目录变更会追加一份完整替换，其中空目录会停用旧名称；可配置 `catalogDescriptionMaxLength` 来限制每条描述的长度。skill 的本地化描述变化，以及按工作区的触发状态覆盖（`passive`、`active-only` 或 `ignored`），同样算作成员关系变更并追加替换目录。当 agent 需要加载 skill 时，请把它与 skill 注册表（以及至少一个提供方）一起挂载；其配置项限制描述长度并选择目录语言。
+agent（智能体）可以在会话期间发现并加载 skill（技能）。在首次请求前，如果存在模型可调用 skill 且 `skill` 工具可见，agent 会收到一份持久目录，列出可用 skill 的名称与有长度上限的描述，并用 `skill` 工具加载完整指令。用户可以用 `/name` 调用某个用户可调用的 skill，把相同的指令注入该步骤。目录变更会追加一份完整替换，其中空目录会停用旧名称；可配置 `catalogDescriptionMaxLength` 限制每条描述长度。skill 的本地化描述变化，以及按工作区的触发状态覆盖（`passive`、`active-only` 或 `ignored`），同样算作成员关系变更。
 
 ## 目录
 

@@ -59,7 +59,11 @@ export const Config: Schema<Config> = z.object({
   maxSubjectChars: z.number().step(1).min(200),
 })
 
-/** Resolve and validate configuration; misconfiguration fails at load. */
+/**
+ * Resolve and validate configuration; misconfiguration fails at load.
+ * @param config - plugin configuration; every field is optional.
+ * @returns the absolute document path plus the prompt and per-subject caps.
+ */
 export function resolveConfig(config: Config): {
   docPath: string
   maxPromptChars: number
@@ -89,7 +93,12 @@ function tailFromHeadingBoundary(trimmed: string, maxChars: number): string {
   return boundary === -1 ? cut : cut.slice(boundary + 1)
 }
 
-/** The section text for the document's global part; empty when there is none. */
+/**
+ * The section text for the document's global part; empty when there is none.
+ * @param raw - the document's global, subject-less text.
+ * @param maxPromptChars - tail cap, applied on a `## ` boundary when one exists.
+ * @returns the headed section text, or `''` when the global text is blank.
+ */
 export function lessonsSectionText(raw: string, maxPromptChars: number): string {
   const trimmed = raw.trim()
   if (trimmed === '') return ''
@@ -100,7 +109,12 @@ export function lessonsSectionText(raw: string, maxPromptChars: number): string 
   ].join('\n')
 }
 
-/** The appended text for ONE subject's lessons; empty when that subject has none. */
+/**
+ * The appended text for ONE subject's lessons; empty when that subject has none.
+ * @param raw - that subject's own lessons.
+ * @param maxSubjectChars - tail cap, applied on a `## ` boundary when one exists.
+ * @returns the headed text, or `''` when the subject has no lessons.
+ */
 export function subjectLessonsText(raw: string, maxSubjectChars: number): string {
   const trimmed = raw.trim()
   if (trimmed === '') return ''

@@ -1851,7 +1851,7 @@ export interface ReconnectConfig {
 }
 ```
 
-Source: [`packages/mcp/mcp-client/src/index.ts:140`](../packages/mcp/mcp-client/src/index.ts)
+Source: [`packages/mcp/mcp-client/src/index.ts:146`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2167,12 +2167,17 @@ export interface Config {
   workspaceRoot?: string
 }
 
+/**
+ * Locales for the policy context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/sandbox/sandbox-policy/src/index.ts:94`](../packages/sandbox/sandbox-policy/src/index.ts)
+Source: [`packages/sandbox/sandbox-policy/src/index.ts:95`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -3471,10 +3476,15 @@ export interface Config {
   catalogTranslationsFile?: string
 }
 
+/**
+ * Locale the published skill catalog renders in. `auto` follows the assembly
+ * locale so a Chinese deployment gets a Chinese catalog, while `en` and `zh`
+ * pin it regardless of the surrounding prompt language.
+ */
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 ```
 
-Source: [`packages/skill/tool-skill/src/index.ts:97`](../packages/skill/tool-skill/src/index.ts)
+Source: [`packages/skill/tool-skill/src/index.ts:102`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="deepseek-aidsh-tool-str-replace-editor"></a>
 
@@ -3750,10 +3760,15 @@ export interface Config {
  */
 export type ApprovalPolicy = 'ask' | 'never'
 
+/**
+ * Locales for the approval context: `auto` follows the language the prompt
+ * assembly resolved — the interface language the user picked in settings —
+ * while `en`/`zh` pin it. Anything unresolvable falls back to English.
+ */
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:152`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:153`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 

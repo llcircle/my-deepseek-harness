@@ -1636,20 +1636,18 @@ describe('built-in conversation node Definitions', () => {
           tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
         },
       }),
-      // The next prompt is committed as an in-history update inside step 2; the
-      // header that reports it lands in step 3, where it owns its own card and
-      // can therefore name the sections that moved.
-      systemUpdateAt(6, '# Persona\n\ngraph tools\n\nclick things', 1, 2),
+      // The prompt changes outside an in-history route, so node 0 is replaced and
+      // the next header is the first place the change is model-visible as a
+      // header. That header owns its own card, which can therefore name the
+      // sections that moved instead of repeating the ones that did not.
+      systemAt(6, '# Persona\n\ngraph tools\n\nclick things', 3),
       at(8, 'step/start', { turn: 1, step: 3 }),
       at(9, 'request/header', {
         reason: 'change',
         header: {
           config: { provider: 'fake', model: 'fake' },
           systemSections: [...base, { name: 'computer:policy', text: 'click things' }],
-          tools: [
-            { name: 'read', description: 'Read', parameters: { type: 'object' } },
-            { name: 'computer_click', description: 'Click', parameters: { type: 'object' } },
-          ],
+          tools: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
         },
       }),
     ])
@@ -1658,10 +1656,9 @@ describe('built-in conversation node Definitions', () => {
       const candidate = snapshot(value).nodes.get(key)
       return candidate?.kind === 'system-prompt' ? [candidate.data] : []
     })
-    // The in-history card keeps the whole text; the header card names what moved.
+    // The replaced node keeps its historical card; the change card names what moved.
     expect(prompts).toEqual([
       { text: '# Persona\n\ngraph tools' },
-      { text: '# Persona\n\ngraph tools\n\nclick things', update: true },
       {
         text: '# Persona\n\ngraph tools\n\nclick things',
         sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
@@ -1681,7 +1678,7 @@ describe('built-in conversation node Definitions', () => {
         reason: 'initial',
         header: { config: { provider: 'fake', model: 'fake' } },
       }),
-      systemUpdateAt(5, '# Second', 1, 2),
+      systemAt(5, '# Second', 3),
       at(7, 'step/start', { turn: 1, step: 3 }),
       at(8, 'request/header', {
         reason: 'change',
@@ -1695,7 +1692,6 @@ describe('built-in conversation node Definitions', () => {
     })
     expect(prompts).toEqual([
       { text: '# First' },
-      { text: '# Second', update: true },
       { text: '# Second' },
     ])
   })

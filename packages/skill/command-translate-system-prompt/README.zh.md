@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-部署注入的系统提示词只写一次，通常是英文，用户永远看不到文本本身——只看到它的效果。`/translate-system-prompt` 让它以两种语言可读：命令通过 system-prompt 服务组装出接收方 agent 确切生效的 agent 作用域系统提示词，启动一个后台一次性子代理并携带渲染后的文本，由子代理写出两份文件：双语 markdown 档案（默认工作区的 `.dsh/system-prompt.zh.md`，内含 `## Original` 一节与完整的 `## <locale>` 翻译），以及纯翻译提示词（默认 `.dsh/system-prompt.zh.prompt.md`），后者会被 `dsh-system-prompt` 在该项目后续组装中自动使用。命令本身不运行模型工作，也从不触碰主线对话。
+部署注入的系统提示词只写一次，通常是英文，用户永远看不到文本本身——只看到它的效果。`/translate-system-prompt` 让它以两种语言可读：命令组装出接收方 agent 确切生效的 agent 作用域系统提示词，启动一个后台一次性子代理并携带渲染后的文本，由子代理写出两份文件：双语 markdown 档案（默认 `.dsh/system-prompt.zh.md`，内含 `## Original` 一节与完整的 `## <locale>` 翻译），以及纯翻译提示词（默认 `.dsh/system-prompt.zh.prompt.md`），后者会被 `dsh-system-prompt` 在该项目后续组装中使用。命令本身不运行模型工作。
 
 ## 目录
 
@@ -131,3 +131,5 @@ kind: "package-reference"
 本 Dev Note 是维护者的工作上下文；明确不具权威性。开放方向：在设置中展示双语档案提示词的客户端读取器。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该命令只负责渲染当前提示词并交给子 agent；子 agent 写出的文件由 `dsh-system-prompt` 消费，组装路径归它所有。

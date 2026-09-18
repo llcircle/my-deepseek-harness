@@ -14,14 +14,19 @@ Source: [`packages/core/system-prompt/src/index.ts`](../../packages/core/system-
 /** Merge-extensible context for one prompt assembly. */
 interface AssembleContext {
   /**
-   * Scope whose providers and waterfall listeners participate. When absent,
-   * only global providers and subject-less listeners participate.
-   */
+     * Scope whose providers and waterfall listeners participate. When absent,
+     * only global providers and subject-less listeners participate.
+     */
   scope?: ScopeKey
   /** Session workspace used to resolve per-session prompt file configuration. */
   cwd?: string
   /** Explicit control signal for the turn that requested this assembly, when any. */
   signal?: AbortSignal
+  /**
+     * 本次装配生效的语言。由注册表解析后写入，分段与上下文提供者据此选文案；
+     * 调用方不需要、也不应该自己传。
+     */
+  locale?: PromptLocale
 }
 ```
 

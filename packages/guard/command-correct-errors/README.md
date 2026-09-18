@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-A journal full of failed tool calls fixes nothing by itself, and lessons scattered across runs are lost lessons. `/correct-errors` runs one correction pass: the command reads the newest failed calls from the tool error journal and the existing system-level reflection document (default `<dshHome>/error-reflections.md`), starts ONE background one-shot subagent ordered to merge both into the rewritten reflection document, then appends the raw journal content to the append-only archive (`<dshHome>/tool-error-log-archive.jsonl`) and clears the journal so the next pass starts fresh. The command runs no model work itself, and the child runs independently of the main conversation — its result lands on the subagent surface, not in your chat.
+A journal full of failed tool calls fixes nothing by itself, and lessons scattered across runs are lost lessons. `/correct-errors` runs one correction pass: it reads the newest failed calls from the tool error journal and the existing reflection document (default `<dshHome>/error-reflections.md`), starts ONE background one-shot subagent ordered to merge both into the rewritten document, then archives the raw journal content (`<dshHome>/tool-error-log-archive.jsonl`) and clears it. The command runs no model work itself, and the child's result lands on the subagent surface, not in your chat.
 
 ## Table of Contents
 
@@ -122,3 +122,5 @@ Independent of the main conversation: the child is its own session with its own 
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: an automatic trigger that starts the same reflection after a configurable number of journal entries, reusing the same prompt builder.
 
 </details>
+
+**Runtime invariant:** No companion is published. The command runs no model work of its own and keeps no in-process state; the child owns every write, and the journal and reflection document are operator-owned files.

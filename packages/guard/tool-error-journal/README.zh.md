@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-每次失败的工具调用——参数错误、MCP 服务器崩溃、超时的抓取——都会以错误结果到达模型，然后消失在会话日志里。`dsh-tool-error-journal` 保留一份跨会话的持久记录：它观察提交后的 session 事件流，从进程内每个会话挑选失败的 `tool/result` 记录（核心工具与 MCP 工具一样——它们都经由同一事件出现），并把每个失败追加为 JSONL 文件中的一行有界 JSON。该日志是面向操作者和纠错工具的只写状态；没有任何路径把它读回循环。当你想要一个文件回答"哪些工具调用失败过、何时、为何"时选择它；逐会话检查日志已足够时可以跳过。
+失败的工具调用会以错误结果到达模型，然后消失在会话日志里。`dsh-tool-error-journal` 改为保留一份跨会话的持久记录：它观察提交后的 session 事件流，从进程内每个会话挑选失败的 `tool/result` 记录（核心工具与 MCP 工具都经由同一事件出现），并把每个失败追加为 JSONL 文件中的一行有界 JSON。该日志是面向操作者和纠错工具的只写状态；没有任何路径把它读回循环。当你想要一个文件回答"哪些调用失败过、何时、为何"时选择它；逐会话检查日志已足够时可以跳过。
 
 ## 目录
 
@@ -117,3 +117,5 @@ None, as 本日志只写一个面向操作者的文件，不注册任何模型�
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: the planned correction command reads this file and hands recent entries to a background subagent that writes a reflection document.
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该日志是供运维方与纠错工具使用的只追加、只写状态；没有任何东西把它读回循环，因此不存在循环可见的关系。

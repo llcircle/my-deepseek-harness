@@ -16234,7 +16234,7 @@
         "event:assistant/attempt.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:349"
+        "packages/core/session/src/types.ts:355"
       ]
     },
     {
@@ -18113,7 +18113,7 @@
         "event:session/end-seed.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:419"
+        "packages/core/session/src/types.ts:425"
       ]
     },
     {
@@ -19950,7 +19950,7 @@
         "event:system/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:324"
+        "packages/core/session/src/types.ts:330"
       ]
     },
     {
@@ -27338,7 +27338,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:453"
+        "packages/core/session/src/types.ts:459"
       ]
     },
     {
@@ -27866,7 +27866,7 @@
         "event:tool/result.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:369"
+        "packages/core/session/src/types.ts:375"
       ]
     },
     {
@@ -34397,7 +34397,7 @@
         "packages/core/session/src/types.ts#RequestHeaderReason"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:275"
+        "packages/core/session/src/types.ts:281"
       ]
     },
     {
@@ -40314,7 +40314,7 @@
         "event:assistant/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:335"
+        "packages/core/session/src/types.ts:341"
       ]
     },
     {
@@ -41294,7 +41294,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:48"
+        "packages/skill/tool-skill/src/index.ts:53"
       ]
     },
     {
@@ -48627,7 +48627,7 @@
         "event:request/header.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:384"
+        "packages/core/session/src/types.ts:390"
       ]
     },
     {
@@ -48800,7 +48800,7 @@
         "event:tool/result.data.error"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:377",
+        "packages/core/session/src/types.ts:383",
         "packages/core/tools/src/types.ts:24"
       ]
     },
@@ -49851,7 +49851,7 @@
         "packages/core/session/src/types.ts#RequestContext"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:256"
+        "packages/core/session/src/types.ts:262"
       ]
     },
     {
@@ -52508,7 +52508,7 @@
         "SessionEventEnvelope[6].surfaceOp[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:455"
+        "packages/core/session/src/types.ts:461"
       ]
     },
     {
@@ -55987,7 +55987,7 @@
         "event:turn/end.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:299"
+        "packages/core/session/src/types.ts:305"
       ]
     },
     {
@@ -58817,7 +58817,7 @@
         "event:tool/call.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:355"
+        "packages/core/session/src/types.ts:361"
       ]
     },
     {
@@ -59788,8 +59788,8 @@
         "event:step/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:301",
-        "packages/core/session/src/types.ts:303"
+        "packages/core/session/src/types.ts:307",
+        "packages/core/session/src/types.ts:309"
       ]
     },
     {
@@ -60809,7 +60809,7 @@
         "event:turn/start.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:290"
+        "packages/core/session/src/types.ts:296"
       ]
     },
     {
@@ -60989,7 +60989,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:42"
+        "packages/skill/tool-skill/src/index.ts:47"
       ]
     },
     {

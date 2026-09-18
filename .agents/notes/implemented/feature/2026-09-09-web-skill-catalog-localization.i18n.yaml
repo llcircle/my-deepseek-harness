@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-web-skill-catalog-localization.md
-2026-09-09-web-skill-catalog-localization.md: 148dabc9d987047c44caa9f1676256e45cbf83cb
-2026-09-09-web-skill-catalog-localization.zh.md: db3ab808be9c87cb07dee3c72516e5e439b2b2fc
+2026-09-09-web-skill-catalog-localization.md: ed4a2c6312396b5be0ec1596934fcbaee557b272
+2026-09-09-web-skill-catalog-localization.zh.md: 964e225c6f11b24103700b48885193cd38e78e1d

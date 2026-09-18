@@ -7,21 +7,22 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## Summary
+## 概述
 
 `dsh-computer-python` 在 Windows 上实现 `ctx.computer`：用一小段纯标准库的 Python 脚本驱动真实桌面。它用 GDI 截取整个虚拟屏幕、用 `zlib` 编码 PNG，并通过 `SendInput` 发送指针与键盘输入，全部经由 `ctypes`——不需要第三方包、不需要编译器、不需要原生扩展。它和 [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) 配套发布，由后者决定模型何时可以启用它。当智能体需要操作 Windows 桌面、而你不希望分发原生二进制时选择它；在其它平台上不必挂载，它会给出诚实的原因而不是留到后面才失败。
 
-## Table of Contents
+## 目录
 
-- [Use this package](#use-this-package)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [使用本包](#use-this-package)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用本包
 
 把它与消费方一起挂载，由消费方把 seam 变成工具。
 
@@ -55,7 +56,7 @@ UTF-8 文本输入走 `KEYEVENTF_UNICODE`，它直接投递字符码，因此中
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 进一步探索
 
 - [`dsh-computer`](../computer/README.zh.md) —— 本包实现的 seam，含坐标契约。
 - [`dsh-tool-computer-use`](../tool-computer-use/README.zh.md) —— 决定模型何时可以动手的消费方。
@@ -64,17 +65,33 @@ UTF-8 文本输入走 `KEYEVENTF_UNICODE`，它直接投递字符码，因此中
 -----
 
 <a id="model-experience"></a>
-## Model Experience
+## 模型体验
 
-没有直接影响。模型看到的是消费方注册的工具；本包不贡献自己的提示词或 schema。
+通过 `dsh-tool-computer-use` 间接产生影响；该消费方拥有模型看到的工具 schema 与指导文本，本提供方不贡献自己的提示词或 schema。
 
------
+#### KV Cache 影响
+
+不会直接使缓存失效；只有具名消费方的分节与 schema 才会改变请求前缀。
+
+## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **仅 Windows。** 其它平台得到带原因的 `available(): false`；macOS 提供方会用 `CGEvent`/`screencapture`，Linux 提供方会用 X11 或 Wayland 抓取，都在同一个接口之后。
 - **每个动作一个进程。** 简单、无状态，代价是每次调用约一百毫秒的解释器启动。常驻会话能省掉这部分，但要付出生命周期与崩溃恢复的复杂度，本包暂时不承担。
 - **截图是整个虚拟屏幕。** 没有区域截取，也没有窗口定向；多显示器桌面会产生一张很宽的图。
 - **不校验动作是否生效。** seam 报告的是输入已送达，不是目标应用已响应。确认结果意味着再截一次屏。
 - **需要桌面会话。** Windows 服务或没有交互式桌面的 SSH 会话会报告不可用，而不是返回黑屏。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+- 运行时是一个独立脚本（`runtime/computer_agent.py`），通过 stdio 用 JSON 行通信。Node 侧既不导入 Python 也不链接它——正是这条边界让提供方在 JS 侧不引入任何第三方依赖。
+- 两个只有在真实桌面上才会暴露的缺陷，都在协议边界处修掉：拖拽工具永远到不了起点（参数名与通用解析器不匹配），纵向滚轮方向是反的（Win32 `MOUSEEVENTF_WHEEL` 正数表示向上滚）。取反处现在带注释，因为对外契约跟的是 `WheelEvent` 而不是 Win32。
+
+</details>
+
+**运行时不变式：** 不发布伴生入口。每个动作都以一次性进程运行，不在本包留下持久状态；启用状态只由消费方记录。

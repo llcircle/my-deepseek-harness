@@ -53,6 +53,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/browser-use/browser-use': { kind: 'none', reason: 'The registry only reserves a provider name; providers own browser tools and Session resources.' },
   'packages/experimental/browser-use-runtime': { kind: 'indirect', reason: 'Browser providers call the library to own resources and expose upstream MCP tools.' },
   'packages/computer-use/computer-use': { kind: 'none', reason: 'The registry only reserves provider names; providers own all model-facing tools and guidance.' },
+  'packages/computer/computer': { kind: 'none', reason: 'The seam only declares provider operations; the consumer that registers tools owns every model-facing schema, section, and event.' },
+  'packages/computer/computer-python': { kind: 'indirect', reason: 'The provider backend delegates model rendering to the tool-computer-use consumer that owns the schemas and guidance.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/guard/command-correct-errors': { kind: 'indirect', reason: 'The command delegates model-visible correction work to its one-shot subagent; the main conversation receives only the human-facing command acknowledgement.' },
   'packages/guard/command-summarize-skill': { kind: 'indirect', reason: 'The command delegates model-visible summarization work to its one-shot subagent; the main conversation receives only the human-facing command acknowledgement.' },

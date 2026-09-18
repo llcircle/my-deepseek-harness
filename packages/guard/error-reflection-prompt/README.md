@@ -115,3 +115,5 @@ The section sits at order 100, after the deployment persona and before policy se
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open directions: scoped per-project lesson stores resolved from the session's project root, and a freshness marker line so users can tell stale lessons from current ones at a glance.
 
 </details>
+
+**Runtime invariant:** No companion is published. The section is a pure capped-tail projection of an operator-owned document, so there is no second observation to compare against.

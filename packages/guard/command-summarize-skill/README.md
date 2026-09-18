@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-A conversation that just solved a problem contains a workflow worth keeping — and it evaporates when the session ends. `/summarize-skill` captures it: the command extracts the newest user/assistant text turns from the receiving agent's session, starts ONE background one-shot subagent whose prompt carries the excerpt and orders it to write the distilled workflow as a project skill file (`<skillsDir>/<kebab-name>/SKILL.md`, default `.dsh/skills/`), and reports the child run id immediately. The child runs independently of the main conversation; the skill filesystem provider watches the directory, so the new skill enters the catalog without any manual invalidation. The command runs no model work itself and writes nothing — the child owns the file through its own write tool, sandbox, and approvals.
+A conversation that just solved a problem contains a workflow worth keeping, and it evaporates when the session ends. `/summarize-skill` captures it: the command extracts the newest user/assistant text turns from the receiving agent's session, starts ONE background one-shot subagent whose prompt carries the excerpt and orders it to write the distilled workflow as a project skill file (`<skillsDir>/<kebab-name>/SKILL.md`, default `.dsh/skills/`), and reports the child run id. The child owns the file through its own write tool, sandbox, and approvals; the command runs no model work itself and writes nothing.
 
 ## Table of Contents
 
@@ -114,3 +114,5 @@ Independent of the main conversation: the child is its own session with its own 
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: an explicit turn-range argument (`/summarize-skill <from>..<to>`) reusing the same prompt builder instead of the newest-turns default.
 
 </details>
+
+**Runtime invariant:** No companion is published. The command runs no model work of its own and writes nothing; the child owns the skill file through its own write tool, sandbox, and approvals.

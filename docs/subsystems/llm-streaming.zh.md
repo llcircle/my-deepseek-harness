@@ -592,39 +592,39 @@ interface GenerateOptions {
   /** Adapter-owned reasoning effort selected for this exact model. */
   reasoningEffort?: ReasoningEffortId
   /**
-   * Ordered conversation messages, exactly as the provider sees them. A
-   * loop-built request passes the derived history (dsh-agent-loop), whose
-   * leading system-role message carries the system prompt; a hand-built
-   * one-shot passes any list.
-   */
+     * Ordered conversation messages, exactly as the provider sees them. A
+     * loop-built request passes the derived history (dsh-agent-loop), whose
+     * leading system-role message carries the system prompt; a hand-built
+     * one-shot passes any list.
+     */
   messages: Message[]
   /**
-   * System prompt text for one-shot callers; adapters map it to the provider's
-   * system slot ahead of `messages`. Loop-built requests leave it undefined.
-   */
+     * System prompt text for one-shot callers; adapters map it to the provider's
+     * system slot ahead of `messages`. Loop-built requests leave it undefined.
+     */
   system?: string
   /** Tool schemas (adapters map to the provider's `tools` field). */
   tools?: ToolSchema[]
   temperature?: number
   maxTokens?: number
   /**
-   * Stop sequences: generation halts as soon as the model produces any one of
-   * these strings (adapters map to the provider's stop field, e.g. OpenAI
-   * `stop`). The stop string itself is not included in the output.
-   */
+     * Stop sequences: generation halts as soon as the model produces any one of
+     * these strings (adapters map to the provider's stop field, e.g. OpenAI
+     * `stop`). The stop string itself is not included in the output.
+     */
   stop?: string[]
   signal?: AbortSignal
   /**
-   * Session identity stamped by the loop for request routing. Replay uses it
-   * to separate cursors; adapters may map it to model-hidden transport metadata.
-   */
+     * Session identity stamped by the loop for request routing. Replay uses it
+     * to separate cursors; adapters may map it to model-hidden transport metadata.
+     */
   sessionId?: Branded<'SessionId'>
   /**
-   * Provider-neutral classification for an auxiliary model call. Adapters may
-   * map the purpose to model-hidden transport metadata or purpose-specific
-   * generation policy. Ordinary conversation requests leave it unset.
-   */
-  purpose?: 'compaction' | 'session-title'
+     * Provider-neutral classification for an auxiliary model call. Adapters may
+     * map the purpose to model-hidden transport metadata or purpose-specific
+     * generation policy. Ordinary conversation requests leave it unset.
+     */
+  purpose?: 'compaction' | 'session-title' | 'tool-error-reflection'
 }
 ```
 

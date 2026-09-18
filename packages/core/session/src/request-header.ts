@@ -15,6 +15,11 @@ import type { EpochHeader, SessionEvent } from './types.ts'
  * Normalize a header to canonical form: an empty tool list or section list
  * becomes an absent field, matching how requests are built. Logging, folding,
  * and comparison use this one representation.
+ *
+ * `systemSections` rides along as display metadata only. The system prompt is
+ * derived history — surface node 0, a `system/message` event — so a prompt edit
+ * is expressed by the request series, never by the header envelope; see
+ * {@link headerEquals}.
  * @param header - the header to normalize (not mutated).
  * @returns the canonical header.
  */
@@ -37,16 +42,23 @@ function sameSchema(a: ToolSchema, b: ToolSchema): boolean {
 
 /**
  * Field-wise equality over canonical headers. Tool schemas compare in order.
+ *
+ * This decides whether the NEXT request needs a new header snapshot, so it
+ * compares the request envelope alone: config, adapter defaults, and tools.
+ * `systemSections` is deliberately excluded — it is a rendered snapshot kept
+ * for source-aware display, and the prompt it mirrors already reaches the model
+ * as derived history (surface node 0). Letting it into the comparison would
+ * rewrite the header on every prompt edit and on every runtime-context refresh,
+ * reporting an envelope change where only the prompt moved.
  * @param a - one canonical header.
  * @param b - the other.
- * @returns whether config, adapter defaults, sections, and tools all match.
+ * @returns whether config, adapter defaults, and tools all match.
  */
 export function headerEquals(a: EpochHeader, b: EpochHeader): boolean {
   if (
     !callConfigEquals(a.config, b.config)
     || a.adapterDefaults?.reasoningEffort !== b.adapterDefaults?.reasoningEffort
     || a.adapterDefaults?.maxTokens !== b.adapterDefaults?.maxTokens
-    || JSON.stringify(a.systemSections ?? []) !== JSON.stringify(b.systemSections ?? [])
   ) return false
   const at = a.tools ?? []
   const bt = b.tools ?? []

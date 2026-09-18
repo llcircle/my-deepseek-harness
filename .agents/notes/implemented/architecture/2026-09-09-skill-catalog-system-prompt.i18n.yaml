@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-skill-catalog-system-prompt.md
-2026-09-09-skill-catalog-system-prompt.md: 04ad0c7725f0832e2fda4c8a38c8f9cb3e178ad7
-2026-09-09-skill-catalog-system-prompt.zh.md: e05ac3e4ecb4780ce4fc8801d20f426d87beaa05
+2026-09-09-skill-catalog-system-prompt.md: c7203a6dd238e60daf405f607ce54b2ab2eee0d7
+2026-09-09-skill-catalog-system-prompt.zh.md: 75e748552c4ae89c67a047505788de9ed9dca9b5

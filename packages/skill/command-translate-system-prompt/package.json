@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-command-translate-system-prompt",
   "description": "The /translate-system-prompt command: starts a background one-shot subagent that translates the assembled system prompt into a bilingual archive file",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

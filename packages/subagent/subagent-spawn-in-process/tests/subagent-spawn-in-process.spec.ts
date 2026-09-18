@@ -505,8 +505,12 @@ describe('dsh-subagent-spawn-in-process', () => {
       await run.result
       // The parent's own request (index 0) still carries it: suppression is
       // scoped to the child, never a deployment-wide edit.
-      expect(adapter.requests[0]!.system).toContain('DEPLOYMENT NOTE MARKER.')
-      expect(adapter.requests.at(-1)!.system).not.toContain('DEPLOYMENT NOTE MARKER.')
+      const childSystem = systemPromptOf(adapter.requests.at(-1)!)
+      expect(systemPromptOf(adapter.requests[0]!)).toContain('DEPLOYMENT NOTE MARKER.')
+      // The child keeps a prompt of its own — suppression drops the named
+      // section, it does not blank the child's system message.
+      expect(childSystem).not.toBe('')
+      expect(childSystem).not.toContain('DEPLOYMENT NOTE MARKER.')
       await run.dispose()
     })
   })

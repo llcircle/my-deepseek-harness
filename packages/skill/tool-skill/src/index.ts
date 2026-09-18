@@ -30,6 +30,11 @@ export const inject = ['agents', 'tools', 'skills', 'systemPrompt']
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
 /** Locales with catalog translation support; anything else renders the raw catalog. */
 const CATALOG_LOCALES = ['auto', 'en', 'zh'] as const
+/**
+ * Locale the published skill catalog renders in. `auto` follows the assembly
+ * locale so a Chinese deployment gets a Chinese catalog, while `en` and `zh`
+ * pin it regardless of the surrounding prompt language.
+ */
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 /** Default per-project translation archive consumed by the Chinese catalog. */
 const DEFAULT_CATALOG_TRANSLATIONS_FILE = '.dsh/skill-translations.zh.json'

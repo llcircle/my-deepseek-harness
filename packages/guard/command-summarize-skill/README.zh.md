@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-一段刚解决问题的对话蕴含着值得保存的工作流——会话结束它就蒸发了。`/summarize-skill` 捕获它：命令从接收代理的会话提取最近的 user/assistant 文本轮次，启动一个后台一次性子代理——其提示词携带摘录并指示它把提炼出的工作流写成项目 skill 文件（`<skillsDir>/<kebab-name>/SKILL.md`，默认 `.dsh/skills/`）——并立即报告子代理运行 id。子代理独立于主对话运行；skill 文件系统提供方 watch 该目录，新 skill 无需任何手动失效即进入目录。命令本身不运行模型工作、不写任何内容——文件归子代理通过它自己的 write 工具、沙箱与审批完成。
+一段刚解决问题的对话蕴含着值得保存的工作流，会话结束它就蒸发了。`/summarize-skill` 捕获它：命令从接收代理的会话提取最近的 user/assistant 文本轮次，启动一个后台一次性子代理，其提示词携带摘录并指示它把提炼出的工作流写成项目 skill 文件（`<skillsDir>/<kebab-name>/SKILL.md`，默认 `.dsh/skills/`），并报告子代理运行 id。文件归子代理通过它自己的 write 工具、沙箱与审批完成；命令本身不运行模型工作、不写任何内容。
 
 ## 目录
 
@@ -115,3 +115,5 @@ Indirectly, through 总结子代理：命令自身的确认只面向人类，而
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: an explicit turn-range argument (`/summarize-skill <from>..<to>`) reusing the same prompt builder instead of the newest-turns default.
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该命令自身不跑模型、不写任何文件；技能文件由子 agent 通过自己的写工具、沙箱与审批链路写入。

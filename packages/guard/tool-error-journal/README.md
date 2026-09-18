@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Every failed tool call — a bad argument, a crashed MCP server, a timed-out fetch — already reaches the model as an error result and then disappears into the session log. `dsh-tool-error-journal` keeps a durable, cross-session record: it observes the post-commit session feed, selects failed `tool/result` records from every session in the process (core tools and MCP tools alike — both surface through the same event), and appends one bounded JSON line per failure to a JSONL file. The journal is write-only state for operators and correction tooling; nothing reads it back into the loop. Choose it when you want one file to answer "which tool calls failed, when, and why" across sessions; skip it when per-session log inspection is enough.
+A failed tool call already reaches the model as an error result and then disappears into the session log. `dsh-tool-error-journal` keeps a durable, cross-session record: it observes the post-commit session feed, selects failed `tool/result` records from every session in the process (core and MCP tools both surface through the same event), and appends one bounded JSON line per failure to a JSONL file. The journal is write-only state for operators and correction tooling; nothing reads it back. Choose it to answer "which calls failed, when, and why" across sessions; skip it when per-session log inspection is enough.
 
 ## Table of Contents
 
@@ -116,3 +116,5 @@ Independent: the journal contributes no model-visible content, so it never chang
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Open direction: the planned correction command reads this file and hands recent entries to a background subagent that writes a reflection document.
 
 </details>
+
+**Runtime invariant:** No companion is published. The journal is append-only, write-only state for operators and correction tooling; nothing reads it back into the loop, so no loop-visible relation exists.

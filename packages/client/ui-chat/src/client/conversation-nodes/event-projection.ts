@@ -40,15 +40,19 @@ const KNOWN_FORMS: readonly KnownContextForm[] = [
 ]
 
 /**
- * Read the target-supported presentation form from a durable message source.
+ * Whether a message is a pre-migration skill catalog persisted as user-role context.
  * @param source - Logged `user/message` source.
- * @returns Supported form, or null for the opaque presentation.
+ * @returns True when the source carries the legacy `skill-catalog` kind.
  */
-/** Whether a message is a pre-migration skill catalog persisted as user-role context. */
 export function isLegacySkillCatalogSource(source: unknown): boolean {
   return asRecord(source)?.kind === 'skill-catalog'
 }
 
+/**
+ * Read the target-supported presentation form from a durable message source.
+ * @param source - Logged `user/message` source.
+ * @returns Supported form, or null for the opaque presentation.
+ */
 export function contextForm(source: unknown): KnownContextForm | null {
   const record = asRecord(source)
   const form = record === null ? null : readString(record, 'form')

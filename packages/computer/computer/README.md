@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -54,14 +55,30 @@ Implement the abstract class, load the class as a plugin (it registers as `ctx.c
 <a id="model-experience"></a>
 ## Model Experience
 
-None. This package contributes no prompt text, no tool schema, and no context. The model never learns it exists; it only sees whatever tools a consumer derives from it.
+None, as this package declares only the seam's provider operations and registers no prompt text, tool schema, or session event of its own.
 
------
+#### KV Cache effect
+
+The seam contributes no tokens; only the consumer's section and schemas can change a request prefix.
+
+## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **Windows only, through the shipped provider.** The seam itself is platform-neutral, but nothing implements macOS or Linux yet; `available()` reports an honest reason there rather than failing at the first click.
 - **No accessibility tree.** The model locates targets by looking at pixels. That is the difference between "click at (640, 400)" and "click the Save button", and it is the main source of brittleness on unfamiliar UIs.
 - **No screenshot-region or window targeting.** Every capture is the whole virtual screen; a multi-monitor setup sends one wide image.
 - **No per-action approval wiring.** A deployment that wants confirmation before destructive clicks must add it through `tools/pre-execute`; this seam does not decide policy.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+- The seam is deliberately provider-agnostic: nothing in `src/` names Windows. A new platform provider implements `ComputerUse` and needs no change here; `available()` must report a reason instead of throwing, because that is what lets a deployment mount a provider unconditionally.
+- The shipped pair is `dsh-computer-python` (provider) + `dsh-tool-computer-use` (consumer). Both are separate packages so a deployment can replace either half.
+
+</details>
+
+**Runtime invariant:** No companion is published. The package owns only an interface and a provider registry: a provider holds every platform fact, so no durable package-local relation exists to cross-check.

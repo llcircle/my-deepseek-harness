@@ -72,7 +72,12 @@ export const Config: Schema<Config> = z.object({
 })
 
 
-/** Resolve and validate configuration; misconfiguration fails at load. */
+/**
+ * Resolve and validate configuration; misconfiguration fails at load.
+ * @param config - plugin configuration; every field is optional.
+ * @returns the skills directory, the optional turn cap, the provider, and the
+ * child composition the command propagates.
+ */
 export function resolveConfig(config: Config): {
   skillsDir: string
   maxTurns: number | undefined
@@ -115,6 +120,8 @@ export interface SummaryInput {
  * leading `N-M` selects that 1-based inclusive range, and everything else —
  * or the text after either selector — is user guidance. A bare string without
  * a leading selector is guidance for the whole conversation.
+ * @param rawInput - raw text typed after the `/summarize-skill` command name.
+ * @returns the parsed turn selection and/or guidance; `{}` for blank input.
  */
 export function parseSummaryInput(rawInput: string): SummaryInput {
   const trimmed = rawInput.trim()
@@ -140,7 +147,12 @@ export function parseSummaryInput(rawInput: string): SummaryInput {
   return { guidance: trimmed }
 }
 
-/** Apply the parsed selection to the full conversation. */
+/**
+ * Apply the parsed selection to the full conversation.
+ * @param turns - the whole conversation, oldest first.
+ * @param input - parsed selection from {@link parseSummaryInput}.
+ * @returns the selected turns, oldest first.
+ */
 export function selectTurns(turns: readonly ConversationTurn[], input: SummaryInput): ConversationTurn[] {
   if (input.from !== undefined && input.to !== undefined) {
     if (input.from > turns.length) {
@@ -156,6 +168,9 @@ export function selectTurns(turns: readonly ConversationTurn[], input: SummaryIn
  * Extract the user/assistant text turns from committed session events. An
  * undefined `max` keeps the whole conversation; otherwise only the newest
  * `max` turns are kept.
+ * @param events - committed session events in log order.
+ * @param max - keep only the newest N turns; omit to keep the whole conversation.
+ * @returns the user/assistant text turns, oldest first.
  */
 export function recentTurns(events: readonly SessionEvent[], max?: number): ConversationTurn[] {
   const turns: ConversationTurn[] = []
@@ -178,7 +193,13 @@ function textOf(content: readonly ContentBlock[]): string {
   return content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim()
 }
 
-/** Build the child's prompt: capture instructions, optional guidance, plus the conversation excerpt. */
+/**
+ * Build the child's prompt: capture instructions, optional guidance, plus the conversation excerpt.
+ * @param turns - conversation excerpt the child distills the workflow from.
+ * @param skillsDir - directory the skill bundle is written under.
+ * @param guidance - user guidance defining what to capture; omitted uses the default rule.
+ * @returns the child's prompt blocks.
+ */
 export function buildSummaryPrompt(turns: readonly ConversationTurn[], skillsDir: string, guidance?: string): ContentBlock[] {
   const listing = turns.map(turn => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`).join('\n\n')
   const text = [

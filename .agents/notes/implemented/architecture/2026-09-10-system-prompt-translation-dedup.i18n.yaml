@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-system-prompt-translation-dedup.md
-2026-09-10-system-prompt-translation-dedup.md: 0b52aa97e83a98381b66ac13fe106a70d56e4b89
-2026-09-10-system-prompt-translation-dedup.zh.md: f376c518cef5fb2ac86b31aab4c4f52a72e85500
+2026-09-10-system-prompt-translation-dedup.md: fc73fba4208135fc8ce008df3ae72a5f35415901
+2026-09-10-system-prompt-translation-dedup.zh.md: d757f6efbb21da7183690c0fcd6a005f0492c3ec

@@ -41,18 +41,24 @@ const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
 /** Valid `serverName`, kept below the public tool-name budget. */
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 
-/** Prompt section name carrying one server's introduction, i.e. `mcp:<serverName>`. */
+/**
+ * Prompt section name carrying one server's introduction, i.e. `mcp:<serverName>`.
+ * @param serverName - the instance's `serverName`.
+ * @returns the `mcp:<serverName>` section name.
+ */
 export function mcpServerSectionName(serverName: string): string {
   return `mcp:${serverName}`
 }
 
 /**
- * 一个 MCP 服务器在系统提示词里的介绍。
+ * One MCP server's introduction in the system prompt.
  *
- * 文本按装配语言现算，而不是查翻译表：服务器名和工具清单都是运行期事实，
- * 分段名（`mcp:<serverName>`）也是动态的，双语资产那张按名字索引的表根本挂不上。
- * 分段名里出现工具清单还有一个副作用是有用的——模型由此知道哪些工具是同一个
- * 服务器的，而不是把它们当成散落的第一方工具。
+ * The text is computed from the assembly locale instead of a translation table:
+ * the server name and the tool list are runtime facts and the section name
+ * (`mcp:<serverName>`) is dynamic too, so the name-indexed bilingual asset
+ * cannot reach it. Carrying the tool list in the section name also has a
+ * useful side effect — the model learns which tools belong to one server
+ * instead of reading them as scattered first-party tools.
  *
  * @param serverName - the instance's `serverName`.
  * @param toolNames - public tool names the server currently owns.

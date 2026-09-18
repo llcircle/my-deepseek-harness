@@ -246,8 +246,14 @@ export class ReactLoopAgent implements Agent {
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
-    // 抬头语言跟着装配语言走：中文部署看到中文的"当前运行时上下文"。
-    const context = this.runtimeContext.project(joinContextSections(sections, assembly.locale ?? 'zh'), sections)
+    // The heading and the cleared marker share one model message, so both take
+    // the assembly's language: a zh deployment sees a zh "current runtime context".
+    const contextLocale = assembly.locale ?? 'zh'
+    const context = this.runtimeContext.project(
+      joinContextSections(sections, contextLocale),
+      sections,
+      contextLocale,
+    )
     const decision = await this.dispatch.waterfall(
       'agent/pre-step', { messages: claimed, ...position, signal },
       (): Promise<PreStepDecision> => Promise.resolve<PreStepDecision>({

@@ -49,7 +49,12 @@ export const Config: Schema<Config> = z.object({
   provider: z.string().min(1).default('spawn'),
 })
 
-/** Resolve and validate configuration; misconfiguration fails at load. */
+/**
+ * Resolve and validate configuration; misconfiguration fails at load.
+ * @param config - plugin configuration; every field is optional.
+ * @returns the bilingual archive path, the translation-only prompt path, the
+ * target locale, and the provider the command propagates.
+ */
 export function resolveConfig(config: Config): {
   archivePath: string
   promptOnlyPath: string
@@ -64,7 +69,14 @@ export function resolveConfig(config: Config): {
   }
 }
 
-/** Build the child's prompt: bilingual archive instructions plus the original text. */
+/**
+ * Build the child's prompt: bilingual archive instructions plus the original text.
+ * @param original - the exact agent-scoped system prompt to translate.
+ * @param archivePath - file the child writes the bilingual markdown archive to.
+ * @param promptOnlyPath - file the child writes the translation alone to.
+ * @param targetLocale - locale the original is translated into.
+ * @returns the child's prompt blocks.
+ */
 export function buildTranslationPrompt(
   original: string,
   archivePath: string,

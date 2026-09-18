@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-error-reflection-prompt",
   "description": "Injects the deployment's tool-error reflection document into the system prompt as a capped lessons section",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

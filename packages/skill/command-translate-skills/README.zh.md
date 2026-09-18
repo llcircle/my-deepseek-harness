@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-Skill 简介由作者用什么语言写就是什么语言，目录里因此混着多种语言，读者在到达工作流之前先要跟词汇作战。`/translate-skills` 产出一份区域语言存档：命令从 `ctx.skills.list()` 读取每个 skill 的 `description` 与可选 `whenToUse`，启动一个后台一次性子代理——携带这些摘要与明确范围：只翻简介，不翻 skill 名，永不翻正文——由子代理把翻译写成一个 JSON 文件（默认工作区的 `.dsh/skill-translations.zh.json`，以 skill 名为键）。命令本身不运行模型工作；正文从一开始就不进提示词，"永不翻译正文"是结构性保证。`dsh-tool-skill` 会自动消费该存档，因此一次成功翻译即可让会话目录以中文渲染。
+Skill 简介由作者用什么语言写就是什么语言，目录里因此混着多种语言。`/translate-skills` 产出一份区域语言存档：命令从 `ctx.skills.list()` 读取每个 skill 的 `description` 与可选 `whenToUse`，启动一个后台一次性子代理，携带这些摘要与明确范围——只翻简介，不翻 skill 名，永不翻正文——由子代理把翻译写成一个 JSON 文件（默认 `.dsh/skill-translations.zh.json`，以 skill 名为键）。命令本身不运行模型工作；正文从一开始就不进提示词，因此始终不被触碰。`dsh-tool-skill` 会消费该存档，一次成功翻译即可让会话目录以中文渲染。
 
 ## 目录
 
@@ -126,3 +126,5 @@ Indirectly, through 翻译子代理：命令自身的确认只面向人类，而
 本 Dev Note 是维护者的工作上下文；明确不具权威性。开放方向：UI 语言匹配时把存档摘要覆盖到 skill 菜单的客户端读取器。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。该命令自身不跑模型；子 agent 写入一份归档文件，读取路径由消费归档的技能目录提供方拥有。

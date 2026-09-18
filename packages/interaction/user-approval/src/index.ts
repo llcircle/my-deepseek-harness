@@ -62,12 +62,13 @@ export type ApprovalPolicy = 'ask' | 'never'
 /** Every {@link ApprovalPolicy}, for option advertisement and runtime validation of untrusted policy strings. */
 export const APPROVAL_POLICIES: readonly ApprovalPolicy[] = ['ask', 'never']
 
+const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
+
 /**
  * Locales for the approval context: `auto` follows the language the prompt
  * assembly resolved — the interface language the user picked in settings —
  * while `en`/`zh` pin it. Anything unresolvable falls back to English.
  */
-const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 
 /** A locale already resolved for rendering; `auto` never reaches the templates. */

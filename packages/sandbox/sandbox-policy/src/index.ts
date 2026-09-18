@@ -38,12 +38,13 @@ function resolveWorkspaceRoot(path: string): string {
   return path
 }
 
+const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
+
 /**
  * Locales for the policy context: `auto` follows the language the prompt
  * assembly resolved — the interface language the user picked in settings —
  * while `en`/`zh` pin it. Anything unresolvable falls back to English.
  */
-const CONTEXT_LOCALES = ['auto', 'en', 'zh'] as const
 export type ContextLocale = (typeof CONTEXT_LOCALES)[number]
 
 /** A locale already resolved for rendering; `auto` never reaches the templates. */

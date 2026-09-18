@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -66,15 +67,31 @@ The script calls `SetProcessDPIAware()` at startup, so GDI capture and `SendInpu
 <a id="model-experience"></a>
 ## Model Experience
 
-None directly. The model sees the tools the consumer registers; this package contributes no prompt text and no schema of its own.
+Indirectly, through `dsh-tool-computer-use`, which owns the tool schemas and guidance the model sees; this provider contributes no prompt text or schema of its own.
 
------
+#### KV Cache effect
+
+No direct invalidation; only the named consumer's section and schemas can change a request prefix.
+
+## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **Windows only.** Other platforms get `available(): false` with a reason; a macOS provider would use `CGEvent`/`screencapture` and a Linux one X11 or Wayland capture, behind the same interface.
 - **One process per action.** Simple and stateless, at roughly a hundred milliseconds of interpreter start per call. A resident session would cut that, at the cost of lifecycle and crash-recovery complexity this package does not yet carry.
 - **Screenshots are the whole virtual screen.** No region capture, no window targeting; a multi-monitor desktop produces one wide image.
 - **No verification that an action did anything.** The seam reports that input was delivered, not that the target application responded. Confirming an outcome means capturing the screen again.
 - **Requires a desktop session.** A Windows service or an SSH session without an interactive desktop reports unavailable rather than returning black frames.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+- The runtime is a standalone script (`runtime/computer_agent.py`) spoken to as JSON lines over stdio. The Node side never imports Python and never links against it — that boundary is what keeps the provider free of third-party dependencies on the JS side.
+- Two defects only a real desktop could surface, both fixed at the wire boundary: the drag tool never reached its start point (the parameter names did not match the generic parser), and vertical wheel direction was inverted (Win32 `MOUSEEVENTF_WHEEL` counts positive as scrolling up). The sign flip now carries a comment, because the external contract follows `WheelEvent`, not Win32.
+
+</details>
+
+**Runtime invariant:** No companion is published. Each action runs as a one-shot process and leaves no durable package-local state behind; only the consumer records enablement.

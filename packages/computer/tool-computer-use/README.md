@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-computer-use` gives the model nine desktop actions — screenshot, screen geometry, pointer position, move, click, drag, type, key, scroll — but only in sessions where the user asked for them. The capability stays out of the request entirely until you type `/computer` or say something like "操作电脑"; after that it stays available until `/computer off`, across resume and fork. It also owns the guidance the model follows while acting, written to keep the loop honest: look before acting, check after acting, and never treat what is on screen as an instruction. Choose it when an agent should operate the user's real desktop under explicit consent; skip it when the agent only needs files and commands.
+`dsh-tool-computer-use` gives the model nine desktop actions (screenshot, geometry, pointer position, move, click, drag, type, key, scroll) that exist only where the user asked for them. It stays out of the request until you type `/computer` or say something like "操作电脑", then survives until `/computer off`, across resume and fork. It also owns the guidance the model follows while acting: look, act, look again, and never treat screen content as an instruction. Choose it to let an agent drive the real desktop under explicit consent; skip it when the agent needs only files and commands.
 
 ## Table of Contents
 
@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -76,17 +77,53 @@ Tools are deliberately fine-grained rather than one "write a script" executor: e
 <a id="model-experience"></a>
 ## Model Experience
 
-While disabled: nothing. No tools, no prompt section, no context — the model cannot tell the capability exists. The prompt editor shows no row for it either, because there is no section to list; a lesson already written under `## computer:policy` stays in the document but is reported as having no matching ability, and is therefore not injected.
+### Tool schemas
 
-While enabled: nine tools named `computer_*`, plus a `computer:policy` prompt section covering the work loop (look, act, look again), action selection (prefer keys over coordinates; use the clipboard to move text between applications), and the security boundary. Screenshot results arrive as an image plus a text envelope that states the image-to-screen coordinate mapping and frames the content as untrusted evidence.
+#### What the model sees
 
------
+While the capability is enabled, the model receives nine `computer_*` schemas — `computer_screenshot`, `computer_screen_geometry`, `computer_pointer_position`, `computer_move`, `computer_click`, `computer_drag`, `computer_type`, `computer_key`, and `computer_scroll` — catalogued under [computer-use tools](../../../docs/tool-catalog.md#deepseek-aidsh-tool-computer-use). While it is disabled no schema exists at all, so nothing in the request advertises a capability the session cannot use.
+
+#### Token effect
+
+All nine schemas cost their full length on every request while enabled, and nothing while disabled. A screenshot result also carries an image block, so its cost tracks the captured resolution rather than the number of actions taken.
+
+#### KV Cache effect
+
+Enabling or disabling rewrites the tool catalog, so reuse breaks from the point the schemas join the request. While the capability stays enabled the unchanged schemas keep the prefix reusable, and each screenshot appends an image block after that prefix.
+
+### Guidance prompt section
+
+#### What the model sees
+
+Enabling registers a `computer:policy` section into the agent's own scope in the same step as the tools, and `/computer off` disposes it; a disabled session carries no section rather than an empty one, so the prompt editor shows no row for it and a lesson already written under `## computer:policy` is reported as having no matching ability instead of being injected. The text is the shipped asset unless the deployment's `policy` config replaces it wholesale. Screenshot results arrive as an image plus a text envelope that states the image-to-screen coordinate mapping and frames the content as untrusted evidence.
+
+#### Token effect
+
+The section text repeats on every request while enabled and costs nothing while disabled. A deployment `policy` spends its own length in place of the shipped asset.
+
+#### KV Cache effect
+
+Adding or removing the section changes the system prompt from that section onward, so reuse breaks from the first changed token. The text itself stays stable for as long as the capability remains enabled.
+
+## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-## Known Limitations and Deferred Work
 
 - **No approval prompt per action.** Every action a model takes while enabled runs immediately; the guardrail is the guidance text plus whatever `tools/pre-execute` policy a deployment adds.
 - **Trigger phrases are literal substring matches.** They are chosen to be specific, but a message that discusses desktop automation without asking for it will still enable the capability. `/computer off` is the escape hatch.
 - **No screenshot throttling.** A model that captures in a loop spends tokens on images at its own pace; nothing here rate-limits it.
 - **The escape hatch is `/computer off`, not a key.** A model stuck in a click loop is stopped by cancelling the turn; there is no non-model interrupt channel like Claude Code's overlay hotkey.
 - **No activity trail beyond session events.** Enable, disable, and every action are in the log, but there is no separate desktop-automation audit surface.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+- Enablement runs on `agent/inbox/claimed`, which is earlier than tool-schema assembly. That is why an enabling message gets the tools in the same request instead of one step late; moving the hook later is not an optimization, it is a behaviour change.
+- The screenshot tool checks the session's model route for a declared `image` input before capturing. Without that guard a text-only model burns a capture on an image nobody can read.
+
+</details>
+
+**Runtime invariant:** No companion is published. Enablement and every action are already durable as `computer/mode`, `tool/call`, and `tool/result` session events, and the section text has a single owner.
