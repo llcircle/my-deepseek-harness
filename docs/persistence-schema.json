@@ -9115,7 +9115,7 @@
       "kind": "event",
       "event": "system/message",
       "surface": true,
-      "digest": "69becfb6b2d3fd5da91518089454cae8ef33f1835637ec44dde35dd077fd4bae",
+      "digest": "855b07c113645a3254fa5858cdfe457bfc2e289a8a7a90bc48151ffe3d0110f8",
       "schema": {
         "root": 0,
         "nodes": [
@@ -9172,6 +9172,11 @@
                 "name": "step",
                 "type": 10,
                 "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 34,
+                "optional": true
               },
               {
                 "name": "turn",
@@ -16234,7 +16239,7 @@
         "event:assistant/attempt.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:355"
+        "packages/core/session/src/types.ts:369"
       ]
     },
     {
@@ -18113,7 +18118,7 @@
         "event:session/end-seed.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:425"
+        "packages/core/session/src/types.ts:439"
       ]
     },
     {
@@ -19395,562 +19400,6 @@
       ],
       "sources": [
         "packages/core/session/src/types.ts:195"
-      ]
-    },
-    {
-      "digest": "2074f40221b76c75fd314246db558965dc3477dfb440bcc952b1eedc9778e366",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "message",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "step",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "turn",
-                "type": 9,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "content",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "id",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "role",
-                "type": 28,
-                "optional": false
-              },
-              {
-                "name": "source",
-                "type": 29,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "array",
-            "element": 3
-          },
-          {
-            "kind": "union",
-            "types": [
-              4,
-              7,
-              18,
-              21,
-              24,
-              26
-            ]
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "arguments",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "id",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "literal",
-            "value": "tool-call"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachment",
-                "type": 8,
-                "optional": false
-              },
-              {
-                "name": "offloaded",
-                "type": 16,
-                "optional": true
-              },
-              {
-                "name": "type",
-                "type": 17,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachmentId",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "bytes",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "height",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "mediaType",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "originalDimensions",
-                "type": 15,
-                "optional": true
-              },
-              {
-                "name": "width",
-                "type": 9,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "union",
-            "types": [
-              11,
-              12,
-              13,
-              14
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "image/gif"
-          },
-          {
-            "kind": "literal",
-            "value": "image/jpeg"
-          },
-          {
-            "kind": "literal",
-            "value": "image/png"
-          },
-          {
-            "kind": "literal",
-            "value": "image/webp"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "height",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "width",
-                "type": 9,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "literal",
-            "value": "image"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachment",
-                "type": 19,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 20,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachmentId",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "bytes",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "file"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "content",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "isError",
-                "type": 22,
-                "optional": true
-              },
-              {
-                "name": "toolCallId",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 23,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "boolean"
-          },
-          {
-            "kind": "literal",
-            "value": "tool-result"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "text",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 25,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "reasoning"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "text",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 27,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "text"
-          },
-          {
-            "kind": "literal",
-            "value": "system"
-          },
-          {
-            "kind": "union",
-            "types": [
-              30,
-              35,
-              37,
-              39,
-              41,
-              43,
-              45
-            ]
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 31,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "sections",
-                "type": 33,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "snapshot"
-          },
-          {
-            "kind": "literal",
-            "value": "plugin"
-          },
-          {
-            "kind": "array",
-            "element": 34
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "name",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "text",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 36,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "summary",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "notice"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 38,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "catalog"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 40,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "recall"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 42,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "relay"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 44,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "instructions"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "kind",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 5,
-                "optional": false
-              }
-            ],
-            "indices": []
-          }
-        ]
-      },
-      "names": [
-        "event:system/message.data"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:330"
       ]
     },
     {
@@ -27338,7 +26787,7 @@
         "packages/core/session/src/types.ts#SurfaceOp"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:459"
+        "packages/core/session/src/types.ts:473"
       ]
     },
     {
@@ -27866,7 +27315,7 @@
         "event:tool/result.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:375"
+        "packages/core/session/src/types.ts:389"
       ]
     },
     {
@@ -37611,645 +37060,6 @@
       ]
     },
     {
-      "digest": "69becfb6b2d3fd5da91518089454cae8ef33f1835637ec44dde35dd077fd4bae",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "data",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "ignorable",
-                "type": 17,
-                "optional": true
-              },
-              {
-                "name": "seq",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "sourceEventSeqs",
-                "type": 47,
-                "optional": true
-              },
-              {
-                "name": "surfaceOp",
-                "type": 48,
-                "optional": false
-              },
-              {
-                "name": "time",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 52,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "message",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "step",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "turn",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "content",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "id",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "role",
-                "type": 29,
-                "optional": false
-              },
-              {
-                "name": "source",
-                "type": 30,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "array",
-            "element": 4
-          },
-          {
-            "kind": "union",
-            "types": [
-              5,
-              8,
-              19,
-              22,
-              25,
-              27
-            ]
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "arguments",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "id",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 7,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "literal",
-            "value": "tool-call"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachment",
-                "type": 9,
-                "optional": false
-              },
-              {
-                "name": "offloaded",
-                "type": 17,
-                "optional": true
-              },
-              {
-                "name": "type",
-                "type": 18,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachmentId",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "bytes",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "height",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "mediaType",
-                "type": 11,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "originalDimensions",
-                "type": 16,
-                "optional": true
-              },
-              {
-                "name": "width",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "union",
-            "types": [
-              12,
-              13,
-              14,
-              15
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "image/gif"
-          },
-          {
-            "kind": "literal",
-            "value": "image/jpeg"
-          },
-          {
-            "kind": "literal",
-            "value": "image/png"
-          },
-          {
-            "kind": "literal",
-            "value": "image/webp"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "height",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "width",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "literal",
-            "value": "image"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachment",
-                "type": 20,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 21,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "attachmentId",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "bytes",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "file"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "content",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "isError",
-                "type": 23,
-                "optional": true
-              },
-              {
-                "name": "toolCallId",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 24,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "boolean"
-          },
-          {
-            "kind": "literal",
-            "value": "tool-result"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "text",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 26,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "reasoning"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "text",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 28,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "text"
-          },
-          {
-            "kind": "literal",
-            "value": "system"
-          },
-          {
-            "kind": "union",
-            "types": [
-              31,
-              36,
-              38,
-              40,
-              42,
-              44,
-              46
-            ]
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 32,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "sections",
-                "type": 34,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "snapshot"
-          },
-          {
-            "kind": "literal",
-            "value": "plugin"
-          },
-          {
-            "kind": "array",
-            "element": 35
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "name",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "text",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 37,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "summary",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "notice"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 39,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "recall"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 41,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "relay"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 43,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "catalog"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "form",
-                "type": 45,
-                "optional": false
-              },
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "instructions"
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "kind",
-                "type": 33,
-                "optional": false
-              },
-              {
-                "name": "plugin",
-                "type": 6,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "array",
-            "element": 10
-          },
-          {
-            "kind": "union",
-            "types": [
-              49,
-              51
-            ]
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "endSeq",
-                "type": 10,
-                "optional": false
-              },
-              {
-                "name": "op",
-                "type": 50,
-                "optional": false
-              },
-              {
-                "name": "startSeq",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": "replace"
-          },
-          {
-            "kind": "literal",
-            "value": "append"
-          },
-          {
-            "kind": "literal",
-            "value": "system/message"
-          }
-        ]
-      },
-      "names": [
-        "event:system/message"
-      ],
-      "sources": []
-    },
-    {
       "digest": "69d238a6e9b08d67f601b1825962963d8d3523cb69ebf6208c697dc5d058c199",
       "schema": {
         "root": 0,
@@ -40314,7 +39124,7 @@
         "event:assistant/message.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:341"
+        "packages/core/session/src/types.ts:355"
       ]
     },
     {
@@ -41428,6 +40238,650 @@
       "sources": [
         "packages/goal/goal/src/types.ts:52"
       ]
+    },
+    {
+      "digest": "855b07c113645a3254fa5858cdfe457bfc2e289a8a7a90bc48151ffe3d0110f8",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 17,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "sourceEventSeqs",
+                "type": 47,
+                "optional": true
+              },
+              {
+                "name": "surfaceOp",
+                "type": 48,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 52,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "message",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "step",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 34,
+                "optional": true
+              },
+              {
+                "name": "turn",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "content",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "role",
+                "type": 29,
+                "optional": false
+              },
+              {
+                "name": "source",
+                "type": 30,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 4
+          },
+          {
+            "kind": "union",
+            "types": [
+              5,
+              8,
+              19,
+              22,
+              25,
+              27
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "arguments",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": "tool-call"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachment",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "offloaded",
+                "type": 17,
+                "optional": true
+              },
+              {
+                "name": "type",
+                "type": 18,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachmentId",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "bytes",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "height",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "mediaType",
+                "type": 11,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "originalDimensions",
+                "type": 16,
+                "optional": true
+              },
+              {
+                "name": "width",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "union",
+            "types": [
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "image/gif"
+          },
+          {
+            "kind": "literal",
+            "value": "image/jpeg"
+          },
+          {
+            "kind": "literal",
+            "value": "image/png"
+          },
+          {
+            "kind": "literal",
+            "value": "image/webp"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "height",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "width",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "image"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachment",
+                "type": 20,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 21,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachmentId",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "bytes",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "file"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "content",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "isError",
+                "type": 23,
+                "optional": true
+              },
+              {
+                "name": "toolCallId",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 24,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "literal",
+            "value": "tool-result"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "text",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 26,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "reasoning"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "text",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 28,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "text"
+          },
+          {
+            "kind": "literal",
+            "value": "system"
+          },
+          {
+            "kind": "union",
+            "types": [
+              31,
+              36,
+              38,
+              40,
+              42,
+              44,
+              46
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "sections",
+                "type": 34,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "snapshot"
+          },
+          {
+            "kind": "literal",
+            "value": "plugin"
+          },
+          {
+            "kind": "array",
+            "element": 35
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 37,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "summary",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "notice"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 39,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "recall"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 41,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "relay"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 43,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "catalog"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 45,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "instructions"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "kind",
+                "type": 33,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "union",
+            "types": [
+              49,
+              51
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "endSeq",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "op",
+                "type": 50,
+                "optional": false
+              },
+              {
+                "name": "startSeq",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "replace"
+          },
+          {
+            "kind": "literal",
+            "value": "append"
+          },
+          {
+            "kind": "literal",
+            "value": "system/message"
+          }
+        ]
+      },
+      "names": [
+        "event:system/message"
+      ],
+      "sources": []
     },
     {
       "digest": "85e1bd563d6c80c1f377f99f91103fec4e315148a7330f3b3dae7c2d04e33b01",
@@ -43569,6 +43023,567 @@
       ],
       "sources": [
         "packages/llm/llm/src/types.ts:147"
+      ]
+    },
+    {
+      "digest": "8e4faf52d92489c936ab89b7c273bc1685aeb41ff379c81c8963214d010b0934",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "message",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "step",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "systemSections",
+                "type": 33,
+                "optional": true
+              },
+              {
+                "name": "turn",
+                "type": 9,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "content",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "role",
+                "type": 28,
+                "optional": false
+              },
+              {
+                "name": "source",
+                "type": 29,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 3
+          },
+          {
+            "kind": "union",
+            "types": [
+              4,
+              7,
+              18,
+              21,
+              24,
+              26
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "arguments",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "id",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 6,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": "tool-call"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachment",
+                "type": 8,
+                "optional": false
+              },
+              {
+                "name": "offloaded",
+                "type": 16,
+                "optional": true
+              },
+              {
+                "name": "type",
+                "type": 17,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachmentId",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "bytes",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "height",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "mediaType",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "originalDimensions",
+                "type": 15,
+                "optional": true
+              },
+              {
+                "name": "width",
+                "type": 9,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "union",
+            "types": [
+              11,
+              12,
+              13,
+              14
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "image/gif"
+          },
+          {
+            "kind": "literal",
+            "value": "image/jpeg"
+          },
+          {
+            "kind": "literal",
+            "value": "image/png"
+          },
+          {
+            "kind": "literal",
+            "value": "image/webp"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "height",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "width",
+                "type": 9,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "image"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachment",
+                "type": 19,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 20,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attachmentId",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "bytes",
+                "type": 9,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "file"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "content",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "isError",
+                "type": 22,
+                "optional": true
+              },
+              {
+                "name": "toolCallId",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 23,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "boolean"
+          },
+          {
+            "kind": "literal",
+            "value": "tool-result"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "text",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 25,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "reasoning"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "text",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 27,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "text"
+          },
+          {
+            "kind": "literal",
+            "value": "system"
+          },
+          {
+            "kind": "union",
+            "types": [
+              30,
+              35,
+              37,
+              39,
+              41,
+              43,
+              45
+            ]
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 31,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "sections",
+                "type": 33,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "snapshot"
+          },
+          {
+            "kind": "literal",
+            "value": "plugin"
+          },
+          {
+            "kind": "array",
+            "element": 34
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "text",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 36,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "summary",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "notice"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 38,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "catalog"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 40,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "recall"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 42,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "relay"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "form",
+                "type": 44,
+                "optional": false
+              },
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "instructions"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "kind",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "plugin",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          }
+        ]
+      },
+      "names": [
+        "event:system/message.data"
+      ],
+      "sources": [
+        "packages/core/session/src/types.ts:338"
       ]
     },
     {
@@ -48627,7 +48642,7 @@
         "event:request/header.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:390"
+        "packages/core/session/src/types.ts:404"
       ]
     },
     {
@@ -48800,7 +48815,7 @@
         "event:tool/result.data.error"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:383",
+        "packages/core/session/src/types.ts:397",
         "packages/core/tools/src/types.ts:24"
       ]
     },
@@ -52508,7 +52523,7 @@
         "SessionEventEnvelope[6].surfaceOp[1]"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:461"
+        "packages/core/session/src/types.ts:475"
       ]
     },
     {
@@ -53070,7 +53085,8 @@
       },
       "names": [
         "event:agent/inbox/spliced.data.inserted[0].source[4].sections",
-        "event:request/header.data.header.systemSections"
+        "event:request/header.data.header.systemSections",
+        "event:system/message.data.systemSections"
       ],
       "sources": []
     },
@@ -58817,7 +58833,7 @@
         "event:tool/call.data"
       ],
       "sources": [
-        "packages/core/session/src/types.ts:361"
+        "packages/core/session/src/types.ts:375"
       ]
     },
     {

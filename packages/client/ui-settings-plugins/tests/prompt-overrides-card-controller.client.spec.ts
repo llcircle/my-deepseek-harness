@@ -9,8 +9,10 @@
  *
  * 第二条契约是「经验按能力分行，未装配的能力不出现」。名单来自**这次装配**的
  * 分段预览，而不是哪张编好的表：`mcp:github` 只有真挂了 github 服务器才存在，
- * `computer:policy` 只有启用电脑操作才注册。文档里那些找不到对应能力的旧经验
- * 只被计数，既不显示也不会被保存动作顺手删掉。
+ * `computer:policy` 只有启用电脑操作才注册。名单还包括分段**自己声明**的子主题：
+ * 一个 MCP 服务器只有一节提示词，它的每个工具却在反思文档里各占一格，所以服务器
+ * 那一行底下紧跟每个工具一行。文档里那些找不到对应能力的旧经验只被计数，既不显示
+ * 也不会被保存动作顺手删掉。
  *
  * 第三条契约是「纠错按钮只负责按下」：融合、写文档、归档、清空日志全都由既有的
  * `/correct-errors` 命令承担，卡片不去维护第二份状态——经验文档由后台子代理稍后
@@ -27,13 +29,19 @@ import {
   type ReflectionBlockPreview,
 } from '../src/client/prompt-overrides-card-controller.ts'
 
-/** 一次装配里常见的一组分段：两个工具、一个 MCP 服务器，外加一段人格。 */
+/** 一次装配里常见的一组分段：两个工具、一个 MCP 服务器（带两个工具），外加一段人格。 */
 const LIVE_SECTIONS = [
-  { name: 'deployment:persona-prefix', zh: '人格', en: 'Persona', editable: true },
-  { name: 'tool:read', zh: '用 read 读文件', en: 'Use read', editable: true },
-  { name: 'tool:write', zh: '用 write 写文件', en: 'Use write', editable: true },
-  { name: 'mcp:github', zh: '', en: 'This session has the MCP server "github" connected, providing: mcp__github__search.', editable: true },
-  { name: 'computer:policy', zh: '', en: '', editable: false },
+  { name: 'deployment:persona-prefix', zh: '人格', en: 'Persona', editable: true, subjects: [] },
+  { name: 'tool:read', zh: '用 read 读文件', en: 'Use read', editable: true, subjects: [] },
+  { name: 'tool:write', zh: '用 write 写文件', en: 'Use write', editable: true, subjects: [] },
+  {
+    name: 'mcp:github',
+    zh: '',
+    en: 'This session has the MCP server "github" connected, providing: mcp__github__create_issue, mcp__github__search.',
+    editable: true,
+    subjects: ['mcp__github__create_issue', 'mcp__github__search'],
+  },
+  { name: 'computer:policy', zh: '', en: '', editable: false, subjects: [] },
 ]
 
 /** A controller wired to a ready scope and a set of stubbed Host reads. */
@@ -66,12 +74,14 @@ async function refreshed(face: ReturnType<PromptOverridesCardController['inject'
 }
 
 describe('reflectionKindOf', () => {
-  it('recognizes the three ability families and nothing else', () => {
+  it('recognizes the four ability families and nothing else', () => {
     expect(reflectionKindOf('tool:read')).toBe('tool')
     expect(reflectionKindOf('mcp:github')).toBe('mcp')
+    expect(reflectionKindOf('mcp__github__search')).toBe('mcp-tool')
     expect(reflectionKindOf('computer:policy')).toBe('computer')
     // 前缀单独出现不算能力：没有名字就没有可称呼的对象。
     expect(reflectionKindOf('tool:')).toBeUndefined()
+    expect(reflectionKindOf('mcp__github__')).toBeUndefined()
     expect(reflectionKindOf('deployment:persona-prefix')).toBeUndefined()
     expect(reflectionKindOf('computer:other')).toBeUndefined()
   })
@@ -103,16 +113,59 @@ describe('PromptOverridesCardController', () => {
     await refreshed(face)
 
     const rows = stateOf(face).reflectionRows
-    expect(rows.map(row => row.subject)).toEqual(['computer:policy', 'mcp:github', 'tool:read', 'tool:write'])
-    expect(rows.map(row => row.kind)).toEqual(['computer', 'mcp', 'tool', 'tool'])
-    // 能力名字去掉类别前缀；电脑操作没有名字，交给界面按类别称呼。
-    expect(rows.map(row => row.label)).toEqual(['', 'github', 'read', 'write'])
+    // 一个 MCP 服务器占多行：服务器自己一行，它声明的每个工具各一行，紧挨在一起。
+    expect(rows.map(row => row.subject)).toEqual([
+      'computer:policy',
+      'mcp:github',
+      'mcp__github__create_issue',
+      'mcp__github__search',
+      'tool:read',
+      'tool:write',
+    ])
+    expect(rows.map(row => row.kind)).toEqual(['computer', 'mcp', 'mcp-tool', 'mcp-tool', 'tool', 'tool'])
+    // 能力名字去掉类别前缀；电脑操作没有名字，交给界面按类别称呼；MCP 工具读成
+    // "服务器 › 工具"，一行自己就能说清归属。
+    expect(rows.map(row => row.label)).toEqual([
+      '',
+      'github',
+      'github › create_issue',
+      'github › search',
+      'read',
+      'write',
+    ])
     // 介绍随行带上，用户能看见自己的经验会被追加到哪段话后面。
     expect(rows.find(row => row.subject === 'tool:read')?.zh).toBe('用 read 读文件')
     expect(rows.find(row => row.subject === 'mcp:github')?.en).toContain('"github"')
+    // 工具行没有介绍可看：工具说明在工具 schema 里，不在系统提示词里。
+    expect(rows.find(row => row.subject === 'mcp__github__search')?.en).toBe('')
     // 没写过的能力是空串，不是缺字段——界面据此渲染空输入框。
     expect(rows.find(row => row.subject === 'tool:write')?.text).toBe('')
+    expect(rows.find(row => row.subject === 'mcp__github__search')?.text).toBe('')
     expect(rows.find(row => row.subject === 'tool:read')?.text).toBe('读大文件要先看行数')
+  })
+
+  it('keeps a tool\'s lessons editable while its server is still here', async () => {
+    const { face } = harness({
+      readReflections: async () => [
+        { subject: 'mcp__github__deleted_tool', text: '这个工具已经下架了' },
+      ],
+    })
+
+    await refreshed(face)
+
+    // 注入按服务器前缀整块进行，这条经验照样发得出去，界面就没理由把它藏起来——
+    // 藏起来等于用户再也改不动一段正在生效的提示词。它排在同服务器的那堆工具里
+    // （按工具名排序），不会跑去别处。
+    expect(stateOf(face).reflectionRows.map(row => row.subject)).toEqual([
+      'computer:policy',
+      'mcp:github',
+      'mcp__github__create_issue',
+      'mcp__github__deleted_tool',
+      'mcp__github__search',
+      'tool:read',
+      'tool:write',
+    ])
+    expect(stateOf(face).staleReflections).toBe(0)
   })
 
   it('drops the computer row when the section is absent, counting its lessons as stale', async () => {
@@ -126,7 +179,7 @@ describe('PromptOverridesCardController', () => {
     await refreshed(face)
 
     expect(stateOf(face).reflectionRows.map(row => row.subject))
-      .toEqual(['mcp:github', 'tool:read', 'tool:write'])
+      .toEqual(['mcp:github', 'mcp__github__create_issue', 'mcp__github__search', 'tool:read', 'tool:write'])
     expect(stateOf(face).staleReflections).toBe(1)
   })
 

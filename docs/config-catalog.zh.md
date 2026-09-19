@@ -721,7 +721,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/guard/error-reflection-prompt/src/index.ts:46`](../packages/guard/error-reflection-prompt/src/index.ts)
+来源：[`packages/guard/error-reflection-prompt/src/index.ts:63`](../packages/guard/error-reflection-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -1812,6 +1812,19 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Deployment-authored introduction for this server, appended after the server's literal
+   * instructions and the generated introduction.
+   *
+   * Unlike the generated sentence it does not follow the locale: it renders in whatever
+   * language it is written in. Omitted or empty means this deployment adds nothing, and the
+   * section keeps only the two preceding parts.
+   *
+   * Optional on the `maxInstructionBytes` rule — a later-added field with a default — so no
+   * call site is rewritten; doing so would only add needless conflicts to the next upstream
+   * sync. The schema supplies the default and assembly falls back with `?? ''`.
+   */
+  intro?: string
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1836,6 +1849,12 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Deployment-authored introduction for this server, appended after the literal instructions
+   * and the generated introduction; omitted or empty means none.
+   * Optional for the same reason as the stdio side (later-added, defaulted).
+   */
+  intro?: string
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -1853,7 +1872,7 @@ export interface ReconnectConfig {
 }
 ```
 
-来源：[`packages/mcp/mcp-client/src/index.ts:146`](../packages/mcp/mcp-client/src/index.ts)
+来源：[`packages/mcp/mcp-client/src/index.ts:165`](../packages/mcp/mcp-client/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -3020,7 +3039,7 @@ export type PromptLocalePreference = 'auto' | PromptLocale
 export type PromptLocale = 'zh' | 'en'
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:616`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:636`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3200,7 +3219,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/guard/tool-error-journal/src/index.ts:47`](../packages/guard/tool-error-journal/src/index.ts)
+来源：[`packages/guard/tool-error-journal/src/index.ts:48`](../packages/guard/tool-error-journal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 

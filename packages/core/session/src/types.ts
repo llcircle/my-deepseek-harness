@@ -326,8 +326,22 @@ export interface SessionEventMap {
    * Empty later nodes are dormant and project to no message; an empty head with
    * no active later node records "no system prompt". Restored nonempty text follows
    * the same route and series rule; empty nodes never restore older text.
+   *
+   * `systemSections` rides the event as display metadata: the fully rendered
+   * source sections of the very assembly this text was rendered from. It lives
+   * here rather than only on the header because the prompt is derived history —
+   * a card showing the prompt belongs to the commit that established it, and the
+   * in-history route commits prompts without logging a header at all. Absent for
+   * an empty rendering and in logs written before the field existed; a reader
+   * without it falls back to the plain text.
    */
-  'system/message': { turn: number; step: number; message: SystemMessage }
+  'system/message': {
+    turn: number
+    step: number
+    message: SystemMessage
+    /** Rendered source sections of the assembly behind this text; absent when unavailable. */
+    systemSections?: SystemPromptSectionSnapshot[]
+  }
   /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so

@@ -16,8 +16,9 @@
  * registration of the same name throws.
  *
  * The reflection document is sectioned by subject: `## tool:read`,
- * `## mcp:github`, `## computer:policy`. `./reflections.ts` owns that split,
- * and `./documents.ts` owns the paths of the three documents.
+ * `## mcp:github`, `## mcp__github__search`, `## computer:policy`.
+ * `./reflections.ts` owns that split, and `./documents.ts` owns the paths of the
+ * three documents.
  *
  * @module @deepseek-ai/dsh-tool-error-journal
  */

@@ -870,6 +870,33 @@ describe('SystemPrompt', () => {
       }
     })
 
+    it('projects a section\'s declared sub-subjects so one section can become several rows', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt)
+      // 一个 MCP 服务器：提示词里只有一节，但它的每个工具在反思文档里各占一格。
+      ctx.systemPrompt.section({
+        name: 'mcp:github',
+        order: 200,
+        text: 'Github is connected.',
+        subjects: () => ['mcp__github__search', 'mcp__github__create_issue'],
+      })
+      // 声明本身会炸的分段（工具还没同步出来）不该把整次投影带下去。
+      ctx.systemPrompt.section({
+        name: 'mcp:flaky',
+        order: 200,
+        text: 'Flaky is connected.',
+        subjects: () => { throw new Error('no tools yet') },
+      })
+
+      const sections = await ctx.systemPrompt.sectionTexts()
+
+      expect(sections.find(section => section.name === 'mcp:github')?.subjects)
+        .toEqual(['mcp__github__search', 'mcp__github__create_issue'])
+      // 没声明过的分段是空数组，不是缺字段——界面据此判定"这一节只有它自己一行"。
+      expect(sections.find(section => section.name === 'harness:identity')?.subjects).toEqual([])
+      expect(sections.find(section => section.name === 'mcp:flaky')?.subjects).toEqual([])
+    })
+
     it('lets an explicit completePromptFile override the per-session translation', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dsh-explicit-complete-prompt-'))
       await mkdir(join(dir, '.dsh'), { recursive: true })

@@ -1,7 +1,7 @@
 /** Immutable system-only interpretation of the loaded Session surface. */
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { SessionEvent, SystemPromptSectionSnapshot } from '@deepseek-ai/dsh-session/types'
 import { isSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
-import type { SystemPromptNode } from './request-inspection.ts'
+import type { ConversationPromptSection, SystemPromptNode } from './request-inspection.ts'
 
 interface PositionedSystem {
   readonly position: number
@@ -26,6 +26,23 @@ export interface SystemPromptState {
 
 /** Pure interpretation supplied to target-owned Definitions through uiConversation. */
 export type SystemPromptInspector = (previous: SystemPromptState | undefined, event: SessionEvent) => SystemPromptState
+
+/**
+ * 事件上随正文一起落盘的来源分段。
+ *
+ * 这是"提示词按来源分组显示"的唯一数据来源：提示词现在是派生历史（`system/message`
+ * 事件），in-history 那条提交路径根本不写请求头，所以分段必须跟着事件走，否则
+ * 卡片就只剩一整块文本。旧日志没有这个字段 → 返回空对象，展示侧回退到整块文本。
+ * @param data - `system/message` 事件的数据。
+ * @returns 可展开进节点对象的 `sections` 字段，或空对象。
+ */
+function promptSectionsOf(
+  data: { readonly systemSections?: readonly SystemPromptSectionSnapshot[] },
+): { readonly sections: readonly ConversationPromptSection[] } | object {
+  const sections = data.systemSections
+  if (!Array.isArray(sections) || sections.length === 0) return {}
+  return { sections: sections.map(section => ({ name: section.name, text: section.text })) }
+}
 
 /**
  * Apply a system event or positional replacement without retaining ordinary messages.
@@ -63,6 +80,7 @@ export function inspectSystemPrompt(previous: SystemPromptState | undefined, eve
       step: event.data.step,
       text: event.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join(''),
       update: op === 'append' && previous?.nodes.some(item => item.node.text !== '') === true,
+      ...promptSectionsOf(event.data),
     }
     : undefined
   if (introduced !== undefined) {

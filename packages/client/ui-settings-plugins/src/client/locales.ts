@@ -38,7 +38,7 @@ export type PluginsSettingsLocaleKey =
   | 'reflectionsSaveFailed' | 'reflectionsCorrect' | 'reflectionsCorrecting'
   | 'reflectionsCorrectFailed' | 'reflectionsCorrectNeedsSession'
   | 'reflectionsCorrected'
-  | 'reflectionsKindTool' | 'reflectionsKindMcp' | 'reflectionsKindComputer'
+  | 'reflectionsKindTool' | 'reflectionsKindMcp' | 'reflectionsKindMcpTool' | 'reflectionsKindComputer'
   | 'reflectionsEmpty' | 'reflectionsIntro' | 'reflectionsStale'
 
 /** English copy. */
@@ -129,6 +129,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   reflectionsCorrected: 'Ran /correct-errors. Recorded failures are archived and cleared, and a background child rewrites the lessons; refresh shortly to see the new version.',
   reflectionsKindTool: 'tool',
   reflectionsKindMcp: 'MCP',
+  reflectionsKindMcpTool: 'MCP tool',
   reflectionsKindComputer: 'computer use',
   reflectionsEmpty: 'This session composes no tools, MCP servers, or computer use, so there is nowhere to attach lessons.',
   reflectionsIntro: 'Introduction in the system prompt',
@@ -246,6 +247,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   reflectionsCorrected: '已在当前会话运行 /correct-errors。失败日志已归档并清空，经验文档由后台子代理重写，稍后点“刷新”可看到新版本。',
   reflectionsKindTool: '工具',
   reflectionsKindMcp: 'MCP',
+  reflectionsKindMcpTool: 'MCP 工具',
   reflectionsKindComputer: '电脑操作',
   reflectionsEmpty: '本会话没有装配任何工具、MCP 服务器或电脑操作，没有可以挂经验的地方。',
   reflectionsIntro: '这一节在系统提示词里的介绍',

@@ -4,6 +4,10 @@
  * capped tail on a heading boundary, and — the part that carries the feature —
  * routes each `## <主题>` section of the document to the prompt section of the
  * same name instead of dumping every lesson into one global pile.
+ *
+ * MCP tools have no section of their own, so they land in their server's
+ * section as `### <tool>` blocks — one per tool, in tool-name order, behind the
+ * server's own lessons, each capped on its own.
  */
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -119,11 +123,63 @@ describe('the error-reflection-prompt plugin', () => {
     const { reflection } = await harness({ docPath })
 
     expect(reflection('tool:read')).toContain('读大文件要先看行数。')
-    // MCP 公开工具名归一化成服务器级主题：一条经验不该按工具名碎片化。
+    // MCP 工具没有自己的分段，经验落到它服务器的分段里，按 `### <工具>` 分块。
+    expect(reflection('mcp:github')).toContain('### search')
     expect(reflection('mcp:github')).toContain('仓库名要带 owner。')
     expect(reflection('computer:policy')).toContain('坐标先截图确认。')
     // 没有对应分段的主题不产出文本——它会在装配时被直接丢掉。
     expect(reflection('tool:write')).toBeUndefined()
+    // 工具主题自己也是一条主题，直接问它答的是它自己的经验；只是现场没有这个分段，
+    // 装配时不会有人这么问。`### ` 分块是服务器分段才有的排版，这里不该出现。
+    expect(reflection('mcp__github__search')).toContain('仓库名要带 owner。')
+    expect(reflection('mcp__github__search')).not.toContain('### ')
+  })
+
+  it('puts a server\'s own lessons ahead of its tools, one block per tool', async () => {
+    const dir = await tempDir()
+    const docPath = join(dir, 'reflections.md')
+    // 故意把工具写在服务器前面：注入顺序该由我们决定，不该跟着文档的书写顺序走。
+    await writeFile(docPath, [
+      '## mcp__github__create_issue',
+      '先确认仓库存在。',
+      '',
+      '## mcp__github__search',
+      '仓库名要带 owner。',
+      '',
+      '## mcp:github',
+      '这个服务器要 token。',
+      '',
+      '## mcp__gitlab__search',
+      '别人的服务器，不许混进来。',
+    ].join('\n'), 'utf8')
+    const { reflection } = await harness({ docPath })
+
+    const text = reflection('mcp:github') ?? ''
+    expect(text.indexOf('这个服务器要 token。')).toBeLessThan(text.indexOf('### create_issue'))
+    expect(text.indexOf('### create_issue')).toBeLessThan(text.indexOf('### search'))
+    // 只有一份抬头：整节一份，不是每个工具各来一份。
+    expect(text.match(/以下(是|从)/g)?.length).toBe(1)
+    // 前缀匹配是精确到服务器名的，`gitlab` 的工具不该被 `github` 那一节认领。
+    expect(text).not.toContain('别人的服务器')
+    expect(reflection('mcp:gitlab')).toContain('别人的服务器')
+  })
+
+  it('caps each tool\'s lessons on its own, not the composed section', async () => {
+    const dir = await tempDir()
+    const docPath = join(dir, 'reflections.md')
+    await writeFile(docPath, [
+      `## mcp__gh__first\n${'x'.repeat(2000)}第一条的尾巴。`,
+      '',
+      `## mcp__gh__second\n${'y'.repeat(2000)}第二条的尾巴。`,
+    ].join('\n'), 'utf8')
+    const { reflection } = await harness({ docPath, maxSubjectChars: 200 })
+
+    const text = reflection('mcp:gh') ?? ''
+    // 一个话多的工具挤掉的该是它自己的前半段，而不是排在它后面的那个工具。
+    expect(text).toContain('第一条的尾巴。')
+    expect(text).toContain('第二条的尾巴。')
+    expect(text).toContain('### first')
+    expect(text).toContain('### second')
   })
 
   it('contributes nothing while the document is absent or has no such subject', async () => {

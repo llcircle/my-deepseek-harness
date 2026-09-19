@@ -476,7 +476,9 @@ describe('per-subject failure lessons', () => {
     ].join('\n'))
 
     expect(await controller.readReflections()).toEqual([
-      { subject: 'mcp:github', text: '仓库名要带 owner。' },
+      // MCP 工具按公开名成键，不再折叠成服务器级主题：界面上每个工具各占一行，
+      // 送回来的键必须和文档里的标题逐字相同，否则改完存下去就成了另一条经验。
+      { subject: 'mcp__github__search', text: '仓库名要带 owner。' },
       { subject: 'tool:read', text: '读大文件先看行数。' },
     ])
   })

@@ -101,6 +101,15 @@ export interface SystemPromptNode {
    * was committed rather than by the next request header.
    */
   update: boolean
+  /**
+   * Source sections this prompt was rendered from, recorded with the commit.
+   *
+   * The prompt is derived history, so the commit — not a request header — is the
+   * authoritative place for its provenance, and the in-history route commits
+   * without logging a header at all. Absent in older logs and for a commit that
+   * wrote no text: a presentation without them shows the prompt whole.
+   */
+  sections?: readonly ConversationPromptSection[]
 }
 
 /** System/tool change introduced while preparing one ordinary request, or by an in-history prompt update. */

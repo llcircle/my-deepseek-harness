@@ -33,6 +33,8 @@ export interface PromptSectionPreview {
   en: string
   zh: string
   editable: boolean
+  /** 这一节名下可以各自单独写经验的能力，逐个是反思文档里的一个主题。 */
+  subjects: readonly string[]
 }
 
 /** One journaled tool or MCP failure. */
@@ -51,12 +53,12 @@ export interface ReflectionBlockPreview {
   text: string
 }
 
-/** 一条能力（工具 / MCP 服务器 / 电脑操作）在卡片上的一行。 */
+/** 一条能力（工具 / MCP 服务器 / MCP 工具 / 电脑操作）在卡片上的一行。 */
 export interface ReflectionRow {
-  /** 提示词分段名，也是 LESSONS 文档里的主题键。 */
+  /** 反思文档里的主题键；MCP 工具就是它模型可见的公开工具名。 */
   readonly subject: string
   /** 能力类别，决定这一行怎么称呼自己。 */
-  readonly kind: 'tool' | 'mcp' | 'computer'
+  readonly kind: 'tool' | 'mcp' | 'mcp-tool' | 'computer'
   /** 能力名字（`tool:read` → `read`；`computer:policy` 没有名字）。 */
   readonly label: string
   /** 当前教训文本（含未保存的编辑）。 */
@@ -115,7 +117,11 @@ export interface PromptOverridesCardState extends CardShell {
   toolErrors: readonly ToolErrorPreview[]
   toolErrorsStatus: 'idle' | 'loading' | 'ready' | 'error'
   toolErrorsError: string | undefined
-  /** 每条已装配能力一行：介绍在左、教训在右，未装配的能力根本不在表里。 */
+  /**
+   * 每个主题一行：介绍在左、教训在右，未装配的能力根本不在表里。
+   *
+   * 一个 MCP 服务器会占多行——服务器自己一行，它声明的每个工具各一行。
+   */
   reflectionRows: readonly ReflectionRow[]
   /** 文档里还留着、但这次装配里没有对应能力的主题条数。 */
   staleReflections: number
@@ -165,6 +171,15 @@ const MCP_PREFIX = 'mcp:'
 const COMPUTER_SECTION = 'computer:policy'
 
 /**
+ * MCP 公开工具名 `mcp__<server>__<tool>`。
+ *
+ * 与 `@deepseek-ai/dsh-tool-error-journal` 的主题键同形——那边就是这么写进反思
+ * 文档的，这里再认一遍是为了分类，不是为了改名：卡片送回去的主题必须和文档里的
+ * 键逐字相同，否则用户改完存下去，下次读出来就是另一条经验。
+ */
+const MCP_TOOL_SUBJECT = /^mcp__[A-Za-z0-9_-]{1,32}__.+$/
+
+/**
  * 判断一个分段名是不是"能力"。
  *
  * 判定发生在分段名上，而"有哪些能力"这件事必须来自**这次装配的注册结果**：
@@ -172,11 +187,12 @@ const COMPUTER_SECTION = 'computer:policy'
  * 只在启用电脑操作的会话里才注册。用户想看的是"这个会话里到底有什么"，
  * 不是"代码库里可能有什么"——所以名字匹配只是分类，是否存在由调用方保证。
  *
- * @param name - 分段名。
- * @returns 能力类别；不是能力分段时返回 `undefined`。
+ * @param name - 分段名，或一个分段声明的子主题名。
+ * @returns 能力类别；不是能力主题时返回 `undefined`。
  */
 export function reflectionKindOf(name: string): ReflectionRow['kind'] | undefined {
   if (name === COMPUTER_SECTION) return 'computer'
+  if (MCP_TOOL_SUBJECT.test(name)) return 'mcp-tool'
   if (name.startsWith(TOOL_PREFIX) && name.length > TOOL_PREFIX.length) return 'tool'
   if (name.startsWith(MCP_PREFIX) && name.length > MCP_PREFIX.length) return 'mcp'
   return undefined
@@ -186,6 +202,8 @@ export function reflectionKindOf(name: string): ReflectionRow['kind'] | undefine
 function labelOf(name: string, kind: ReflectionRow['kind']): string {
   if (kind === 'tool') return name.slice(TOOL_PREFIX.length)
   if (kind === 'mcp') return name.slice(MCP_PREFIX.length)
+  // 纯展示：只替用户把 MCP 公开名里的分隔符读成层级，不参与任何匹配。
+  if (kind === 'mcp-tool') return name.slice('mcp__'.length).replace('__', ' › ')
   return ''
 }
 
@@ -263,13 +281,47 @@ export class PromptOverridesCardController {
   }
 
   /**
-   * 这次装配里真实存在的能力：都从分段预览里现取，没有编好的名单。
-   * @returns 按类别与名字排好序的主题键。
+   * 这次装配里**由注册结果本身**给出的能力主题：每个在场的能力分段，加上它自己
+   * 声明的子主题。
+   *
+   * 只认声明过的，一个还没同步到工具的服务器才不会凭空长出几行。文档里额外带着的
+   * 经验可能有、也可能没有对应主题，所以这里只用来判"哪些主题有家可归"；真正决定
+   * 显示顺序的是 {@link reflectionRows}。
+   * @returns 主题键的去重列表。
    */
   private liveSubjects(): string[] {
-    return [...this.liveSections.keys()]
-      .filter(name => reflectionKindOf(name) !== undefined)
-      .sort((a, b) => a.localeCompare(b))
+    const subjects = new Set<string>()
+    for (const [name, preview] of this.liveSections) {
+      if (reflectionKindOf(name) === undefined) continue
+      subjects.add(name)
+      for (const child of preview.subjects ?? []) {
+        if (reflectionKindOf(child) === undefined) continue
+        subjects.add(child)
+      }
+    }
+    return [...subjects]
+  }
+
+  /**
+   * 一个主题是不是落在某个 MCP 服务器分段的辖区里。
+   *
+   * 由在场的服务器名拼前缀去比，而不是把主题名反着拆成服务器和工具：两边都允许
+   * 出现下划线，反拆有歧义。拼前缀只有一种读法，且与注入侧
+   * （`@deepseek-ai/dsh-error-reflection-prompt` 按 `mcp__<server>__` 认领）逐字一致——
+   * 界面显示的和提示词里真发出去的必须是同一批。
+   */
+  private ownsSubject(sectionName: string, subject: string): boolean {
+    if (reflectionKindOf(sectionName) !== 'mcp') return false
+    const prefix = `mcp__${sectionName.slice(MCP_PREFIX.length)}__`
+    return subject.startsWith(prefix) && subject.length > prefix.length
+  }
+
+  /** 一个主题属于哪个在场的 MCP 服务器；不属于任何在场的服务器时返回 `undefined`。 */
+  private liveServerOwning(subject: string): string | undefined {
+    for (const name of this.liveSections.keys()) {
+      if (this.ownsSubject(name, subject)) return name
+    }
+    return undefined
   }
 
   /** 一行能力的当前教训：未保存的改动优先。 */
@@ -279,29 +331,62 @@ export class PromptOverridesCardController {
       ?? ''
   }
 
-  /** 文档里有教训、但这次装配里没有对应能力——它们不会被注入提示词。 */
+  /** 文档里有教训、但这次装配连发都发不出去——它们不会被注入提示词。 */
   private staleReflectionCount(): number {
     const live = new Set(this.liveSubjects())
-    return [...this.committedReflections.keys()].filter(subject => !live.has(subject)).length
+    return [...this.committedReflections.keys()]
+      .filter(subject => !live.has(subject) && this.liveServerOwning(subject) === undefined)
+      .length
   }
 
+  /**
+   * 每个主题一行，服务器与它名下的工具紧挨着。
+   *
+   * 刻意不按主题键把全部行整体排序：ICU 把 `_` 排在 `:` 前面，`mcp__github__search`
+   * 会跑到它的服务器 `mcp:github` 前面，看上去像"这工具属于下一个服务器"。按分段
+   * 分组则归属关系永远跟着实际辖区走，跟排序规则无关。
+   *
+   * 工具行的来源有两个：分段**声明**过的（在场的工具，哪怕还没出过错，也该能提前
+   * 写经验），以及文档里已经有经验的（服务器还在、某个工具没了——注入按服务器前缀
+   * 整块进行，那些经验照样发得出去，界面就没理由把它们藏起来，藏起来等于用户再也
+   * 改不动一段正在生效的提示词）。
+   */
   private reflectionRows(): ReflectionRow[] {
-    return this.liveSubjects().flatMap((subject) => {
+    const rows: ReflectionRow[] = []
+    const seen = new Set<string>()
+    const push = (subject: string): void => {
+      if (seen.has(subject)) return
+      seen.add(subject)
       const kind = reflectionKindOf(subject)
-      /* v8 ignore next -- liveSubjects() 已经过滤过，这里只是把类型收窄。 */
-      if (kind === undefined) return []
+      /* v8 ignore next -- 调用点已经过滤过，这里只是把类型收窄。 */
+      if (kind === undefined) return
       const preview = this.liveSections.get(subject)
-      return [{
+      rows.push({
         subject,
         kind,
         label: labelOf(subject, kind),
         text: this.reflectionText(subject),
         // 不可编辑的分段（电脑操作）不预填介绍：装配时它只有启用会话才有注册，
         // 这张卡片问不了某个会话，于是诚实地空着。
+        //
+        // 子主题也没有自己的介绍可看：工具说明在工具 schema 里，不在系统提示词里。
+        // 把服务器的介绍复制到每个工具名下，只会让用户以为那是这个工具的介绍。
         zh: preview?.zh ?? '',
         en: preview?.en ?? '',
-      }]
-    })
+      })
+    }
+    const sections = [...this.liveSections]
+      .filter(([name]) => reflectionKindOf(name) !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+    for (const [name, preview] of sections) {
+      push(name)
+      const children = new Set(preview.subjects ?? [])
+      for (const subject of this.committedReflections.keys()) {
+        if (this.ownsSubject(name, subject)) children.add(subject)
+      }
+      for (const child of [...children].sort((a, b) => a.localeCompare(b))) push(child)
+    }
+    return rows
   }
 
   private projection(): PromptOverridesCardState {

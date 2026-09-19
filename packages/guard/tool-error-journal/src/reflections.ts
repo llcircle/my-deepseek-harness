@@ -9,8 +9,17 @@
  * 恰恰是"上次调用它踩了什么坑"。所以文档改用 `## <主题>` 标题把经验分给具体的
  * 工具、MCP 服务器或电脑操作，装配时再追加到那个能力自己的分段后面。
  *
- * 主题键就是**提示词分段名**（`tool:read`、`mcp:github`、`computer:policy`），
+ * 主题键大多就是**提示词分段名**（`tool:read`、`mcp:github`、`computer:policy`），
  * 这样注入侧只要拿分段名查表即可，不需要第二套命名。
+ *
+ * ## MCP 工具为什么是例外
+ *
+ * 一个 MCP 服务器在提示词里只有一节，但它的每个工具在本文档里**各占一个主题**，
+ * 键就是模型看到的公开工具名（`mcp__<服务器>__<工具>`）。折叠成服务器键看着整齐，
+ * 代价却是模型和用户都分不清"这条经验是哪个工具的坑"：同一个服务器的十几个工具
+ * 共用一格，编辑界面上改一处等于改全部。这些主题于是挂在服务器分段名下——注入时
+ * 按 `### <工具>` 小结追加到 `mcp:<服务器>` 那一节，服务器自己的经验排在最前
+ * （见 `@deepseek-ai/dsh-error-reflection-prompt`）。
  *
  * ## 认不出来的标题怎么办
  *
@@ -22,11 +31,29 @@
  * @module @deepseek-ai/dsh-tool-error-journal/reflections
  */
 
-/** 主题键的合法前缀。`mcp__<server>__` 形式由 {@link normalizeReflectionSubject} 归一化而来。 */
+/** 主题键的合法前缀。 */
 const SUBJECT_PREFIXES = ['tool:', 'mcp:', 'computer:'] as const
 
-/** MCP 公开工具名 `mcp__<server>__<raw>`；`server` 与 mcp-client 的 `serverName` 同规则。 */
-const MCP_TOOL_NAME = /^mcp__([A-Za-z0-9_-]{1,32})__/
+/**
+ * MCP 公开工具名 `mcp__<server>__<raw>`；`server` 与 mcp-client 的 `serverName` 同规则。
+ *
+ * 工具名部分要求非空：`mcp__github__` 没有主语，和 `tool:` 一样不算主题。
+ */
+const MCP_TOOL_NAME = /^mcp__[A-Za-z0-9_-]{1,32}__.+$/
+
+/**
+ * 一个 MCP 服务器的工具主题前缀。
+ *
+ * 按前缀认领而不是把主题拆成"服务器 + 工具"再比较：`serverName` 和工具名都允许
+ * 出现下划线（`mcp__my-server_2__create_issue`），从公开名反推哪一段是服务器名是
+ * 有歧义的。反过来从已知的服务器名拼前缀，则永远只有一种读法。
+ *
+ * @param serverName - mcp-client 的 `serverName`。
+ * @returns 形如 `mcp__github__` 的主题前缀。
+ */
+export function mcpToolSubjectPrefix(serverName: string): string {
+  return `mcp__${serverName}__`
+}
 
 /** 一个 Markdown 二级标题行。 */
 const HEADING = /^##[ \t]+(.+?)[ \t]*$/
@@ -56,8 +83,9 @@ export interface ReflectionDocument {
 export function normalizeReflectionSubject(heading: string): string | undefined {
   const key = heading.trim()
   if (key === '') return undefined
-  const mcpTool = MCP_TOOL_NAME.exec(key)
-  if (mcpTool !== null) return `mcp:${mcpTool[1] as string}`
+  // MCP 公开工具名原样成键：它已经是模型眼里的名字，再折叠成服务器键就会让同一
+  // 服务器下十几个工具的经验挤进同一格——看得见来源、单独改，比"整齐"重要。
+  if (MCP_TOOL_NAME.test(key)) return key
   for (const prefix of SUBJECT_PREFIXES) {
     if (key.startsWith(prefix) && key.length > prefix.length) return key
   }
@@ -122,7 +150,7 @@ function zonesOf(raw: string): Zone[] {
     zones.push({ subject, lines })
     subject = normalizeReflectionSubject(heading[1] as string)
     // 标题原文一并留着：没被点名的区要整块原样吐回去，包括它原始的标题写法
-    // （`## mcp__gh__x` 归一化后是 `mcp:gh`，但用户没改它，就没理由替他改写）。
+    // （认不出的标题会进"全局"区，那里的字一个都不该被我们改写）。
     lines = [line]
   }
   zones.push({ subject, lines })

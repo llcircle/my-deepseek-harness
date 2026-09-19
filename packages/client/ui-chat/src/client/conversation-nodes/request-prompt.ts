@@ -103,7 +103,13 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
       if (state === undefined || state.text === ''
         || context.start?.event.type !== 'system/message' || context.start.event.surfaceOp !== 'append') return null
       const anchor = state.update ? state.seq : requestPromptAnchor(context.start, undefined, true)
-      return chatNode(context, 'system-prompt', anchor, { text: state.text, ...state.update ? { update: true } : {} })
+      // 提交自带的来源分段：有就逐段展示，没有（旧日志）就整块文本。这张卡是提示词
+      // 进入历史的那个位置，分段随事件落盘后它才拿得到分组视图。
+      return chatNode(context, 'system-prompt', anchor, {
+        text: state.text,
+        ...state.sections === undefined ? {} : { sections: state.sections },
+        ...state.update ? { update: true } : {},
+      })
     },
   }
 }

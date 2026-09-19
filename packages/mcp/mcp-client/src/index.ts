@@ -114,6 +114,19 @@ export interface StdioConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Deployment-authored introduction for this server, appended after the server's literal
+   * instructions and the generated introduction.
+   *
+   * Unlike the generated sentence it does not follow the locale: it renders in whatever
+   * language it is written in. Omitted or empty means this deployment adds nothing, and the
+   * section keeps only the two preceding parts.
+   *
+   * Optional on the `maxInstructionBytes` rule — a later-added field with a default — so no
+   * call site is rewritten; doing so would only add needless conflicts to the next upstream
+   * sync. The schema supplies the default and assembly falls back with `?? ''`.
+   */
+  intro?: string
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -138,6 +151,12 @@ export interface StreamableHttpConfig {
   failOnStartupError: boolean
   /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
   maxInstructionBytes?: number
+  /**
+   * Deployment-authored introduction for this server, appended after the literal instructions
+   * and the generated introduction; omitted or empty means none.
+   * Optional for the same reason as the stdio side (later-added, defaulted).
+   */
+  intro?: string
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -169,6 +188,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    intro: z.string().default(''),
     reconnect: Reconnect,
   }),
   z.object({
@@ -179,6 +199,7 @@ export const Config = z.union([
     toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
     failOnStartupError: z.boolean().default(false),
     maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+    intro: z.string().default(''),
     reconnect: Reconnect,
   }),
 ]) as unknown as z<ConfigInput, Config>
@@ -240,7 +261,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // 这一节由 `registerServerContext` 注册（它同时并入了该服务器的字面指示：
   // 同一名字只能有一份 `section()`，第二次注册是撞名错误而不是第二条贡献）。
   registerServerContext(ctx, config.serverName, connection, locale =>
-    mcpServerIntro(config.serverName, connection.toolNames(), locale))
+    mcpServerIntro(config.serverName, connection.toolNames(), locale), config.intro ?? '')
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

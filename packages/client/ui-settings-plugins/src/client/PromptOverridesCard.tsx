@@ -14,9 +14,12 @@ export type PromptOverridesCardProps =
   & InjectFace<PromptOverridesCardFace>
 
 /** 一条能力的类别标签；电脑操作没有名字，整行标题就是它的类别。 */
-function kindLabelKey(kind: ReflectionRow['kind']): 'reflectionsKindTool' | 'reflectionsKindMcp' | 'reflectionsKindComputer' {
+function kindLabelKey(
+  kind: ReflectionRow['kind'],
+): 'reflectionsKindTool' | 'reflectionsKindMcp' | 'reflectionsKindMcpTool' | 'reflectionsKindComputer' {
   if (kind === 'tool') return 'reflectionsKindTool'
   if (kind === 'mcp') return 'reflectionsKindMcp'
+  if (kind === 'mcp-tool') return 'reflectionsKindMcpTool'
   return 'reflectionsKindComputer'
 }
 

@@ -23,8 +23,9 @@ interface AssembleContext {
   /** Explicit control signal for the turn that requested this assembly, when any. */
   signal?: AbortSignal
   /**
-     * 本次装配生效的语言。由注册表解析后写入，分段与上下文提供者据此选文案；
-     * 调用方不需要、也不应该自己传。
+     * The active language for this assembly, written by the registry once it resolves one.
+     * Sections and context providers pick their wording from it; callers neither need nor
+     * should pass it themselves.
      */
   locale?: PromptLocale
 }
@@ -68,6 +69,19 @@ interface PromptSection {
   readonly text: string | ((context: AssembleContext) => string)
   /** Whether to interpolate prompt variables. Defaults to true; false preserves literal text. */
   readonly interpolate?: boolean
+  /**
+   * The abilities under this section that each keep their own lessons, one
+   * reflection-document subject key apiece (see {@link PromptReflectionSource}).
+   *
+   * An MCP server owns one prompt section but a dozen tools. A tool's lessons
+   * belong inside its server's section, yet the editing surface has to know
+   * which tools sit under it — otherwise it could only offer one field for the
+   * whole section. Declared here, the surface expands one section into several
+   * rows, so editing one tool's lessons cannot touch another's.
+   *
+   * Omitted means the section has no sub-subjects, as almost every section is.
+   */
+  readonly subjects?: (context: AssembleContext) => readonly string[]
   /**
    * Treat this contribution as the complete system prompt. Assembly still
    * runs the cooperative waterfall so tools, contexts, and variables can be

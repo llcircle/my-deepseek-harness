@@ -4,10 +4,11 @@
  * 这里守的是两件事：
  *
  * 1. **认主题要确定。** 主题键必须就是提示词分段名，否则注入侧要把同一套命名
- *    再翻译一遍。MCP 公开工具名（`mcp__github__search`）归一化成服务器级主题
- *    `mcp:github`——一条经验不该按工具名碎成十几份。认不出来的标题（历史日期
- *    小节、用户手写备注）一律算"全局"，仍然整段注入：升级格式不能让已经躺在
- *    磁盘上的经验消失。
+ *    再翻译一遍。唯一的例外是 MCP 工具：一个服务器只有一节提示词，工具却各有
+ *    自己的坑，所以公开工具名（`mcp__github__search`）原样成键，各自占一格——
+ *    折叠成服务器键会让十几个工具的经验挤在一起，看得见来源比整齐重要。认不出
+ *    主题的标题（历史日期小节、用户手写备注）一律算"全局"，仍然整段注入：升级
+ *    格式不能让已经躺在磁盘上的经验消失。
  * 2. **改写要原位。** 界面只编辑它显示过的那几条主题，别的内容逐字保留；"重新
  *    序列化整份文档"会把用户认得出的小节重排成他认不出的样子。
  */
@@ -27,9 +28,13 @@ describe('normalizeReflectionSubject', () => {
     expect(normalizeReflectionSubject('computer:policy')).toBe('computer:policy')
   })
 
-  it('collapses an MCP public tool name onto its server', () => {
-    expect(normalizeReflectionSubject('mcp__github__search')).toBe('mcp:github')
-    expect(normalizeReflectionSubject('mcp__my-server_2__create_issue')).toBe('mcp:my-server_2')
+  it('keeps an MCP public tool name as its own subject', () => {
+    // 不折叠成 `mcp:github`：同一个服务器的工具要能各写各的经验。
+    expect(normalizeReflectionSubject('mcp__github__search')).toBe('mcp__github__search')
+    expect(normalizeReflectionSubject('mcp__my-server_2__create_issue')).toBe('mcp__my-server_2__create_issue')
+    // 工具名里再带下划线也一样原样留着——从公开名反推哪一段是服务器名本来就有歧义，
+    // 所以根本不反推。
+    expect(normalizeReflectionSubject('mcp__gh__search__inner')).toBe('mcp__gh__search__inner')
   })
 
   it('treats anything else as global', () => {
@@ -38,6 +43,7 @@ describe('normalizeReflectionSubject', () => {
     expect(normalizeReflectionSubject('通用')).toBeUndefined()
     // 只有前缀没有名字，等于没有主语。
     expect(normalizeReflectionSubject('tool:')).toBeUndefined()
+    expect(normalizeReflectionSubject('mcp__github__')).toBeUndefined()
     expect(normalizeReflectionSubject('   ')).toBeUndefined()
   })
 })
@@ -64,9 +70,10 @@ describe('parseReflectionDocument', () => {
     expect(document.global).toContain('历史经验。')
     expect([...document.subjects]).toEqual([
       ['tool:read', '读大文件先看行数。'],
-      ['mcp:github', '仓库名要带 owner。'],
+      ['mcp__github__search', '仓库名要带 owner。'],
     ])
     expect(reflectionOf(document, 'tool:write')).toBe('')
+    expect(reflectionOf(document, 'mcp:github')).toBe('')
   })
 
   it('keeps the last block when a subject is written twice', () => {
@@ -106,11 +113,12 @@ describe('replaceReflectionBlocks', () => {
     expect(next).not.toContain('旧的读文件经验。')
   })
 
-  it('normalizes a rewritten MCP heading onto its server', () => {
+  it('rewrites an MCP tool block under its own heading', () => {
+    // 归一化后键就是原来的标题，于是"改写"就是把正文换掉——不再折叠成服务器标题。
     const next = replaceReflectionBlocks('## mcp__github__search\n旧的。', [
-      { subject: 'mcp:github', text: '新的。' },
+      { subject: 'mcp__github__search', text: '新的。' },
     ])
-    expect(next).toBe('## mcp:github\n\n新的。\n')
+    expect(next).toBe('## mcp__github__search\n\n新的。\n')
   })
 
   it('appends a subject the document never had', () => {
