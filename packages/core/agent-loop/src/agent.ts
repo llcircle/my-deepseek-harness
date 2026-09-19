@@ -365,9 +365,6 @@ export class ReactLoopAgent implements Agent {
 
     const { assembly } = decision
     const renderedPrompt = renderPrompt(assembly)
-    // 分段只算一次：它是这次装配的产物，与随后尝试几次请求无关。同一份既随
-    // `system/message` 落盘（展示用来源），也进请求头（快照比较用）。
-    const promptSections = renderPromptSections(assembly)
     let firstAttempt = true
     while (true) {
       const { config, preparedCall } = await this.prepareRequest(turn, step, signal)
@@ -377,14 +374,9 @@ export class ReactLoopAgent implements Agent {
         startsSeries: startsRequestSeries
           || this.requestSurfaceGeneration !== this.session.surface.contentGeneration
           || this.toolsChanged(assembly.tools),
-        systemSections: promptSections,
       })
-      for (const { message, intent, systemSections } of commits) {
-        this.session.append(
-          'system/message',
-          { turn, step, message, ...systemSections === undefined ? {} : { systemSections } },
-          intent,
-        )
+      for (const { message, intent } of commits) {
+        this.session.append('system/message', { turn, step, message }, intent)
       }
       if (firstAttempt) {
         for (const message of decision.messages) {
@@ -396,7 +388,7 @@ export class ReactLoopAgent implements Agent {
         config,
         preparedCall,
         assembly.tools,
-        promptSections,
+        renderPromptSections(assembly),
         startsRequestSeries,
         signal,
       )

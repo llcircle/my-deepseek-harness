@@ -7,7 +7,7 @@
 
 import { createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContextSnapshotSection, Message } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent, SessionSeq, SurfaceIntent, SystemMessage, SystemPromptSectionSnapshot, UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionSeq, SurfaceIntent, SystemMessage, UserMessage } from '@deepseek-ai/dsh-session'
 import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session'
 import { contextSnapshotCleared } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
@@ -30,11 +30,6 @@ export interface SystemPromptCommit {
   message: SystemMessage
   /** `append` for a new system node, otherwise a replacement of one surviving system node. */
   intent: SurfaceIntent<'system/message'>
-  /**
-   * 这一份 `message` 对应的已插值来源分段；空渲染与其后续的休眠节点不带。
-   * 由调用方写进 `system/message` 事件（见 `SystemPromptDecisionInput.sections`）。
-   */
-  systemSections?: SystemPromptSectionSnapshot[]
 }
 
 /** The request-series facts one prompt decision is made under. */
@@ -47,15 +42,6 @@ export interface SystemPromptDecisionInput {
    * the assembled tool schemas differ from the logged header.
    */
   startsSeries: boolean
-  /**
-   * 本次装配渲染出的来源分段，随每个非空提交一起落盘。
-   *
-   * 与 `request/header.systemSections` 同源同形，之所以**也**挂在事件上：提示词
-   * 已经改成派生历史（surface node 0），而 in-history 那条路提交提示词时**根本不写
-   * 请求头**（头相等只看 config/tools），只把分段留在头上就会出现"有正文、没来源"
-   * 的卡片。缺省表示调用方没有可展示的分段，消费方按整块文本回退。
-   */
-  systemSections?: readonly SystemPromptSectionSnapshot[]
 }
 
 /** Committed events from the newest backward; the restore scans stop at the first match. */
@@ -99,57 +85,24 @@ export class SystemPromptProjection {
     const nodes = this.systemNodes()
     const head = nodes[0]
     if (head === undefined) {
-      return [this.append(rendered, input.systemSections)]
+      return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
     }
     const latest = nodes.findLast(node => node.text !== '') ?? head
     if (!input.inHistory || input.startsSeries || rendered.length === 0) {
       const updates = nodes.slice(1).filter(node => node.text !== '')
         .map(node => this.replace(node.seq, ''))
-      if (head.text !== rendered) updates.push(this.replace(head.seq, rendered, input.systemSections))
+      if (head.text !== rendered) updates.push(this.replace(head.seq, rendered))
       return updates
     }
     if (latest.text === rendered) return []
-    return [this.append(rendered, input.systemSections)]
+    return [{ message: createSystemMessage(rendered, SOURCE), intent: { surfaceOp: 'append' } }]
   }
 
-  /** One new system node; the sections travel only with nonempty text. */
-  private append(rendered: string, sections?: readonly SystemPromptSectionSnapshot[]): SystemPromptCommit {
-    return {
-      message: createSystemMessage(rendered, SOURCE),
-      intent: { surfaceOp: 'append' },
-      ...this.withSections(rendered, sections),
-    }
-  }
-
-  private replace(
-    seq: SessionSeq,
-    text: string,
-    sections?: readonly SystemPromptSectionSnapshot[],
-  ): SystemPromptCommit {
+  private replace(seq: SessionSeq, text: string): SystemPromptCommit {
     return {
       message: createSystemMessage(text, SOURCE),
       intent: { surfaceOp: { op: 'replace', startSeq: seq, endSeq: seq }, sourceEventSeqs: [seq] },
-      ...this.withSections(text, sections),
     }
-  }
-
-  /**
-   * Attach the section snapshot to a commit that actually carries prompt text.
-   *
-   * A dormant empty node records "nothing model-visible here", so shipping the
-   * previous assembly's sections with it would describe a prompt that is not in
-   * force. Callers pass the current assembly's sections unconditionally; this is
-   * the one place that decides they do not belong.
-   * @param rendered - the text this commit writes.
-   * @param sections - the assembly's rendered sections, when the caller has them.
-   * @returns the section field to spread, or an empty object.
-   */
-  private withSections(
-    rendered: string,
-    sections?: readonly SystemPromptSectionSnapshot[],
-  ): Pick<SystemPromptCommit, 'systemSections'> | object {
-    if (rendered === '' || sections === undefined || sections.length === 0) return {}
-    return { systemSections: [...sections] }
   }
 }
 

@@ -106,6 +106,20 @@ describe('prepared-route prompt admission', () => {
     expect(JSON.stringify(adapter.requests.at(-1)!)).not.toContain('prompt ')
   })
 
+  it('commits prompt payloads inside the audited V3 inventory', async () => {
+    const h = await harness()
+    await send(h.agent, 'first')
+    h.setPrompt('prompt two')
+    await send(h.agent, 'second')
+    const committed = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message')
+    // An in-history series appends the second version, so both commit paths are covered.
+    expect(committed.map(event => event.surfaceOp)).toEqual(['append', 'append'])
+    // `session-format-v2-to-v3` admits exactly these three keys when the log is written,
+    // and a reader rejects anything else, so display metadata belongs on the request
+    // header instead (see `request/header.systemSections`).
+    for (const event of committed) expect(Object.keys(event.data).sort()).toEqual(['message', 'step', 'turn'])
+  })
+
   it.each(['explicit', 'tools'] as const)('normalizes surviving prompt versions with unchanged text at a %s series start', async (reason) => {
     const h = await harness()
     await send(h.agent, 'first')
