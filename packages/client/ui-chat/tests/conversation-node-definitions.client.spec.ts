@@ -1656,13 +1656,99 @@ describe('built-in conversation node Definitions', () => {
       const candidate = snapshot(value).nodes.get(key)
       return candidate?.kind === 'system-prompt' ? [candidate.data] : []
     })
-    // The replaced node keeps its historical card; the change card names what moved.
+    // The opening header carries the prompt's sources, so it owns that row
+    // instead of the surface row beside it; the change card names what moved.
     expect(prompts).toEqual([
-      { text: '# Persona\n\ngraph tools' },
+      { text: '# Persona\n\ngraph tools', sections: base },
       {
         text: '# Persona\n\ngraph tools\n\nclick things',
         sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
       },
+    ])
+  })
+
+  it('presents one system-prompt row per position, sourced from the request header', () => {
+    // Both rows materialize at the step's opening position: the `system/message`
+    // surface row can only render the prompt, and the request header row also
+    // names every contributing source. Only the sourced row is presented, so the
+    // reader never sees the same prompt twice or as an unattributed blob.
+    const sections = [
+      { name: 'harness:identity', text: '# Identity' },
+      { name: 'mcp:codegraph', text: 'graph tools' },
+    ]
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# Identity\n\ngraph tools'),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, systemSections: sections },
+      }),
+      at(5, 'user/message', textMessage('opening-user', 'hi'), { surfaceOp: 'append' }),
+    ])
+
+    const current = snapshot(value)
+    const promptRows = [...current.nodes.values()].filter(candidate => candidate.kind === 'system-prompt')
+    expect(promptRows.map(candidate => candidate.key)).toHaveLength(2)
+    expect(current.order.flatMap((key) => {
+      const candidate = current.nodes.get(key)
+      return candidate?.kind === 'system-prompt'
+        ? [{ anchorSeq: candidate.anchorSeq, data: candidate.data }]
+        : []
+    })).toEqual([{ anchorSeq: 1, data: { text: '# Identity\n\ngraph tools', sections } }])
+
+    // A window that carries the coordinates without their boundaries — a resumed
+    // or page-limited history — still puts both rows at one position, because the
+    // header takes the position the surface row computed for itself.
+    const boundaryless = assembler([
+      systemUpdateAt(3, '# Identity\n\ngraph tools', 2, 1),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, systemSections: sections },
+      }),
+      at(5, 'user/message', textMessage('window-user', 'continue'), { surfaceOp: 'append' }),
+    ], true)
+    const boundarylessSnapshot = snapshot(boundaryless)
+    expect(boundarylessSnapshot.order.flatMap((key) => {
+      const candidate = boundarylessSnapshot.nodes.get(key)
+      return candidate?.kind === 'system-prompt'
+        ? [{ anchorSeq: candidate.anchorSeq, data: candidate.data }]
+        : []
+    })).toEqual([{ anchorSeq: 3, data: { text: '# Identity\n\ngraph tools', sections } }])
+  })
+
+  it('keeps an in-history prompt update on one row and adds its sources', () => {
+    // The surface row presents the update at its own position and the following
+    // header repeats it; the header takes that row over, so the update keeps its
+    // own title and gains the sources the surface row cannot name.
+    const opening = [{ name: 'harness:identity', text: '# Identity' }]
+    const updated = [...opening, { name: 'computer:policy', text: 'click things' }]
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      systemAt(3, '# Identity'),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, systemSections: opening },
+      }),
+      at(5, 'turn/start', { turn: 2 }),
+      at(6, 'step/start', { turn: 2, step: 1 }),
+      systemUpdateAt(7, '# Identity\n\nclick things', 2, 1),
+      at(8, 'request/header', {
+        reason: 'change',
+        header: { config: { provider: 'fake', model: 'fake' }, systemSections: updated },
+      }),
+    ])
+
+    const current = snapshot(value)
+    expect(current.order.flatMap((key) => {
+      const candidate = current.nodes.get(key)
+      return candidate?.kind === 'system-prompt'
+        ? [{ anchorSeq: candidate.anchorSeq, data: candidate.data }]
+        : []
+    })).toEqual([
+      { anchorSeq: 1, data: { text: '# Identity', sections: opening } },
+      { anchorSeq: 7, data: { text: '# Identity\n\nclick things', sections: updated, update: true } },
     ])
   })
 

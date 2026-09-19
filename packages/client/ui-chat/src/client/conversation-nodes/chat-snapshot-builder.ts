@@ -391,6 +391,33 @@ function presentationPosition(
 }
 
 /**
+ * Keys of section-less system-prompt rows that a section-bearing sibling at the
+ * same position supersedes.
+ *
+ * A `system/message` surface row can only show the rendered prompt; the request
+ * header's row at the same position additionally names every contributing
+ * source. Both are materialized for that position, and only the header row can
+ * answer what the prompt is made of, so the surface row yields to it.
+ * @param nodes - currently materialized Chat Nodes.
+ * @returns keys to withhold from presentation order.
+ */
+function supersededPromptKeys(nodes: readonly ChatConversationViewNode[]): ReadonlySet<string> {
+  const sourced = new Set<number>()
+  const bare = new Map<string, number>()
+  for (const node of nodes) {
+    const candidate = node as ChatNode
+    if (candidate.kind !== 'system-prompt') continue
+    const sections = candidate.data.sections
+    if (sections === undefined || sections.length === 0) bare.set(node.key, candidate.anchorSeq)
+    else sourced.add(candidate.anchorSeq)
+  }
+  const superseded = new Set<string>()
+  if (sourced.size === 0) return superseded
+  for (const [key, anchor] of bare) if (sourced.has(anchor)) superseded.add(key)
+  return superseded
+}
+
+/**
  * Order visible Chat Nodes without changing existing relative order as process
  * eligibility changes. Opening human input precedes process candidates, while
  * each synthetic process control sits between them.
@@ -400,7 +427,8 @@ function presentationPosition(
 export function orderedVisibleChatNodes(
   nodes: readonly ChatConversationViewNode[],
 ): ChatConversationViewNode[] {
-  const visible = nodes.filter(node => node.visibility === 'visible')
+  const superseded = supersededPromptKeys(nodes)
+  const visible = nodes.filter(node => node.visibility === 'visible' && !superseded.has(node.key))
   const presentations = turnProcessPresentations(visible)
   return visible.sort((left, right) => {
     const leftPosition = presentationPosition(left, presentations)

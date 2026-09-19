@@ -24,6 +24,14 @@ declare module '../contract/chat-nodes.ts' {
 interface RequestPromptState extends ReturnType<RequestPromptInspector> {
   readonly anchorSeq: number
   readonly showsPrompt: boolean
+  /**
+   * The same-step surface prompt this header repeats, when it repeats one.
+   *
+   * `anchorSeq` is that surface row's position and `update` says whether the
+   * surface row presents an in-history prompt update, so the header can take the
+   * row over — position and title both — leaving the reader one row per prompt.
+   */
+  readonly coversSurface?: { readonly anchorSeq: number; readonly update: boolean }
   readonly turn?: number
   readonly step?: number
 }
@@ -111,6 +119,8 @@ export function systemMessageDefinition(inspect: SystemPromptInspector): Convers
 /**
  * Request-header prompt Definition for the Chat target. Resume and explicit
  * series starts retain a prompt card even when the system text is unchanged.
+ * A header that only repeats its same-step surface prompt still owns that row
+ * when it carries the source sections the surface node cannot.
  * @param inspect - the shared prompt interpretation, supplied by the
  * uiConversation service (a client bundle cannot value-import it).
  * @returns the Chat request-prompt Definition.
@@ -141,8 +151,19 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
         && (system.update || previous === undefined)
         && system.turn === location.turn
         && system.step === location.step
+      const surfaceMatch = systemContext?.matches[0]
+      const introduced = systemContext?.state.introduced
+      // The surface row and this header describe the same prompt, so the header
+      // adopts the position the surface row computed for it: one prompt is one
+      // row whether or not the window's older turn/step boundaries are loaded.
+      const coversSurface = shownByUpdate && introduced !== undefined && surfaceMatch !== undefined
+        ? {
+          anchorSeq: introduced.update ? introduced.seq : requestPromptAnchor(surfaceMatch, undefined, true),
+          update: introduced.update,
+        }
+        : undefined
       return {
-        anchorSeq: stableRequestPromptAnchor(
+        anchorSeq: coversSurface?.anchorSeq ?? stableRequestPromptAnchor(
           context,
           match,
           previous,
@@ -153,6 +174,7 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
           || match.event.data.startsSeries === true
           || change === 'system'
           || change === 'system-and-tools'),
+        ...(coversSurface === undefined ? {} : { coversSurface }),
         ...location,
         ...inspection,
       }
@@ -162,9 +184,15 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
       const state = context.state
       if (state === undefined) return null
       const current = context.current.get('chat') as ChatNode | null | undefined
-      const visible = state.showsPrompt && state.prompt.system !== ''
-      if (!visible && current?.kind !== 'system-prompt') return null
       const sections = displayedSections(state)
+      // Source sections live on the request header, so a header that repeats the
+      // surface prompt is still the only row that can name where the prompt came
+      // from. Present it for those sections, and otherwise leave the surface row
+      // alone; the shared position lets the Chat flow keep exactly one row.
+      const visible = state.prompt.system !== ''
+        && (state.showsPrompt
+          || (state.coversSurface !== undefined && sections !== undefined && sections.length > 0))
+      if (!visible && current?.kind !== 'system-prompt') return null
       return chatNode(
         context,
         'system-prompt',
@@ -172,6 +200,7 @@ export function requestPromptDefinition(inspect: RequestPromptInspector): Conver
         {
           text: state.prompt.system,
           ...sections === undefined ? {} : { sections },
+          ...(state.coversSurface?.update === true ? { update: true } : {}),
         },
         { visibility: visible ? 'visible' : 'hidden' },
       )
