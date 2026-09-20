@@ -1153,6 +1153,42 @@ describe('SystemPrompt', () => {
         .find(section => section.name === 'harness:source')?.text).toBe(original)
     })
 
+    it('translates the standard persona as two sections, so the working directory is stated once', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, {
+        promptLocale: 'zh',
+        // 四个 bundle 的 cordis.patch.yml 都写这一对模板；它们各占一节，译文也必须
+        // 各占一条。曾把后缀并进前缀那条译文里，于是中文提示词里工作目录出现两次，
+        // 而末尾还留着一句英文原文。
+        personaPrefix: 'You are a coding agent powered by the {{model}} model.',
+        personaSuffix: 'Your working directory is {{cwd}}.',
+      })
+      ctx.systemPrompt.variable('model', () => 'glm-5.3-flash')
+      ctx.systemPrompt.variable('cwd', () => 'D:/ws')
+      const rendered = renderPrompt(await ctx.systemPrompt.assemble())
+      expect(rendered).toContain('你是由 glm-5.3-flash 模型驱动的编码智能体。')
+      expect(rendered).toContain('当前工作目录是 D:/ws。')
+      expect(rendered.match(/D:\/ws/gu)).toHaveLength(1)
+      expect(rendered).not.toContain('Your working directory')
+    })
+
+    it('carries the live server names into the translated resource list', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
+      ctx.systemPrompt.section({
+        name: 'mcp-resource-servers',
+        order: 1,
+        interpolate: false,
+        text: '## MCP resource servers\n\nUse list_mcp_resources, list_mcp_resource_templates, '
+          + 'or read_mcp_resource with one of these names as the server argument: ["codegraph"].',
+      })
+      const text = (await ctx.systemPrompt.assemble()).sections
+        .find(section => section.name === 'mcp-resource-servers')?.text ?? ''
+      // 服务器名是运行期事实：译文留着旧名字比留着英文更糟。
+      expect(text).toContain('["codegraph"]')
+      expect(text).not.toContain('MCP resource servers')
+    })
+
     it('ships a translation for every section it names, in both directions where needed', () => {
       expect(localizedSectionNames().length).toBeGreaterThan(10)
       for (const name of localizedSectionNames()) {

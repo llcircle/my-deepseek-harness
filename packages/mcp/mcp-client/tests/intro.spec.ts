@@ -9,6 +9,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import { mcpServerIntro, mcpServerSectionName } from '../src/index.ts'
 import { registerServerContext } from '../src/server-context.ts'
 
@@ -65,6 +67,42 @@ describe('mcp:<serverName> 分段的接线', () => {
     const withdrawn = renderPrompt(await ctx.systemPrompt.assemble())
     expect(withdrawn).not.toContain('MCP server: github')
     expect(withdrawn).not.toContain('mcp__github__search')
+    await ctx.fiber.dispose()
+  })
+})
+
+describe('MCP 分段在提示词里的位置', () => {
+  it('资源清单紧跟服务器介绍，中间不被别的段落劈开', async () => {
+    // 两节合起来才是完整的一句话："有哪些服务器可读资源" + "每台服务器是什么"。
+    // fork 把服务器介绍移到了尾部（`MCP_INTRO`，见 SECTION_ORDERS 的注释），资源
+    // 清单必须跟着走；留在上游的 `MCP_SERVERS`（3000 与 9000 之间）就会被这一段的
+    // 其它段落夹在中间——线上实测正是 `ui:deliverable-file-references` 夹了进去。
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime, { mode: 'native' })
+    await ctx.plugin(McpResources)
+    const fiber = await ctx.plugin({ apply(inner: Context) {
+      // 这一次注册同时提供资源（资源清单因此出现）与字面指示（`mcp:github` 因此出现）。
+      registerServerContext(inner, 'github', {
+        resources: { request: async () => ({ resources: [] }) },
+        instructions: () => 'MCP server: github',
+      }, locale => mcpServerIntro('github', ['mcp__github__search'], locale))
+    } })
+
+    // 一个恰好落在"上游位置"与尾部之间的段落：没有它，资源清单留在原处也照样相邻，
+    // 这条用例就什么也钉不住。
+    ctx.systemPrompt.section({
+      name: 'ui:deliverable-file-references',
+      order: ctx.systemPrompt.getSectionOrder('DELIVERABLE_FILE_REFERENCES'),
+      text: 'Cite created files with inline code.',
+    })
+
+    const names = (await ctx.systemPrompt.assemble()).sections.map(section => section.name)
+    const list = names.indexOf('mcp-resource-servers')
+    expect(list).toBeGreaterThan(-1)
+    expect(names[list + 1]).toBe('mcp:github')
+
+    await fiber.dispose()
     await ctx.fiber.dispose()
   })
 })

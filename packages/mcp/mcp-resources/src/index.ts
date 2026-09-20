@@ -59,7 +59,13 @@ export class McpResourceRuntime extends Service {
     ctx.inject(['systemPrompt'], (inner) => {
       inner.systemPrompt.section({
         name: 'mcp-resource-servers',
-        order: inner.systemPrompt.getSectionOrder('MCP_SERVERS'),
+        // Shares `MCP_INTRO` with the per-server `mcp:<name>` sections: this list names
+        // the servers, and the section right after it introduces each one. Upstream put
+        // both at `MCP_SERVERS`; the fork moved the server intros to the tail so their
+        // long prose cannot push identity and tool guidance down, and this list has to
+        // travel with them — otherwise unrelated sections end up sitting between the
+        // two halves of "which servers exist" and "what each server is".
+        order: inner.systemPrompt.getSectionOrder('MCP_INTRO'),
         interpolate: false,
         text: ({ scope }) => {
           const names = [...this.layers.merge(scope, layer => layer.servers).keys()].sort()

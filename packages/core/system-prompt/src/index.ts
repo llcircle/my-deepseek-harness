@@ -221,6 +221,9 @@ const SECTION_ORDERS = {
   // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
   TOOLS_ON_DEMAND: 2950,
   TOOL_COMPUTER_USE: 3000,
+  // 上游把"哪些 MCP 服务器可读资源"与"每台服务器自己的介绍"都放在这里，两节相邻。
+  // fork 把后者移到了 MCP_INTRO（见其注释），前者跟着一起搬——留着这个位置只会让
+  // 两份 MCP 材料被提示词中段的其它段落劈开。
   MCP_SERVERS: 3100,
   TOOLS_SDK: 5000,
   DELIVERABLE_FILE_REFERENCES: 9000,

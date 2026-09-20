@@ -57,11 +57,19 @@ export const LOCALIZED_SECTIONS: LocalizedSections = {
   },
 
   'deployment:persona-prefix': {
-    // standard preset 的第一方人格模板（上游把人格拆成前缀/后缀两节，前缀是那段
-    // 模板，后缀由部署自己写）。变量占位符原样保留，插值发生在渲染期。
+    // standard preset 的第一方人格模板（上游把人格拆成前缀/后缀两节）。变量占位符
+    // 原样保留，插值发生在渲染期。
     // 用户/部署自己写的 persona 不经过这里——那是别人写的人格，翻译它等于替作者改主意。
     zh: {
-      text: '你是由 {{model}} 模型驱动的编码智能体。当前工作目录是 {{cwd}}。',
+      text: '你是由 {{model}} 模型驱动的编码智能体。',
+    },
+  },
+
+  'deployment:persona-suffix': {
+    // 后缀与前缀是两节，译文也必须分成两条：它曾被并进上面那条前缀译文里，于是
+    // 中文提示词里工作目录出现两次——一次在中段（中文），一次在末尾（英文）。
+    zh: {
+      text: '当前工作目录是 {{cwd}}。',
     },
   },
 
@@ -269,6 +277,17 @@ export const LOCALIZED_SECTIONS: LocalizedSections = {
         + '工具目录正是靠这一点保持精简。用关键词调用 `tool_search` 可以搜索它们，'
         + '用 `select:<名称>` 这样的查询可以按名字取回。\n'
         + '以下工具按需提供：{0}',
+    },
+  },
+
+  'mcp-resource-servers': {
+    // 服务器名是运行期按作用域现算的（配了哪几台 MCP 服务器就有哪些名字），所以按
+    // 标记抽取那份 JSON 数组；抽不出来就整段退回英文——宁可这一节是英文，也不能把
+    // 模型本该看到的服务器名换成一份过期的。
+    zh: {
+      capture: /as the server argument: (\[.*?\])\./u,
+      text: '## MCP 资源服务器\n\n用 list_mcp_resources、list_mcp_resource_templates 或 '
+        + 'read_mcp_resource，把下列名字之一作为 server 参数：{0}。',
     },
   },
 
