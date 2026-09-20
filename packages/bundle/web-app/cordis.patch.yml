@@ -495,7 +495,11 @@
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
-        default: standard
+        # fork 取 `lean` 作为出厂默认：标准预设把整册工具与全部策略段落都常驻在
+        # 请求头部，而 lean 把其中一批放进 `tools:on-demand`、并收掉 workflow/ralph。
+        # 本仓的对话都是长会话，头部的每一字节都要在每次请求里重新计费，lean 是更
+        # 合适的起点；需要标准行为时用 `/preset standard`（或设置面板）逐会话切回。
+        default: lean
 
 # Project-level MCP loading and the MCP settings panel. The project manager reads
 # `<projectRoot>/.dsh/mcp.yml`; the panel edits global profile MCP rows.

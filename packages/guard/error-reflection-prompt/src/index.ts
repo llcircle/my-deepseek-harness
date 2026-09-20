@@ -23,8 +23,14 @@
  * the document format must not silently drop lessons already on disk.
  *
  * The document is re-read on every assembly (cached by mtime/size so one
- * assembly costs one read), so an agent picks up the latest pass without a
- * restart. An absent or empty document contributes nothing at all.
+ * assembly costs one read), **but only a compaction boundary lets a changed
+ * document through**. Lessons are a prompt section, so a file edit mid-turn
+ * would rewrite the head of the next request and void that session's whole
+ * cache prefix — and this document is exactly the asset something rewrites while
+ * a session runs (the very agent that just learned the lesson). Compaction is
+ * the one moment the prefix is rebuilt anyway, so a new pass is admitted there
+ * and nowhere else; until then the last parsed snapshot keeps being served. An
+ * absent or empty document contributes nothing at all.
  *
  * @module @deepseek-ai/dsh-error-reflection-prompt
  */
@@ -34,6 +40,10 @@ import { isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
+// Type-only: pulls the `compaction/end` session-event declaration this file gates on.
+import type {} from '@deepseek-ai/dsh-compaction/types'
+// Type-only: the `session/event` hook this file listens on.
+import type {} from '@deepseek-ai/dsh-session'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   mcpToolSubjectPrefix,
@@ -99,6 +109,33 @@ export function resolveConfig(config: Config): {
     docPath: isAbsolute(docPath) ? resolve(docPath) : join(resolveDshHome(), docPath),
     maxPromptChars,
     maxSubjectChars,
+  }
+}
+
+/**
+ * 反思文档的换新闸门：只在压缩边界之后放行。
+ *
+ * 这是**部署级**而非会话级语义，而且是有意的：文档本身是全局资产
+ * （`<dshHome>/error-reflections.md`），承接它的分段也是全局分段，所以"是哪一次压缩
+ * 触发的换新"并不重要。重要的是换新只发生在缓存本来就要重建的那些时刻，而不是每次
+ * 文件落盘。整份文档要么整体沿用旧快照、要么整体换新，不会出现半新半旧的分段。
+ */
+export class ReflectionRefreshGate {
+  private due = false
+
+  /** 记一次压缩边界；此后第一次真正需要换新时据此放行。 */
+  markBoundary(): void {
+    this.due = true
+  }
+
+  /**
+   * 取一次许可。
+   * @returns 自上次取用以来出现过压缩边界时为 `true`；取走即清零，一次边界只放行一次。
+   */
+  take(): boolean {
+    const allowed = this.due
+    this.due = false
+    return allowed
   }
 }
 
@@ -187,14 +224,15 @@ export function sectionLessonsText(
 }
 
 /**
- * Read and parse the reflection document, reusing the last parse while the file
- * is unchanged. Assembly asks once for the global text and once per section for
- * that section's lessons, so without this cache one assembly would re-read the
- * file dozens of times.
+ * Read and parse the reflection document, serving the last parse until a
+ * compaction boundary admits a change. Assembly asks once for the global text
+ * and once per section for that section's lessons, so without the reuse one
+ * assembly would re-read the file dozens of times.
  * @param path - absolute document path.
+ * @param permit - asked only when the file changed: whether the change may replace the cached parse now.
  * @returns the parsed document; an absent file parses as empty.
  */
-function reader(path: string): () => ReflectionDocument {
+function reader(path: string, permit: () => boolean): () => ReflectionDocument {
   let cached: { key: string; document: ReflectionDocument } | undefined
   return () => {
     let key = 'absent'
@@ -204,10 +242,14 @@ function reader(path: string): () => ReflectionDocument {
     } catch (error) {
       // A missing document means no lessons exist yet; other failures propagate.
       if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') throw error
-      return { global: '', subjects: new Map() }
     }
     if (cached?.key === key) return cached.document
-    const document = parseReflectionDocument(readFileSync(path, 'utf8'))
+    // 首次读取必须真的读一次——还没有任何快照可比。此后再变，就要等压缩边界放行：
+    // 分段落在请求头部，中途换新会把整个会话的缓存前缀作废。
+    if (cached !== undefined && !permit()) return cached.document
+    const document = key === 'absent'
+      ? parseReflectionDocument('')
+      : parseReflectionDocument(readFileSync(path, 'utf8'))
     cached = { key, document }
     return document
   }
@@ -216,7 +258,12 @@ function reader(path: string): () => ReflectionDocument {
 /** Register the lessons section and the per-subject reflection source. */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved = resolveConfig(config)
-  const read = reader(resolved.docPath)
+  const gate = new ReflectionRefreshGate()
+  // 压缩边界是唯一的放行点；事件是全局的，闸门也按部署级语义工作。
+  ctx.on('session/event', (_session, event) => {
+    if (event.type === 'compaction/end' && event.data.error === undefined) gate.markBoundary()
+  })
+  const read = reader(resolved.docPath, () => gate.take())
   ctx.inject(['systemPrompt'], (promptCtx) => {
     promptCtx.systemPrompt.section({
       name: SECTION_NAME,

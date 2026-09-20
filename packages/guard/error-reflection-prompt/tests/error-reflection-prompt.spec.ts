@@ -14,6 +14,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { CompactionId } from '@deepseek-ai/dsh-compaction'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as ReflectionPrompt from '../src/index.ts'
 
@@ -37,6 +39,7 @@ interface SectionStub {
 type ReflectionStub = (sectionName: string) => string | undefined
 
 interface Harness {
+  ctx: Context
   sections: SectionStub[]
   reflection: ReflectionStub
 }
@@ -66,7 +69,20 @@ async function harness(options: ReflectionPrompt.Config): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(FakeSystemPrompt)
   await ctx.plugin(ReflectionPrompt, options)
-  return { sections, reflection: name => reflection(name) }
+  return { ctx, sections, reflection: name => reflection(name) }
+}
+
+/**
+ * 触发一次压缩边界。
+ *
+ * 闸门是**部署级**语义——文档与承接它的分段都是全局的，所以"哪一次压缩触发的换新"
+ * 无关紧要；这里给一个占位会话语境就够了，那也正是被测代码读不到它的原因。
+ */
+function compact(ctx: Context): void {
+  ctx.emit('session/event', undefined as unknown as Session, {
+    type: 'compaction/end',
+    data: { compactionId: CompactionId('test'), turn: null },
+  } as SessionEvent)
 }
 
 describe('the error-reflection-prompt plugin', () => {
@@ -190,17 +206,36 @@ describe('the error-reflection-prompt plugin', () => {
     expect(reflection('tool:read')).toBeUndefined()
   })
 
-  it('re-reads the document once it changes on disk', async () => {
+  it('admits exactly one change per compaction boundary', () => {
+    const gate = new ReflectionPrompt.ReflectionRefreshGate()
+    expect(gate.take()).toBe(false)
+    gate.markBoundary()
+    expect(gate.take()).toBe(true)
+    // 一次边界只放行一次：换新已经发生过，再改还要等下一次压缩。
+    expect(gate.take()).toBe(false)
+  })
+
+  it('keeps serving the last parse until a compaction boundary admits the change', async () => {
     const dir = await tempDir()
     const docPath = join(dir, 'reflections.md')
     await writeFile(docPath, '## tool:read\n第一版。', 'utf8')
-    const { sections, reflection } = await harness({ docPath })
+    const { ctx, sections, reflection } = await harness({ docPath })
     expect(reflection('tool:read')).toContain('第一版。')
 
-    // 后台子代理重写文档之后，下一次装配就该看到新版本，不需要重启。
+    // 学习途中落盘的重写不在当轮生效：分段排在请求头部，中途换新会把整个会话的
+    // 缓存前缀作废。此时仍按上一次的快照作答——磁盘上已经不是第一版了。
     await writeFile(docPath, '## tool:read\n第二版，长一些。', 'utf8')
-    expect(reflection('tool:read')).toContain('第二版，长一些。')
+    expect(reflection('tool:read')).toContain('第一版。')
     expect(sections[0]?.text()).toBe('')
+
+    // 压缩是缓存本来就要重建的时刻，换新在这里放行。
+    compact(ctx)
+    expect(reflection('tool:read')).toContain('第二版，长一些。')
+
+    await writeFile(docPath, '## tool:read\n第三版。', 'utf8')
+    expect(reflection('tool:read')).toContain('第二版，长一些。')
+    compact(ctx)
+    expect(reflection('tool:read')).toContain('第三版。')
   })
 
   it('caps one subject\'s lessons so a chatty ability cannot crowd out the rest', async () => {

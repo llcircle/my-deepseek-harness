@@ -21,10 +21,16 @@
       "path": "../../core/system-prompt"
     },
     {
+      "path": "../../core/session"
+    },
+    {
       "path": "../../util/home-paths"
     },
     {
       "path": "../../guard/tool-error-journal"
+    },
+    {
+      "path": "../../compaction/compaction"
     }
   ]
 }

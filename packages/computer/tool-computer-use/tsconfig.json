@@ -7,12 +7,14 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../core/agent" },
+    { "path": "../../core/scope" },
     { "path": "../../core/session" },
     { "path": "../../core/system-prompt" },
     { "path": "../../core/tools" },
     { "path": "../../llm/llm" },
     { "path": "../../session/session-projection" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../compaction/compaction" },
     { "path": "../../interaction/commands" },
     { "path": "../computer" }
   ]

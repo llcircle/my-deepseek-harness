@@ -232,7 +232,9 @@ Source: [`packages/computer/computer/src/index.ts`](../../packages/computer/comp
 
 ### `ctx.computerController` — `ComputerUseController`
 
-`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` section plus tool set loaded into the agent scope while it is enabled.
+`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.
+
+The material is loaded in one of two modes (see InstallationMode): the temporary `on-demand` form a fresh `/computer` gets, and the permanent `resident` form applied at the next compaction boundary if computer use is still on.
 
 Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis's provide collide and would leave the type augmentations unmergeable, so this controller yields the name.
 

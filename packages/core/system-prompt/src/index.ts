@@ -249,6 +249,11 @@ const CONTEXT_ORDERS = {
   SANDBOX_POLICY: 110,
   APPROVAL_POLICY: 115,
   SUBAGENT_DELEGATION: 120,
+  // 电脑操作策略先以运行时上下文的形式留在消息尾部，直到下一次压缩（缓存本来就要
+  // 重建的时刻）才提升成常驻分段。它与 MCP 介绍同族——都是"本会话额外装配进来的
+  // 能力说明"——只是暂时走尾部通道，所以位置排在运行时上下文族之后、与
+  // `COMPUTER_USE_POLICY` 分段（9060）各自独立编号。
+  COMPUTER_USE_POLICY: 130,
 } as const
 
 /** Name of a centrally allocated runtime-context position. */

@@ -18,21 +18,29 @@
  * ## 四层结构
  *
  * 与 Codex 的做法对齐：静态策略资产（`prompt.ts`）→ 部署可整体替换（`policy` 配置）
- * → 运行时按会话**装载或卸载**（本文件在启用时注册的 section）→ 执行结果以
+ * → 运行时按会话**装载或卸载**（本文件在启用时注册的形态）→ 执行结果以
  * "未受信任的界面证据"回灌（`tools.ts`）。
  *
- * ## 策略分节为什么在启用时才注册
+ * ## 启用后的两种形态，以及为什么非要两种
  *
- * `computer:policy` 不是全局注册后靠"文本为空"自我隐藏的——它和工具在**同一时机、
- * 同一作用域**注册（`install`），也在同一时机退场（`uninstall`）。这与 Claude Code
- * 把电脑操作挂成一个 MCP 服务器的形状一致：`ListTools` 在禁用时返回空列表，
- * 能力不存在就什么都不宣告，而不是宣告一个空壳。
+ * 提示词与工具 schema 都排在请求最前面，动它们等于作废整个长会话的缓存前缀。而电脑
+ * 操作恰恰是**会话中途**才被要求启用的能力——一次 `/computer` 就让几万 token 的历史
+ * 重新计费，代价与收益完全不成比例。所以启用先取**临时形态**：
+ * - 工具走 `tools:on-demand`（组合里本来就有取用通道时）：照常注册，但 schema 不上
+ *   wire，模型要用先经 `tool_search` 取；
+ * - 介绍走 `systemPrompt.context()` 而不是 `systemPrompt.section()`：它落成一条**尾部**
+ *   的运行时上下文快照，只在自己变化时替换自己，稳定前缀一个字节都不动。
  *
- * 两个后果值得点名：
- * - 提示词与工具永远同进同退。策略说"你可以点击鼠标"时，那些工具必然就在工具目录里；
- *   反过来，没启用的会话既没有工具也没有这一段。
- * - 编辑面不再多出一行空的"电脑操作"。未启用的能力**根本没注册**，卡片上自然查无此节；
- *   文档里若还留着它的旧经验，卡片会把它们计入"没有对应能力"的那一类。
+ * **压缩**是唯一"缓存本来就要重建"的时刻——整段历史刚被摘要替换。那一天到来时才把
+ * 临时形态提升成永久形态：工具转常驻、介绍转 `computer:policy` 分段。别的时候一律
+ * 不动：用户只是开关一次能力，不该付出整段历史重新计费的代价。
+ *
+ * 两种形态都不越过"未启用就什么都不注册"这条线：没启用的会话既没有工具也没有介绍，
+ * 编辑面上自然查无此节（与 Claude Code 把电脑操作挂成 MCP 服务器的形状一致——
+ * `ListTools` 在禁用时返回空列表，而不是宣告一个空壳）。
+ *
+ * 一个已知折衷：`computer:policy` 只有在常驻形态下才是**分段**，所以反思文档里写在
+ * `## computer:policy` 下面的经验，在提升之前没有落点、不会被注入。
  *
  * @module @deepseek-ai/dsh-tool-computer-use
  */
@@ -41,15 +49,20 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-commands'
+// Type-only: pulls the `compaction/end` session-event declaration this file gates on.
+import type {} from '@deepseek-ai/dsh-compaction/types'
 import type { ComputerUse } from '@deepseek-ai/dsh-computer'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-tools'
+import { TOOL_SEARCH_NAME } from '@deepseek-ai/dsh-tools/search'
 import { collectUserText, matchesTrigger } from './activation.ts'
 import { COMPUTER_POLICY, COMPUTER_COMMAND_ALIASES, COMPUTER_COMMAND_NAME, DEFAULT_TRIGGER_PHRASES } from './prompt.ts'
 import { computerProjectionDefinition, type ComputerUnitState } from './state.ts'
-import { registerComputerTools } from './tools.ts'
+import { COMPUTER_TOOL_NAMES, registerComputerTools } from './tools.ts'
 
 export type { ComputerUnitState } from './state.ts'
 export { COMPUTER_TOOL_NAMES } from './tools.ts'
@@ -126,16 +139,32 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** 每个会话当前装载的工具集。 */
+/**
+ * 装载形态。
+ *
+ * - `on-demand`：启用当时的**临时**形态。工具注册但 schema 不上 wire（组合里有取用
+ *   通道时），介绍落在尾部的运行时上下文快照里。开关一次能力不动稳定前缀。
+ * - `resident`：压缩之后提升成的**永久**形态。工具常驻，介绍是这个会话真正的一节
+ *   系统提示词。此后不会再有任何形态切换。
+ */
+type InstallationMode = 'on-demand' | 'resident'
+
+/** 每个会话当前装载的形态。 */
 interface Installation {
   readonly agent: Agent
+  readonly mode: InstallationMode
   readonly dispose: () => void
 }
 
 /**
  * `ctx.computerController`: owns the on-demand enablement state, the
- * model-facing `/computer` command, and the `computer:policy` section plus tool
+ * model-facing `/computer` command, and the `computer:policy` material plus tool
  * set loaded into the agent scope while it is enabled.
+ *
+ * The material is loaded in one of two modes (see {@link InstallationMode}): the
+ * temporary `on-demand` form a fresh `/computer` gets, and the permanent
+ * `resident` form applied at the next compaction boundary if computer use is
+ * still on.
  *
  * Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse`
  * as a "only one provider may register at a time" slot
@@ -170,8 +199,22 @@ export class ComputerUseController extends Service {
     })
 
     // 会话恢复/分叉：日志里已经启用过的会话要重新装载工具。
+    //
+    // 一律回到临时形态。进程是新起的，这一轮的首个请求本来就要重建缓存，回到常驻
+    // 形态并不会省下什么；真有意义的是"此后仍在使用电脑"——那个会话的下一次压缩
+    // 会再把它提升一次，而那时的提升依旧是免费的。
     ctx.on('agent/created', ({ agent }) => {
       if (this.isActive(agent.session)) this.install(agent)
+    })
+
+    // 压缩边界：唯一"缓存本来就要重建"的时刻（整段历史刚被摘要替换）。临时形态
+    // 就在这一刻落地成永久形态，别的时候一律不动。
+    ctx.on('session/event', (session, event) => {
+      if (event.type !== 'compaction/end' || event.data.error !== undefined) return
+      const installation = this.installations.get(session)
+      if (installation === undefined || installation.mode === 'resident') return
+      if (!this.isActive(session)) return
+      this.install(installation.agent, 'resident')
     })
 
     // 命令是显式入口，也是唯一能"关闭"的入口。
@@ -333,31 +376,26 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 把策略分节与工具装载到该 agent 的作用域；重复装载同一个 agent 是空操作。
+   * 把介绍与工具按 `mode` 装载到该 agent 的作用域；重复装载同一形态是空操作。
    *
-   * 两者必须同时注册：策略是"你能动这台电脑"的宣告，工具是这句话的兑现，
-   * 分开就会出现"说得到做不到"或"能做但没告知"的错位。注册发生在 `agent.ctx`，
-   * 因此它们只对这个会话（及其子 agent，作用域链本来就这么继承）可见。
+   * 工具在两种形态下都注册，差的只是上不上 wire 与介绍落在哪——见 {@link present}。
+   * 注册发生在 `agent.ctx`，因此它们只对这个会话（及其子 agent，作用域链本来就这么
+   * 继承）可见。
+   *
+   * @param agent - 目标 agent。
+   * @param mode - 装载形态；默认是启用当时的临时形态 `on-demand`。
    */
-  private install(agent: Agent): void {
+  private install(agent: Agent, mode: InstallationMode = 'on-demand'): void {
     const existing = this.installations.get(agent.session)
-    if (existing !== undefined && existing.agent === agent) return
+    if (existing !== undefined && existing.agent === agent && existing.mode === mode) return
     if (existing !== undefined) this.uninstall(agent.session)
     const disposers: Array<() => void> = [
       registerComputerTools(agent.ctx, this.ctx),
-      // 与 MCP 服务器同构的一步：能力在，介绍才在。"未启用不显示"因此不靠
-      // 过滤实现，而是靠根本没注册——编辑面也就不会留下一行空的电脑操作。
-      //
-      // 这一次只改"何时注册"，没改"文本从哪来"：仍旧用函数求值，装配期的
-      // 本地化包装走的还是原路径（中文资产 ↔ 英文兜底见 localized-sections）。
-      agent.ctx.systemPrompt.section({
-        name: COMPUTER_POLICY_SECTION,
-        order: agent.ctx.systemPrompt.getSectionOrder('COMPUTER_USE_POLICY'),
-        text: () => this.policyText,
-      }),
+      ...this.present(agent, mode),
     ]
     this.installations.set(agent.session, {
       agent,
+      mode,
       // 后注册的先注销：策略与工具各自持有独立的注销器，一起退场。
       dispose: () => {
         for (const dispose of disposers.reverse()) dispose()
@@ -365,7 +403,47 @@ export class ComputerUseController extends Service {
     })
   }
 
-  /** 注销该会话已装载的工具集与策略分节。 */
+  /**
+   * 介绍的落点与工具的可见性，按形态二选一。
+   *
+   * 常驻形态就是老样子：一个 `computer:policy` 分段 + 一组普通工具。
+   *
+   * 临时形态把两样都挪到"改了也不动稳定前缀"的位置。工具那一半只在组合**本来就有**
+   * 取用通道时才跟进——`tool_search` 的取用工具与 on-demand 索引分段是同一行装配出来
+   * 的，所以"入口在不在"直接问注册表。没有入口却把 schema 藏起来，等于让模型永远拿
+   * 不到它：那种组合里工具保持常驻，能力照常可用，代价只是回到老样子。
+   *
+   * @param agent - 目标 agent。
+   * @param mode - 装载形态。
+   * @returns 该形态下需要一并注销的注册项。
+   */
+  private present(agent: Agent, mode: InstallationMode): Array<() => void> {
+    if (mode === 'resident') {
+      return [agent.ctx.systemPrompt.section({
+        name: COMPUTER_POLICY_SECTION,
+        order: agent.ctx.systemPrompt.getSectionOrder('COMPUTER_USE_POLICY'),
+        text: () => this.policyText,
+      })]
+    }
+    const disposers: Array<() => void> = []
+    if (agent.ctx.tools.get(TOOL_SEARCH_NAME, scopeOf(agent.ctx)) !== undefined) {
+      disposers.push(agent.ctx.tools.defer(COMPUTER_TOOL_NAMES))
+    }
+    // 与 MCP 服务器同构的一步：能力在，介绍才在。"未启用不显示"因此不靠过滤实现，
+    // 而是靠根本没注册——编辑面也就不会留下一行空的电脑操作。
+    //
+    // 这一段暂时不是分段而是运行时上下文：文本照旧是函数求值（装配期的本地化包装
+    // 走的还是原路径，中文资产 ↔ 英文兜底见 localized-sections），变的只是它落在
+    // 消息尾部而不是请求头部。
+    disposers.push(agent.ctx.systemPrompt.context({
+      name: COMPUTER_POLICY_SECTION,
+      order: agent.ctx.systemPrompt.getContextOrder('COMPUTER_USE_POLICY'),
+      text: () => this.policyText,
+    }))
+    return disposers
+  }
+
+  /** 注销该会话已装载的工具集与介绍，无论它当前处于哪种形态。 */
   private uninstall(session: Session): void {
     const existing = this.installations.get(session)
     if (existing === undefined) return
