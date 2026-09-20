@@ -12,6 +12,7 @@ patchedDependencies:
   '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
   '@huanlin/dsh-plugin-mcp-manager@0.2.0': 1d208b7ba1c8e167e0cfc68f9d5169741dbad8247bc9bca061754b6c2925477b
   '@yao-pkg/pkg@6.21.0': 07f08c630d0d3886d81fd4600116d07e4871ddcd57f92cb22746b6d246cdc337
+  dsh-project-mcp-manager@0.3.1: 94f33e58af4e6685ee9ced670f45d3adf0aa82b5a223cabcf3f7a4f815dbef84
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
 importers:
@@ -2190,7 +2191,7 @@ importers:
         version: 15.0.0
       dsh-project-mcp-manager:
         specifier: ^0.3.1
-        version: 0.3.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-brand@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)))(@deepseek-ai/dsh-invariants@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-subprocess@packages+subprocess+subprocess)(@deepseek-ai/dsh-timeout@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))
+        version: 0.3.1(patch_hash=94f33e58af4e6685ee9ced670f45d3adf0aa82b5a223cabcf3f7a4f815dbef84)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-brand@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)))(@deepseek-ai/dsh-invariants@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-subprocess@packages+subprocess+subprocess)(@deepseek-ai/dsh-timeout@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))
       open:
         specifier: ^11.0.0
         version: 11.0.0
@@ -5158,12 +5159,18 @@ importers:
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@deepseek-ai/dsh-compaction':
+        specifier: workspace:^
+        version: link:../../compaction/compaction
       '@deepseek-ai/dsh-computer':
         specifier: workspace:^
         version: link:../computer
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -7261,6 +7268,12 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-compaction':
+        specifier: workspace:^
+        version: link:../../compaction/compaction
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
@@ -23826,7 +23839,7 @@ snapshots:
 
   dotenv@16.6.1: {}
 
-  dsh-project-mcp-manager@0.3.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-brand@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)))(@deepseek-ai/dsh-invariants@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-subprocess@packages+subprocess+subprocess)(@deepseek-ai/dsh-timeout@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927)):
+  dsh-project-mcp-manager@0.3.1(patch_hash=94f33e58af4e6685ee9ced670f45d3adf0aa82b5a223cabcf3f7a4f815dbef84)(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-brand@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)))(@deepseek-ai/dsh-invariants@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-subprocess@packages+subprocess+subprocess)(@deepseek-ai/dsh-timeout@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927)):
     dependencies:
       '@deepseek-ai/dsh-mcp-client': 0.1.1-rc.2(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-attachment@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)(@deepseek-ai/dsh-brand@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis)))(@deepseek-ai/dsh-invariants@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-llm@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-subprocess@packages+subprocess+subprocess)(@deepseek-ai/dsh-timeout@0.1.6-alpha.1(@deepseek-ai/cordis@vendor+cordis))(@deepseek-ai/dsh-tools@0.1.6-alpha.1(022d52395afbb3d3cf8ebe81f2e78927))
       chokidar: 5.0.0

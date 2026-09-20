@@ -1,0 +1,32 @@
+diff --git a/lib/registry.js b/lib/registry.js
+index 50a62975fcde6f19324adab53b9eac0662c036ed..c6a27ad77318dde100fcbddcf5e74726c5c72b2c 100644
+--- a/lib/registry.js
++++ b/lib/registry.js
+@@ -391,15 +391,19 @@ export class ProjectMcpRegistry {
+         this.watchedFiles = keys;
+         if (keys.length === 0)
+             return;
+-        // chokidar 不会监听尚不存在的嵌套文件：改为监听项目根（depth 2 覆盖
+-        // .dsh/mcp.yml），事件回调里按精确路径过滤。
+-        const watcher = chokidar.watch(roots, {
++        // 只盯每个项目真正要感知的候选路径（.dsh 目录本身与两份候选文件），不再
++        // 递归监听整棵项目树：chokidar 的 depth 2 根监听会为树内每个目录/文件各开
++        // 一个原生 fs.watch —— 在 dsh 自己的源码仓库里实测 1200+ 个句柄、约 2-3 秒
++        // 的启动开销 —— 而事件回调本来就只按精确路径匹配这两份候选文件。
++        // 尚不存在的候选路径由 chokidar 盯其最近的已存在祖先（项目根或 .dsh）：
++        // 首次创建 .dsh/mcp.yml 同样触发，「先无后建」与「已存在再改/删」两种形态
++        // 下的 add/change/unlink 均已实测覆盖。
++        const candidates = [];
++        for (const root of roots)
++            candidates.push(root, join(root, ".dsh"), projectMcpFile(root), projectMcpJsonFile(root));
++        const watcher = chokidar.watch(candidates, {
+             ignoreInitial: true,
+-            depth: 2,
+-            ignored: (candidate) => {
+-                const parts = candidate.split(/[/\\]/);
+-                return parts.some((part) => part === "node_modules" || part === ".git" || part === ".hg" || part === ".svn");
+-            }
++            depth: 0
+         });
+         // .mcp.json 与 .dsh/mcp.yml 平级热重载：都按「已知项目根下的精确文件」比对，
+         // 项目树里其它位置的同名文件（嵌套子目录的 .dsh/mcp.yml 等）不误触发。

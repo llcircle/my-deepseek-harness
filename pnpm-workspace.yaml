@@ -94,4 +94,5 @@ patchedDependencies:
   # calls move to stderr, where operator notices belong.
   '@huanlin/dsh-plugin-mcp-manager@0.2.0': patches/@huanlin__dsh-plugin-mcp-manager@0.2.0.patch
   '@yao-pkg/pkg@6.21.0': patches/@yao-pkg__pkg@6.21.0.patch
+  dsh-project-mcp-manager@0.3.1: patches/dsh-project-mcp-manager@0.3.1.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

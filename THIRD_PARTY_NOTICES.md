@@ -127,6 +127,7 @@ pnpm applies local patches to the following packages at install time, so shipped
 - `@electron/osx-sign@1.3.3` — [`patches/@electron__osx-sign@1.3.3.patch`](patches/@electron__osx-sign@1.3.3.patch)
 - `@huanlin/dsh-plugin-mcp-manager@0.2.0` — [`patches/@huanlin__dsh-plugin-mcp-manager@0.2.0.patch`](patches/@huanlin__dsh-plugin-mcp-manager@0.2.0.patch)
 - `@yao-pkg/pkg@6.21.0` — [`patches/@yao-pkg__pkg@6.21.0.patch`](patches/@yao-pkg__pkg@6.21.0.patch)
+- `dsh-project-mcp-manager@0.3.1` — [`patches/dsh-project-mcp-manager@0.3.1.patch`](patches/dsh-project-mcp-manager@0.3.1.patch)
 - `node-pty@1.2.0-beta.15` — [`patches/node-pty@1.2.0-beta.15.patch`](patches/node-pty@1.2.0-beta.15.patch)
 
 ## Official Claude Code platform payloads
