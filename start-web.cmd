@@ -10,11 +10,54 @@ rem code page is active (see chcp above) any multi-byte character makes it lose
 rem sync and re-read from the middle of a line -- comment fragments then get
 rem executed as commands. All messages and comments here must stay ASCII.
 rem ---------------------------------------------------------------------------
+rem Two paths, in this order on purpose:
+rem   FAST  an instance already answers on the port -> open it and return.
+rem         Costs a cmd start plus one curl probe: well under a second. It runs
+rem         BEFORE every node invocation, because starting node at all costs
+rem         100-300ms and the whole point of this path is not to pay that.
+rem   SLOW  nothing is serving -> start one in its own window.
+rem         A cold boot is dominated by module resolution, not by this script,
+rem         so the script's job is to not add to it. Keep the server running and
+rem         every later launch takes the fast path.
+rem ---------------------------------------------------------------------------
 
 rem Never inherit NODE_OPTIONS. A wrapper that points it at a --require shim
 rem changes how the app starts, and a bulk-delete guard in particular makes the
 rem app's own temp cleanup fail. The launcher starts a plain node.
 set "NODE_OPTIONS="
+
+rem Opt out of session telemetry before boot. apps/cli/src/profile-boot.ts reads
+rem this and patches the telemetry row disabled, so the OTel SDK is never even
+rem imported. Measured on this tree: importing it costs ~0.8s on every boot
+rem (~1500 extra module resolutions, ~44% of all module work). Note that
+rem DSH_TELEMETRY_MODE=DISABLED is NOT equivalent -- it short-circuits at
+rem runtime, after the modules are already loaded. Set DSH_WEB_TELEMETRY=1 to
+rem keep telemetry on.
+if not "%DSH_WEB_TELEMETRY%"=="1" set "DSH_TELEMETRY_DISABLED=1"
+
+rem === FAST PATH: an instance is already serving ==============================
+rem Only for a bare "start-web.cmd". With arguments the port is unknown here and
+rem the intent is not necessarily "give me whatever is already running", so the
+rem slow path owns that case.
+if not "%~1"=="" goto slow_path
+
+rem Windows 10 1803+ ships curl. Without it, fall through: the probe is an
+rem optimisation, never a prerequisite.
+where curl >nul 2>nul
+if errorlevel 1 goto slow_path
+
+rem Any HTTP status counts, including 404: what matters is that something
+rem answers, not what it answers with. Bounded so a half-dead listener cannot
+rem hang the launcher.
+curl -s -o nul -m 1 --connect-timeout 1 "http://127.0.0.1:3080/" 2>nul
+if errorlevel 1 goto slow_path
+
+echo [start-web] Port 3080 is already serving - opening the running instance.
+start "" "http://127.0.0.1:3080/"
+exit /b 0
+
+rem === SLOW PATH: nothing is serving, so start one ============================
+:slow_path
 
 rem --- 1. Node.js present and new enough -------------------------------------
 where node >nul 2>nul
@@ -93,12 +136,14 @@ for %%A in (%*) do (
 )
 
 rem Without this check a busy port surfaces as a 40-line plugin-tree stack trace
-rem that never mentions the actual cause.
+rem that never mentions the actual cause. Reached only when the port is held by
+rem something that is not an answering dsh -- an answering one took the fast
+rem path above and never got here.
 if not defined HAS_PORT (
   netstat -ano | findstr /c:":3080 " | findstr /i /c:"LISTENING" >nul
   if not errorlevel 1 (
-    echo [start-web] Port 3080 is already in use - another instance is probably running.
-    echo [start-web] Listening socket, PID last:
+    echo [start-web] Port 3080 is listening but not answering HTTP - it is not a
+    echo [start-web] ready dsh instance. Listening socket, PID last:
     netstat -ano | findstr /c:":3080 " | findstr /i /c:"LISTENING"
     echo [start-web] Close it, or start on a free port:  start-web.cmd --port 3090
     pause
@@ -107,12 +152,26 @@ if not defined HAS_PORT (
 )
 
 rem --- 5. Boot ---------------------------------------------------------------
-echo [start-web] Starting DeepSeek Harness Web...
+echo [start-web] Starting DeepSeek Harness Web in its own window...
+echo [start-web]   - the browser opens once the server is ready
+echo [start-web]   - about 7s with a warm file cache, longer on a cold one
+echo [start-web]   - LEAVE THAT WINDOW OPEN: it is the server. Closing it stops
+echo [start-web]     dsh, and the next launch has to boot again.
 rem Launch the repo's own source launcher, i.e. the "dsh" script from package.json.
 rem Deliberately NOT "pnpm dsh": pnpm re-verifies dependencies before running a
 rem script, so any install-time problem (lefthook lock, postinstall failure,
 rem corepack shim path) would surface as "the web app failed to start" even
 rem though the app itself is fine.
+rem "start" detaches the server from this console, so the launcher returns at
+rem once while dsh keeps running -- which is exactly what the fast path later
+rem finds. The trailing "pause" is why a failed boot leaves its window readable
+rem instead of flashing away. Set DSH_WEB_FOREGROUND=1 to stay attached instead
+rem and watch the log in this window.
+if "%DSH_WEB_FOREGROUND%"=="1" goto foreground
+start "dsh web" cmd /c "node --import tsx/esm apps/cli/src/bin.ts --profile web %* & if errorlevel 1 pause"
+exit /b 0
+
+:foreground
 node --import tsx/esm apps/cli/src/bin.ts --profile web %*
 set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" (
