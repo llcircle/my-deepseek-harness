@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-tool-error-journal",
-  "description": "Persist failed tool calls (including MCP tools) to a JSONL error journal from the post-commit session feed",
+  "description": "Persist failed tool calls — native, MCP, and PTC mode sub-calls — to a JSONL error journal from the post-commit session feed",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
@@ -30,7 +30,8 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^"
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:^"
@@ -39,6 +40,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
-    "@deepseek-ai/dsh-system-prompt": "workspace:^"
+    "@deepseek-ai/dsh-system-prompt": "workspace:^",
+    "@deepseek-ai/dsh-tools": "workspace:^"
   }
 }

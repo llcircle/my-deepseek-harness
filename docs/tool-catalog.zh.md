@@ -23,7 +23,8 @@
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`、`stagehand_extract`、`stagehand_navigate`、`stagehand_observe`、`stagehand_screenshot`、`stagehand_tabs` | `ctx.browserUse`、`ctx.agents`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a UI/provider answers the question` | - | ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类答案。 |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`、`ctx.ptcRuntime (execution time)`、`ctx.systemPrompt` | `tool/call`、`one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call`、`tool/result` | - | 在 `mode: ptc`／`mode: both` 下，它由工具注册表所有，作为可过滤能力层之外的保留传输机制（参见 PTC mode Agent Note）。在 `ptc` 下，它是注册表对协议格式（wire format）的唯一贡献；其他可见能力在使用已加载运行时语言生成的 SDK 章节中声明。程序通过 binding 调用这些能力，调用按照原生并发约定调度：启动顺序和策略遵循提交顺序，并发安全的函数体最多重叠执行 `maxParallelSubCalls` 个。调用会重新进入完整且受守卫保护的工具流水线，并将每个嵌套执行关联到此外层结果。 |
-| `@deepseek-ai/dsh-tools/search` | `tool_search` | `ctx.tools`、`ctx.systemPrompt`、`a calling Agent for per-agent load state` | `tool/call`、`tool/result`、`the calling scope's set of loaded on-demand tools` | - | 两分类目录里负责"取回"的那一半：组合用 `defer` 声明它扣留了哪些工具，这些工具的 schema 在模型按名字或关键词索取之前不会上线，`tools:on-demand` 分节列出尚未取回的部分。该工具本身永远不可延迟——它是唯一的回程——且取回按调用作用域计量，一个 agent 的取回不会花掉另一个 agent 的额度。只有 `lean` 挂载它；其他随产品发布的 preset 都让整份目录保持常驻。 |
+| `@deepseek-ai/dsh-tools/search` | `tool_search` | `ctx.tools`、`ctx.systemPrompt`、`a calling Agent for per-agent load state` | `tool/call`、`tool/result`、`the calling scope's set of loaded on-demand tools` | - | 两分类目录里负责"取回"的那一半：组合用 `defer` 声明它扣留了哪些工具，这些工具的 schema 在模型按名字或关键词索取之前不会上线，`tools:on-demand` 运行时上下文列出尚未取回的部分。该工具本身永远不可延迟——它是唯一的回程——且取回按调用作用域计量，一个 agent 的取回不会花掉另一个 agent 的额度。本 fork 随产品发布的 preset 都不再挂载它：被扣留的 schema 实测是**不可调用**的，而无论"扣留再取回"还是"把目录翻译成 SDK"都不比直接发送整份 schema 更省。机制本身仍留给有意组合它的部署。 |
+| `@deepseek-ai/dsh-tools/script` | `script` | `ctx.tools`、`the contributing capability (execution time)` | `tool/call`、`one tool/ptc-dispatch-start + tool/ptc-dispatch pair per script line`、`tool/result` | - | 一个常驻入口，内容是逐行动作的脚本。工具拥有语法、整段先解析、逐行派发；它能**做什么**则是贡献来的：能力用 `ctx.tools.contributeScript(...)` 交出一张动词表，这一行据此派生出其余一切——常驻的 schema、把能力声明为"只该由脚本到达"的那些名字扣留、以及拒绝模型直呼的守卫（被扣留的名字仍然注册着，唯一能到达它的是脚本的嵌套派发）。描述简短且不提任何能力，也是同一个原因：动词属于能力自己的提示词材料，只在该能力启用期间进入提示词。本节目的装配会先挂上电脑能力（今天唯一交出动词表的那一个），好让这一行有东西可注册；收割到的 schema 与贡献了哪些动词无关。能力全被 `disabled` 的部署里，这一行什么都不注册——所以它自己不需要平台判定。 |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`、`ctx.systemPrompt`、`ctx.userQuestions (execution time, opportunistic)` | `tool/call`、`plan/mode inactive on an approved review`、`tool/result` | - | 规划未激活时，exit_plan_mode 仍保留在面向模型的 schema 中，这样状态转换不会在规划策略变更之外额外造成工具目录变动。其执行路径会拒绝规划模式之外的调用；在规划模式下，它通过用户交互 seam 提交计划（批准／根据反馈继续规划），批准后会在步骤边界记录规划模式已停用。 |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`、`ctx.shell`、`ctx.systemPrompt`、`ctx.shellEnv`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_background` 的运行会注册到通用 `ctx.jobs` 运行时，并通过 `job_*` 工具（来自 `@deepseek-ai/dsh-tool-jobs`）收集／停止；禁用 `enableRunInBackground` 配置（默认为 true）后，该参数会被完全移除。 |
 | `@deepseek-ai/dsh-tool-present` | `present` | `ctx.tools`, `ctx.fs`, `ctx.sessionProjections` | `tool/call`, `deliverables/presented 在成功的最终结果之后`, `tool/result` | - | 交付归调用方 Session 所有；Web ui-deliverables 提供源文件打开与卡片。 |
@@ -48,7 +49,7 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
-| `@deepseek-ai/dsh-tool-computer-use` | - | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionProjections`、`ctx.computer (execution time)` | `tool/call`、`tool/result`、`computer/mode (每次启用与关闭)` | `computer_screenshot`、`computer_display`、`computer_pointer`、`computer_move`、`computer_click`、`computer_drag`、`computer_type`、`computer_key`、`computer_scroll` | 电脑操作是启用制：只有用户说"操作电脑"或用 /computer 显式要求，这九个工具才装进该 agent 的作用域，策略分节也才进入提示词。收割进程不会触发启用，因此这里只登记工具名——它们默认对模型不可见，这正是这项能力的设计前提（桌面控制权不该默认授予）。 |
+| `@deepseek-ai/dsh-tool-computer-use` | - | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionProjections`、`ctx.computer (execution time)` | `tool/call`、`tool/result`、`computer/mode (每次启用与关闭)` | `computer_screenshot`、`computer_display`、`computer_pointer`、`computer_move`、`computer_click`、`computer_drag`、`computer_type`、`computer_key`、`computer_scroll` | 电脑操作是启用制，而那九个桌面动作只能从一段 `script`（`@deepseek-ai/dsh-tools/script`）里到达：本包在用户用 `/computer`（或在消息里明确要求"操作电脑"）时注册它们、把九个动词交给脚本入口、并让它们的 schema 保持扣留——另有一道守卫拒绝模型直呼，所以能到达它们的只有脚本的嵌套派发。所以一次普通启动在这里收割不到任何 schema，那九个名字改列在"随包发布的其它名字"里：此刻还没有 agent 启用这项能力，动作尚未注册。模型要知道脚本能写什么，读的是策略分节，而那一节只在该能力启用期间存在。这一行本身不向模型暴露任何东西，它喂的那个脚本入口归属**预设层**而不是宿主层——宿主层注册出来的工具落在**全局作用域**，那里既会进入每一个预设，又绕过让 `minimal` 能把目录钉成一个工具的那道限制。 |
 | `@deepseek-ai/dsh-tool-error-journal` | - | `ctx.sessions（session/event 旁路）` | - | - | 只做旁路记录：它挂 session/event 把核心与 MCP 工具的失败写进 DSH home 下的 JSONL，不向模型暴露任何工具。目录登记它是为了不留下一类看不见的能力。 |
 
 <a id="deepseek-aidsh-mcp-resources"></a>
@@ -525,7 +526,38 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
 
 来源：[`packages/core/tools/src/search.ts`](../packages/core/tools/src/search.ts)
 
-两分类目录里负责"取回"的那一半：组合用 `defer` 声明它扣留了哪些工具，这些工具的 schema 在模型按名字或关键词索取之前不会上线，`tools:on-demand` 分节列出尚未取回的部分。该工具本身永远不可延迟——它是唯一的回程——且取回按调用作用域计量，一个 agent 的取回不会花掉另一个 agent 的额度。只有 `lean` 挂载它；其他随产品发布的 preset 都让整份目录保持常驻。
+两分类目录里负责"取回"的那一半：组合用 `defer` 声明它扣留了哪些工具，这些工具的 schema 在模型按名字或关键词索取之前不会上线，`tools:on-demand` 运行时上下文列出尚未取回的部分。该工具本身永远不可延迟——它是唯一的回程——且取回按调用作用域计量，一个 agent 的取回不会花掉另一个 agent 的额度。本 fork 随产品发布的 preset 都不再挂载它：被扣留的 schema 实测是**不可调用**的，而无论"扣留再取回"还是"把目录翻译成 SDK"都不比直接发送整份 schema 更省。机制本身仍留给有意组合它的部署。
+
+<a id="deepseek-aidsh-toolsscript"></a>
+
+## `@deepseek-ai/dsh-tools/script`
+
+### `script`
+
+执行一段脚本：一行一个动作，按顺序执行，其中一行失败就停下来。你可以写哪些动作、参数怎么写，取决于已启用的能力在自己那一节提示词里列出的内容——不要凭猜测写别的动作。某个动作被报为不可用，说明它所属的能力尚未启用：不要改写那一行，把情况告诉用户。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "The script: one action per line."
+    },
+    "description": {
+      "type": "string",
+      "description": "One line saying what this script is meant to achieve, shown to the user."
+    }
+  },
+  "required": [
+    "code"
+  ]
+}
+```
+
+来源：[`packages/core/tools/src/script.ts`](../packages/core/tools/src/script.ts)
+
+一个常驻入口，内容是逐行动作的脚本。工具拥有语法、整段先解析、逐行派发；它能**做什么**则是贡献来的：能力用 `ctx.tools.contributeScript(...)` 交出一张动词表，这一行据此派生出其余一切——常驻的 schema、把能力声明为"只该由脚本到达"的那些名字扣留、以及拒绝模型直呼的守卫（被扣留的名字仍然注册着，唯一能到达它的是脚本的嵌套派发）。描述简短且不提任何能力，也是同一个原因：动词属于能力自己的提示词材料，只在该能力启用期间进入提示词。本节目的装配会先挂上电脑能力（今天唯一交出动词表的那一个），好让这一行有东西可注册；收割到的 schema 与贡献了哪些动词无关。能力全被 `disabled` 的部署里，这一行什么都不注册——所以它自己不需要平台判定。
 
 <a id="deepseek-aidsh-plan-mode"></a>
 
@@ -2655,7 +2687,7 @@ web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可�
 
 ## `@deepseek-ai/dsh-tool-computer-use`
 
-电脑操作是启用制：只有用户说"操作电脑"或用 /computer 显式要求，这九个工具才装进该 agent 的作用域，策略分节也才进入提示词。收割进程不会触发启用，因此这里只登记工具名——它们默认对模型不可见，这正是这项能力的设计前提（桌面控制权不该默认授予）。
+电脑操作是启用制，而那九个桌面动作只能从一段 `script`（`@deepseek-ai/dsh-tools/script`）里到达：本包在用户用 `/computer`（或在消息里明确要求"操作电脑"）时注册它们、把九个动词交给脚本入口、并让它们的 schema 保持扣留——另有一道守卫拒绝模型直呼，所以能到达它们的只有脚本的嵌套派发。所以一次普通启动在这里收割不到任何 schema，那九个名字改列在"随包发布的其它名字"里：此刻还没有 agent 启用这项能力，动作尚未注册。模型要知道脚本能写什么，读的是策略分节，而那一节只在该能力启用期间存在。这一行本身不向模型暴露任何东西，它喂的那个脚本入口归属**预设层**而不是宿主层——宿主层注册出来的工具落在**全局作用域**，那里既会进入每一个预设，又绕过让 `minimal` 能把目录钉成一个工具的那道限制。
 
 <a id="deepseek-aidsh-tool-error-journal"></a>
 

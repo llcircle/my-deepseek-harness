@@ -11,7 +11,7 @@ import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/Mo
 import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
-import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
+import { ModelsSettingsStore, deriveKeyRef, protocolChoices, reasoningLevelChoices } from '../src/client/store.ts'
 import { createModelsOperations } from '../src/client/operations.ts'
 import type { ModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
@@ -22,6 +22,14 @@ afterEach(cleanup)
 const t: ModelsSectionInjected['t'] = key => en[key]
 
 const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
+
+/**
+ * The pi-ai thinking vocabulary, as the adapter's own schema declares it. Kept
+ * here as a literal because this client package must not import the host
+ * adapter; the case below asserts the page reads whatever the schema says, so a
+ * short list here still proves the walk rather than a hard-coded order.
+ */
+const LEVELS = ['off', 'low', 'medium', 'high']
 
 /** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
 const PiAiConfig = Schema.object({
@@ -36,6 +44,14 @@ const PiAiConfig = Schema.object({
       name: Schema.string(),
       contextWindow: Schema.number(),
       maxTokens: Schema.number(),
+      // The adapter's own shape: a union of "no reasoning" and a dict whose
+      // KEYS are the level vocabulary and whose values are wire spellings.
+      // The page reads the levels out of this node, so the fixture carries the
+      // same nesting production does rather than a flattened list.
+      reasoningEfforts: Schema.union([
+        Schema.const(false),
+        Schema.dict(Schema.union([Schema.string(), Schema.const(null)]), Schema.union(LEVELS)),
+      ]),
     })),
     reasoning: Schema.union(['off', 'high']),
   })),
@@ -255,7 +271,174 @@ describe('protocolChoices', () => {
   })
 })
 
+describe('reasoningLevelChoices', () => {
+  it('reads the level vocabulary out of the namespace schema and nothing else', async () => {
+    const { namespace } = scriptedFace()
+    expect(reasoningLevelChoices(namespace, settingsSchema)).toEqual(LEVELS)
+    expect(reasoningLevelChoices(undefined, settingsSchema)).toEqual([])
+    const plain = { ...namespace, schema: JSON.parse(JSON.stringify(Schema.object({}).toJSON())) as JsonValue }
+    expect(reasoningLevelChoices(plain, settingsSchema)).toEqual([])
+    await Promise.resolve()
+  })
+})
+
+describe('thinking levels', () => {
+  /** Mount one provider whose single model row is open at its advanced fold. */
+  async function mountRow(model: JsonValue = { id: 'm' }) {
+    const scripted = await mountSection({
+      providers: { openai: { baseURL: 'https://proxy.example/v1', models: [model] } },
+    })
+    openEditor('openai')
+    expandModel(1)
+    return scripted
+  }
+
+  const modeOf = (): HTMLSelectElement => screen.getByLabelText<HTMLSelectElement>(`${en.modelEffort} 1`)
+  const boxOf = (level: string): HTMLInputElement =>
+    screen.getByLabelText<HTMLInputElement>(`${en.modelEffortLevel} ${level} 1`)
+  const wireOf = (level: string): HTMLInputElement =>
+    screen.getByLabelText<HTMLInputElement>(`${en.modelEffortValue} ${level} 1`)
+
+  it('offers the three states and starts out inheriting', async () => {
+    await mountRow()
+    expect([...modeOf().options].map(option => option.value)).toEqual(['inherit', 'none', 'custom'])
+    expect(modeOf().value).toBe('inherit')
+    // Inheriting declares nothing, so there is no level to spell yet.
+    expect(screen.queryByLabelText(`${en.modelEffortValue} low 1`)).toBeNull()
+  })
+
+  it('writes `false` for a model that cannot reason', async () => {
+    const { mutate } = await mountRow()
+    fireEvent.change(modeOf(), { target: { value: 'none' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'm', reasoningEfforts: false }])
+  })
+
+  it('declares the offered levels, seeded with their own wire spelling', async () => {
+    const { mutate } = await mountRow()
+    fireEvent.change(modeOf(), { target: { value: 'custom' } })
+    fireEvent.click(boxOf('low'))
+    fireEvent.click(boxOf('medium'))
+    fireEvent.click(screen.getByText(en.apply))
+
+    // The composer's picker reads exactly this map, so a level left unchecked
+    // is one the model will never be asked for.
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'm', reasoningEfforts: { low: 'low', medium: 'medium' } },
+    ])
+  })
+
+  it('retargets one level to the spelling its gateway expects', async () => {
+    const { mutate } = await mountRow()
+    fireEvent.change(modeOf(), { target: { value: 'custom' } })
+    fireEvent.click(boxOf('high'))
+    fireEvent.change(wireOf('high'), { target: { value: 'high_effort' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'm', reasoningEfforts: { high: 'high_effort' } }])
+  })
+
+  it('spells `off` as sending nothing rather than as a value', async () => {
+    const { mutate } = await mountRow()
+    fireEvent.change(modeOf(), { target: { value: 'custom' } })
+    fireEvent.click(boxOf('off'))
+    // Seeded as the parameter's absence, which is what an endpoint reads as
+    // "do not think" — an empty string would instead be sent and refused.
+    expect(wireOf('off').value).toBe('')
+    expect(wireOf('off').placeholder).toBe(en.modelEffortOffValue)
+    fireEvent.click(boxOf('low'))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'm', reasoningEfforts: { off: null, low: 'low' } }])
+  })
+
+  it('refuses a declaration that offers nothing dispatch could send', async () => {
+    const { mutate } = await mountRow()
+    fireEvent.change(modeOf(), { target: { value: 'custom' } })
+
+    // Declaring a map is not yet declaring a level: nothing is offered.
+    expect(screen.getByText(`${en.model} 1: ${en.modelEffortNoneOffered}`)).toBeTruthy()
+    expect(buttonNamed(en.apply).disabled).toBe(true)
+
+    // `off` alone still offers no level beyond itself, which is the shape the
+    // adapter reports as "declare a thinking level or choose a non-reasoning model".
+    fireEvent.click(boxOf('off'))
+    expect(screen.getByText(`${en.model} 1: ${en.modelEffortNoneOffered}`)).toBeTruthy()
+
+    fireEvent.click(boxOf('low'))
+    fireEvent.change(wireOf('low'), { target: { value: '' } })
+    expect(screen.getByText(`${en.model} 1: ${en.modelEffortValueRequired}`)).toBeTruthy()
+    expect(buttonNamed(en.apply).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('shows a stored declaration as the levels it names', async () => {
+    await mountRow({ id: 'm', reasoningEfforts: { off: null, high: 'high_effort' } })
+
+    expect(modeOf().value).toBe('custom')
+    expect(boxOf('off').checked).toBe(true)
+    expect(boxOf('high').checked).toBe(true)
+    expect(boxOf('low').checked).toBe(false)
+    expect(wireOf('high').value).toBe('high_effort')
+    // An undeclared level's field stays inert: resolution pins it to
+    // unsupported, so a value typed here could never reach a request.
+    expect(wireOf('low').disabled).toBe(true)
+  })
+
+  it('reads `false` back as the non-reasoning state', async () => {
+    await mountRow({ id: 'm', reasoningEfforts: false })
+    expect(modeOf().value).toBe('none')
+    expect(screen.queryByLabelText(`${en.modelEffortValue} low 1`)).toBeNull()
+  })
+
+  it('drops the field outright when a row goes back to inheriting', async () => {
+    const { mutate } = await mountRow({ id: 'm', reasoningEfforts: false })
+    fireEvent.change(modeOf(), { target: { value: 'inherit' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    // Inheriting is the field's absence, not a null: the installed catalog's
+    // own answer is what applies, and `null` is a shape resolution refuses.
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([{ id: 'm' }])
+  })
+
+  it('withdraws one level when its box is unchecked', async () => {
+    const { mutate } = await mountRow({ id: 'm', reasoningEfforts: { off: null, low: 'low', medium: 'medium' } })
+    fireEvent.click(boxOf('low'))
+    fireEvent.click(screen.getByText(en.apply))
+
+    // The declaration is the box set itself, not a diff against it: a level
+    // left checked keeps the spelling its own row held.
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'm', reasoningEfforts: { off: null, medium: 'medium' } },
+    ])
+  })
+
+  it('reads an emptied `off` back as sending nothing', async () => {
+    // `off` is the one level whose empty spelling is itself a declaration, so
+    // an explicit `off` parameter and its absence are both legal and erasing
+    // the field must land on the second — an empty string would instead be
+    // sent as a parameter and refused.
+    const { mutate } = await mountRow({ id: 'm', reasoningEfforts: { off: 'off', high: 'high_effort' } })
+    expect(wireOf('off').value).toBe('off')
+    fireEvent.change(wireOf('off'), { target: { value: '' } })
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'm', reasoningEfforts: { off: null, high: 'high_effort' } },
+    ])
+  })
+})
+
 describe('model list editing', () => {
+
   it('adds, edits, and removes rows without storing emptied optional fields', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')
@@ -600,7 +783,7 @@ describe('endpoint interrogation', () => {
     const scripted = scriptedFace()
     render(
       <CustomProviderCard
-        taken={[]} protocols={PROTOCOLS} revision={7} operations={operationsWith(scripted.face)}
+        taken={[]} protocols={PROTOCOLS} levels={LEVELS} revision={7} operations={operationsWith(scripted.face)}
         t={t} readOnly={false} onClose={vi.fn()}
       />,
     )
@@ -770,6 +953,7 @@ describe('hand-declared providers', () => {
       <CustomProviderCard
         taken={['openai']}
         protocols={PROTOCOLS}
+        levels={LEVELS}
         revision={7}
         operations={operationsWith(scripted.face)}
         t={t}
@@ -1026,6 +1210,18 @@ describe('hand-declared providers', () => {
     // leave the page without the row it now has.
     fireEvent.click(screen.getByText(en.cancel))
     expect(onClose).toHaveBeenCalledWith(true)
+  })
+
+  it('offers no level to declare when the adapter names none', () => {
+    // A deployment whose adapter schema carries no level list cannot be given
+    // a level to offer, so the row keeps the two states that need no
+    // vocabulary: inheriting the catalog's answer, and refusing to reason.
+    mountCard({ levels: [] })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    expandModel(1)
+
+    const mode = screen.getByLabelText<HTMLSelectElement>(`${en.modelEffort} 1`)
+    expect([...mode.options].map(option => option.value)).toEqual(['inherit', 'none'])
   })
 
   it('never contradicts a filled-in field with the next gate\u2019s copy', () => {

@@ -746,6 +746,31 @@ describe('ModelsSection', () => {
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
   })
 
+  it('re-judges the adapter rules a level map cannot express', () => {
+    // The states the card can write are all valid by construction, so the rows
+    // a hand-edited settings.yaml can produce are the ones worth pinning: each
+    // is a shape resolution refuses, and refusing it here names the row.
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: false }])).toBeUndefined()
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: { off: null } }]))
+      .toEqual({ index: 0, key: 'modelEffortNoneOffered' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: {} }]))
+      .toEqual({ index: 0, key: 'modelEffortNoneOffered' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: { off: null, high: 'high' } }])).toBeUndefined()
+    // Only `off` may send nothing; every other level must name its spelling.
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: { off: null, high: null } }]))
+      .toEqual({ index: 0, key: 'modelEffortValueRequired' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: { high: '' } }]))
+      .toEqual({ index: 0, key: 'modelEffortValueRequired' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: { high: 7 } }]))
+      .toEqual({ index: 0, key: 'modelEffortValueRequired' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: ['high'] }]))
+      .toEqual({ index: 0, key: 'modelEffortInvalid' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: null }]))
+      .toEqual({ index: 0, key: 'modelEffortInvalid' })
+    expect(validateDeepSeekModels([{ id: 'm', reasoningEfforts: 'high' }]))
+      .toEqual({ index: 0, key: 'modelEffortInvalid' })
+  })
+
   it('reads context windows written as counts, thousands, or millions', () => {
     expect(parseCapacity('')).toBeUndefined()
     expect(parseCapacity('   ')).toBeUndefined()

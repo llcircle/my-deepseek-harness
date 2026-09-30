@@ -81,10 +81,10 @@ async function wireNames(ctx: Context, scope?: ScopeKey): Promise<string[]> {
   return (await ctx.systemPrompt.assemble(scope === undefined ? {} : { scope })).tools.map(tool => tool.name)
 }
 
-/** The on-demand index section text one scope sees. */
+/** The on-demand index text one scope sees. It rides the runtime context, not the prompt sections. */
 async function indexText(ctx: Context, scope: ScopeKey): Promise<string> {
-  return (await ctx.systemPrompt.assemble({ scope })).sections
-    .find(section => section.name === ToolSearch.ON_DEMAND_SECTION)?.text ?? ''
+  return (await ctx.systemPrompt.assemble({ scope })).contexts
+    .find(context => context.name === ToolSearch.ON_DEMAND_SECTION)?.text ?? ''
 }
 
 /** Run one tool and return the whole result, so error surfacing stays visible. */

@@ -1,9 +1,9 @@
 /**
  * 每个 MCP 服务器自己的提示词分段。
  *
- * 服务器名与工具清单都是运行期事实，双语资产那张按名字索引的表挂不上动态分段名，
+ * 服务器名与工具数量都是运行期事实，双语资产那张按名字索引的表挂不上动态分段名，
  * 所以介绍按装配语言现算。这里盯三件事：文本不空（分段靠非空才存在于提示词里，
- * 挂在它后面的经验也才挂得住）、语言跟着装配走、工具清单稳定有序。
+ * 挂在它后面的经验也才挂得住）、语言跟着装配走、工具数随实际注册量走。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -21,11 +21,20 @@ describe('mcpServerSectionName', () => {
 })
 
 describe('mcpServerIntro', () => {
-  it('names the server and its tools, sorted', () => {
+  it('announces the server and how much catalog it contributes', () => {
     const text = mcpServerIntro('github', ['mcp__github__search', 'mcp__github__create_issue'], 'en')
     expect(text).toContain('"github"')
-    // 排过序：同一组工具在每次装配里都得给出同一段文本，否则提示词缓存永远失效。
-    expect(text.indexOf('create_issue')).toBeLessThan(text.indexOf('search'))
+    // 工具**名**不在这里：它们已经按 `mcp__<服务器>__<工具>` 出现在模型读工具清单的
+    // 地方（native 的请求 `tools`、PTC 的 `tools:sdk` 声明），再列一遍是同一份清单的
+    // 第二份副本，而且随工具数线性增长。这一节只报规模——那是任何单条声明都带不出的
+    // 事实。
+    expect(text).toContain('providing 2 tools.')
+    expect(text).not.toContain('mcp__github__search')
+  })
+
+  it('agrees with the count in the singular', () => {
+    expect(mcpServerIntro('github', ['mcp__github__search'], 'en')).toContain('providing 1 tool.')
+    expect(mcpServerIntro('github', ['mcp__github__search'], 'zh')).toContain('它提供 1 个工具。')
   })
 
   it('still announces a server whose tools have not synced yet', () => {
@@ -61,12 +70,12 @@ describe('mcp:<serverName> 分段的接线', () => {
 
     const rendered = renderPrompt(await ctx.systemPrompt.assemble())
     expect(rendered).toContain('MCP server: github')
-    expect(rendered).toContain('mcp__github__search')
+    expect(rendered).toContain('providing 1 tool.')
 
     await fiber.dispose()
     const withdrawn = renderPrompt(await ctx.systemPrompt.assemble())
     expect(withdrawn).not.toContain('MCP server: github')
-    expect(withdrawn).not.toContain('mcp__github__search')
+    expect(withdrawn).not.toContain('providing 1 tool.')
     await ctx.fiber.dispose()
   })
 })
@@ -74,9 +83,10 @@ describe('mcp:<serverName> 分段的接线', () => {
 describe('MCP 分段在提示词里的位置', () => {
   it('资源清单紧跟服务器介绍，中间不被别的段落劈开', async () => {
     // 两节合起来才是完整的一句话："有哪些服务器可读资源" + "每台服务器是什么"。
-    // fork 把服务器介绍移到了尾部（`MCP_INTRO`，见 SECTION_ORDERS 的注释），资源
-    // 清单必须跟着走；留在上游的 `MCP_SERVERS`（3000 与 9000 之间）就会被这一段的
-    // 其它段落夹在中间——线上实测正是 `ui:deliverable-file-references` 夹了进去。
+    // 上游把两者都放在 `MCP_SERVERS`；fork 把**两节一起**搬到了尾部的 `MCP_INTRO`
+    // （见 SECTION_ORDERS 的注释），所以清单与介绍必须仍然相邻。留在上游那个位置
+    // 就会被中段的段落夹开——线上实测正是 `ui:deliverable-file-references` 夹了进去。
+    // 下面那个段落用的就是它的 order，正是为了把"夹开"这件事重新造出来。
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { mode: 'native' })

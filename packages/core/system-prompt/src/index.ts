@@ -197,6 +197,16 @@ const SECTION_ORDERS = {
   PLAN_POLICY: 500,
   TEAM_POLICY: 600,
   PTC_ONLY: 800,
+  // PTC 模式下 SDK 就是"工具目录本体"，而 `PTC_ONLY`(800) 那句话是它的前言：
+  // 「只有 `run_code` 能直接调用——其余工具从**下面**的 SDK 里抵达」。既然那句
+  // 话指向下面，它们的距离就是语义的一部分。留在 5000 时，中间夹着 file-reference
+  // 与十几个 `tool:*` 用法说明（实测 13 段），模型要先读完十几遍"用 read 工具而不是
+  // cat"，才读到"哪些名字其实根本调不到、得写进程序里"——而后者才是这一段的前提。
+  //
+  // native 下这一段渲染为空（`sdkSection` 在 `mode === 'native'` 直接返回空串，
+  // 该注册本身只在非 native 的部署里发生），所以这次搬动只改 PTC/both 的提示词，
+  // 原生部署逐字节不变。
+  TOOLS_SDK: 810,
   FILE_REFERENCE: 900,
   TOOL_BASH: 1000,
   TOOL_PWSH: 1010,
@@ -217,15 +227,14 @@ const SECTION_ORDERS = {
   TOOL_RALPH: 2700,
   TOOL_SUBAGENT: 2800,
   TOOL_REPORT: 2900,
-  // 按需工具的索引紧跟在全部工具用法之后：它是一句"上面还差几个"的补充，
-  // 放在工具说明中间会让"这个工具怎么用"的阅读被打断。
-  TOOLS_ON_DEMAND: 2950,
   TOOL_COMPUTER_USE: 3000,
-  // 上游把"哪些 MCP 服务器可读资源"与"每台服务器自己的介绍"都放在这里，两节相邻。
-  // fork 把后者移到了 MCP_INTRO（见其注释），前者跟着一起搬——留着这个位置只会让
-  // 两份 MCP 材料被提示词中段的其它段落劈开。
+  // 上游把"哪些 MCP 服务器可读资源"与"每台服务器自己的介绍"都放在这个槽位（两节
+  // 相邻）。fork 把**两节一起**搬到了尾部的 `MCP_INTRO`（见其注释）：服务器自己的
+  // 指示最长 32,768 字节，留在中段会把身份、人格与工具用法一起推下去。
+  // 于是这个槽位**目前没有使用者**——`mcp-resources` 的资源清单与 `mcp-client` 的
+  // 每服务器介绍都注册在 `MCP_INTRO`，两节因此仍然相邻。
+  // 保留键名只是不动已发布的 `PromptSectionOrderName`（同 `TOOL_REPORT` 的空置槽）。
   MCP_SERVERS: 3100,
-  TOOLS_SDK: 5000,
   DELIVERABLE_FILE_REFERENCES: 9000,
   MCP_INTRO: 9050,
   // 电脑操作策略紧挨 MCP 介绍：两者都是"本会话额外装配进来的能力说明"，
@@ -254,6 +263,14 @@ const CONTEXT_ORDERS = {
   // 能力说明"——只是暂时走尾部通道，所以位置排在运行时上下文族之后、与
   // `COMPUTER_USE_POLICY` 分段（9060）各自独立编号。
   COMPUTER_USE_POLICY: 130,
+  // 按需工具的索引列出的是"运行时扣留集"：启用一项能力会加进几行，每次取回又
+  // 划掉几行。它曾经是请求头部的分段，于是这两个动作都改写了稳定前缀、把整段
+  // 历史重新计费一遍——为了省一个 schema 付掉整段上下文的钱，正好与它存在的
+  // 目的相反。落在尾部通道后，同样的改动只是追加一条快照。
+  //
+  // 排在运行时上下文族的末尾：它是"上面那些工具里还差几个"的一句补充，紧跟着
+  // 其它运行时上下文读最连贯。
+  TOOLS_ON_DEMAND: 140,
 } as const
 
 /** Name of a centrally allocated runtime-context position. */
@@ -382,7 +399,6 @@ const DEFAULT_SECTION_CATALOG = [
   'tool:subagent:merged',
   'tool:subagent_fork',
   'tool:jobs:merged',
-  'tools:on-demand',
   'ui:deliverable-file-references',
   'skills:catalog',
 ]
@@ -1461,10 +1477,15 @@ export class SystemPrompt extends Service {
         ? []
         : [...contextByName.values()]
           .sort((a, b) => a.order - b.order)
-          .map(entry => ({
-            name: entry.name,
-            text: typeof entry.text === 'function' ? entry.text(enriched) : entry.text,
-          })),
+          .map((entry) => {
+            const text = typeof entry.text === 'function' ? entry.text(enriched) : entry.text
+            // 与分段共用同一张双语资产（{@link localizedSectionText}）：尾部通道里
+            // 住着按需工具索引与电脑操作策略，它们的语言必须和同一条快照的标题一致，
+            // 否则中文部署会看到一句中文标题下面跟着英文正文。空文本保持为空——
+            // "这一节现在没话说"不等于"该显示默认文案"。
+            if (text.trim() === '') return { name: entry.name, text }
+            return { name: entry.name, text: localizedSectionText(entry.name, text, locale) ?? text }
+          }),
       tools: orderTools(collected, this.toolOrder, knownNames),
       variables,
       locale,

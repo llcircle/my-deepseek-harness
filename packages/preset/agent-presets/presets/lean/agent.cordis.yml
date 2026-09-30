@@ -14,10 +14,21 @@
 #      three slots to say one thing. The operations behind them are shared with
 #      the split shapes, so the two spellings cannot drift apart in policy.
 #
-#   2. Some tools are on demand. `tool_search` is mounted with a `defer` list:
-#      those tools stay registered and callable, but their schemas are sent only
-#      after the model asks for them by name, which is what keeps the resident
-#      catalog short (`tools:on-demand` in the prompt names them).
+#   2. Every tool is on the wire, natively callable, and no row below states a
+#      presentation. No row states one, so this preset takes the deployment
+#      default (native) exactly as `standard` does; `ptc` is its own shipped
+#      preset for a deployment that wants the program-mediated form.
+#
+#      One row withholds, on purpose: `tool-script` keeps the nine
+#      desktop actions' schemas off every request and makes them reachable only
+#      from inside a script. That is not a size trick — it is what makes the wire
+#      CONSTANT across a `/computer` toggle, which is exactly the cost this
+#      preset's native shape otherwise pays. See the `tool catalog` comment near
+#      the bottom.
+#
+#      Two earlier attempts to shrink the request are gone, both retired by
+#      measurement rather than by taste — the numbers are in that same comment,
+#      next to where the rows used to be.
 #
 #   3. `workflow` and `ralph` are absent — with the workflow engine they need,
 #      and with the `workflowEngine` realm that engine would have to live in.
@@ -265,31 +276,76 @@
     fetch: true
     searchTimeoutMs: 60000
 
+# 通用脚本工具（`script`）：本仓唯一"粗粒度入口"形状的常驻工具。它必须在**预设层**声明，
+# 而不是跟宿主层那几行 `computer-*` 一起注册——宿主层的注册落在全局作用域，那里的工具会
+# 进入每一条会话、绕过预设的限制。本仓的规矩是"每个面向模型的工具都属于某个预设"：上面
+# 那些 `tool-*` 行就是这样一行行声明出来的，脚本工具不例外。
+#
+# 它本身不认识任何能力：能写哪些动作，由向它**登记过动词表**的能力决定（电脑操作登记了
+# 九个，见 packages/computer/tool-computer-use/src/script.ts）。这一行按登记内容注册入口、
+# 扣留那些"只该由脚本到达"的名字、并拒绝模型直呼；于是 `/computer` 开关一次能力只往尾部
+# 追加一段介绍，请求头与 `tools` 数组全程不变——这正是本预设下面的 `tool catalog` 一段在
+# native 形状下唯一躲不过的那笔账，被这一行躲掉了。
+#
+# 没有任何能力登记动词的部署里，这一行什么都不注册——所以它不带平台判定：非 Windows 上
+# 电脑能力整行禁用、动词表为空，目录与没有这一行时逐字节相同。没声明它的预设（`minimal`）
+# 不受影响，`/computer` 在那里退回老形状。
+- id: tool-script
+  name: '@deepseek-ai/dsh-tools/script'
+
 # ── tool catalog ────────────────────────────────────────────────────────────
 
-# The on-demand half of the catalog. Everything NOT listed here is resident;
-# this row names only what is worth withholding, because a deployment that says
-# nothing should keep the whole catalog (`defer` withholds, it never adds).
+# No presentation row and no `defer` list of its own: the rows above ARE the
+# catalog, every name is on the wire, and the model calls them directly. The one
+# row that withholds is `tool-script`, and it withholds the nine desktop
+# actions — behind itself.
 #
-# The list is chosen by expected use, not by schema size:
+# This is the third shape this block has had, and the first two were retired by
+# measurement rather than by taste. Both tried to make the request shorter and
+# both failed, for different reasons:
 #
-#   * `interrupt_agent`, `list_agents` — cross-agent control and introspection.
-#     A normal session delegates and reads results; it does not audit its
-#     siblings or stop them.
-#   * `list_subagent_models` — only reached when a call names an explicit child
-#     route, which most delegations never do.
-#   * `read_image` — reached when the task actually has an image.
+#   * `tool_search` + `defer: [interrupt_agent, list_agents,
+#     list_subagent_models, read_image]`. Withholding made those four
+#     UNCALLABLE — a model emits a call only for a function the request itself
+#     declares, so it reached for a declared neighbour or wrote the name as
+#     plain text — and every fetch mutated the `tools` array at the very front
+#     of the request, invalidating the cached prefix outright.
 #
-# What is deliberately NOT here: anything another prompt section tells the model
-# to call (`exit_plan_mode` in plan mode, `skill` for the skills catalog,
-# `ask_user_question`, `send_message` for a running child). Withholding those
-# would buy a smaller request and cost a guaranteed extra round-trip on a path
-# the prompt already points at.
-- id: tool-search
-  name: '@deepseek-ai/dsh-tools/search'
-  config:
-    defer:
-      - interrupt_agent
-      - list_agents
-      - list_subagent_models
-      - read_image
+#   * `tool-presentation: { mode: ptc }` for the whole catalog. This one is the
+#     more interesting failure, because it looks like it must be cheaper: one
+#     schema on the wire instead of thirty-five. Measured on one deployment
+#     (same workspace, same codegraph MCP, same rows), characters sent per
+#     request:
+#
+#         native  35 tools   tools JSON 34,267   sections  9,830   total 44,097
+#         ptc      1 tool    tools JSON  2,080   sections 47,989   total 50,069
+#
+#     `tools:sdk` alone is 38,002 of those 47,989 section characters. The
+#     generated SDK is not a summary of the schemas, it is a typed PROJECTION
+#     of them — every parameter, every description, every union spelled out as
+#     declarations — so it cannot cost less than the JSON it replaces. Here it
+#     costs 5,972 more (38,002 + 157 of instructions + 2,080 for `run_code`
+#     against 34,267 of schemas), and it charged that on every request of the
+#     session (5,972 before computer use, 4,721 after), where the schema form
+#     pays once. On top of that every call paid a program indirection: the
+#     model wrote `tools.computer_screenshot({})` inside a script and the
+#     runtime bridged it, instead of emitting the call.
+#
+# `lean` means a SHORT catalog, not a translated one. A deployment that wants
+# the program-mediated form composes the shipped `ptc` preset instead, where
+# that trade is the point rather than a side effect.
+#
+# What native costs, stated plainly: every capability this preset turns on is a
+# permanent entry in `tools`, so a capability that arrives MID-SESSION has to
+# move that array — and since `tools` sits at the very front of the request, the
+# cached prefix is re-billed once. Computer use is the exception and took a
+# different shape: `tool-script` above keeps ONE small always-resident
+# entry and withholds the nine desktop actions behind it, so the array never
+# moves and `/computer` changes only the trailing runtime context. That is the
+# precedent for the next mid-session capability — not a presentation row, and not
+# a registration in the host plane (a tool registered there lands in the GLOBAL
+# layer, reaches every preset, and bypasses the restriction that lets `minimal`
+# pin its catalog to one tool).
+#
+# The prompt sections do not move at all in either case: the head is emitted once
+# for the whole session.

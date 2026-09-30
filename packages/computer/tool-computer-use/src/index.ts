@@ -4,9 +4,40 @@
  * ## 为什么是"按需"
  *
  * 桌面控制是这个 harness 里权限最大的一项能力：它能驱动用户真实的鼠标与键盘，
- * 因此它能做的事情远超一个工具调用通常的边界。把它常驻在工具目录里，
+ * 因此它能做的事情远超一个工具调用通常的边界。把它常驻在**动作**层面里，
  * 等于每个会话都默认授予了它。所以这里刻意做成启用制：只有用户用 `/computer`
- * 显式要求、或在消息里明确说出"操作电脑"，能力才会进入模型视野。
+ * 显式要求、或在消息里明确说出"操作电脑"，动作才会进入模型视野。
+ *
+ * 常驻的是**入口**，不是动作：通用 `script` 工具的 schema 始终在线上（它属于
+ * `@deepseek-ai/dsh-tools`，见 `packages/core/tools/src/script.ts`），而它内部能解析出
+ * 哪些动作由启用状态决定。这样开关一次能力不再改动请求最前面的 `tools` 数组，缓存前缀
+ * 不必重新计费。
+ *
+ * ## 四行插件各自的归属
+ *
+ * - `@deepseek-ai/dsh-computer-use` 是能力登记槽位，`@deepseek-ai/dsh-computer-python`
+ *   是 provider，两者都是宿主层的。
+ * - 本文件这行也是**宿主层**的，它只做"能力本身"：启用状态、`/computer` 命令、九个动作、
+ *   介绍，外加把**自己的动作集**登记给通用 `script` 工具（`ctx.tools.contributeScript`，
+ *   见 {@link ./script.ts}）。
+ * - 模型侧入口 `script` 由**预设行** `@deepseek-ai/dsh-tools/script` 常驻，理由见下。
+ *
+ * ## 为什么入口必须是预设行
+ *
+ * 宿主层的注册落在进程的**全局作用域**上，而全局作用域不属于任何预设、也绕过预设的限制：
+ * 注册进那里的工具会进入每一个会话，不管它用的是哪个预设。一条全局注册就能把 `minimal`
+ * 变成两个工具——本仓因此有一条 e2e 断言「全局层必须为空」。
+ *
+ * 「面向模型的工具归属某个预设」是本仓的规矩：`read`/`edit`/`web_fetch` 都是预设自己一行行
+ * 声明的。`script` 是面向模型的工具，所以也由预设声明——`standard`/`lean`/`ptc`/`cordis`
+ * 各自加那一行，`minimal` 没有加，也就不受影响。
+ *
+ * ## 为什么动作集是"登记"而不是写进通用工具
+ *
+ * 通用工具不该知道"电脑"这个字眼：它拥有语法（一行一个动作）、整段先解析、逐行派发；
+ * 能力拥有动作。本包登记一张动词表之后，通用行会一并施加扣留与守卫（那九个名字写在
+ * 贡献的 `withheld` 里），所以"只有脚本能到达这九个动作"是通用行按贡献统一做到的，
+ * 本包不重复实现。以后再加一项能力，也只要写一张动词表，而不是再写一个工具。
  *
  * ## 启用发生在什么时候
  *
@@ -15,32 +46,57 @@
  * 是唯一能让"本步就被启用"的钩子。这条链路让用户在消息里写上"帮我操作电脑点一下保存"，
  * 同一个请求里模型就已经拿到截图与点击工具，不需要额外的往返。
  *
- * ## 四层结构
+ * ## 三层结构
  *
  * 与 Codex 的做法对齐：静态策略资产（`prompt.ts`）→ 部署可整体替换（`policy` 配置）
  * → 运行时按会话**装载或卸载**（本文件在启用时注册的形态）→ 执行结果以
  * "未受信任的界面证据"回灌（`tools.ts`）。
  *
- * ## 启用后的两种形态，以及为什么非要两种
+ * ## 工具与介绍落在哪
  *
- * 提示词与工具 schema 都排在请求最前面，动它们等于作废整个长会话的缓存前缀。而电脑
- * 操作恰恰是**会话中途**才被要求启用的能力——一次 `/computer` 就让几万 token 的历史
- * 重新计费，代价与收益完全不成比例。所以启用先取**临时形态**：
- * - 工具走 `tools:on-demand`（组合里本来就有取用通道时）：照常注册，但 schema 不上
- *   wire，模型要用先经 `tool_search` 取；
- * - 介绍走 `systemPrompt.context()` 而不是 `systemPrompt.section()`：它落成一条**尾部**
- *   的运行时上下文快照，只在自己变化时替换自己，稳定前缀一个字节都不动。
+ * 模型侧只有**一个**入口：`script`，一段逐行动作脚本的载体。它常驻在**预设**作用域里——
+ * 也就是该预设的每条会话从第一步到最后一步都是同一条 schema。本包交出去的是九个动词、
+ * 九个受派发的动作名，以及"这九个名字扣留"这一条。
  *
- * **压缩**是唯一"缓存本来就要重建"的时刻——整段历史刚被摘要替换。那一天到来时才把
- * 临时形态提升成永久形态：工具转常驻、介绍转 `computer:policy` 分段。别的时候一律
- * 不动：用户只是开关一次能力，不该付出整段历史重新计费的代价。
+ * 为什么九份 schema 换成一份：
+ * - **开关能力不再动缓存前缀。** 九个动作各自一份 schema 时，启用那一刻 `tools` 数组
+ *   从 35 条变成 44 条；`tools` 排在请求最前面，整段前缀就此作废（`request/header`
+ *   记 `reason=change`）。现在 `tools` 全程不变，变的只有尾部那条介绍。
+ * - **扣留 schema 不是目的，是这条路的副作用。** 曾经用 `tools.defer` 配 `tool_search`
+ *   隐藏过四个工具：派发读的是注册表、不是请求体，所以它们没变得"不可达"，却变得
+ *   **不可调**——模型只为请求自己声明过的函数发 `tool_call`，扣留只会让它改调一个
+ *   声明过的邻居、或把名字当纯文本写出来。那一次的错在于扣留之后没有入口。现在九个动作
+ *   仍然被扣留，但**没有任何模型侧入口指向它们**：唯一能到达它们的是脚本的嵌套派发，
+ *   而嵌套派发不走模型声明。扣留在这里因此是纯粹的减法——通用行再加一道守卫
+ *   （`parent` 未置位即拒绝），"只有脚本能到达"就不再只是注释里的说法。
+ * - **介绍走尾部。** `systemPrompt.context()` 把策略（含脚本语法与动作清单）落成一条
+ *   运行时上下文快照，只在自己变化时替换自己，稳定前缀一个字节都不动。
  *
- * 两种形态都不越过"未启用就什么都不注册"这条线：没启用的会话既没有工具也没有介绍，
- * 编辑面上自然查无此节（与 Claude Code 把电脑操作挂成 MCP 服务器的形状一致——
- * `ListTools` 在禁用时返回空列表，而不是宣告一个空壳）。
+ * **压缩**是唯一"缓存本来就要重建"的时刻——整段历史刚被摘要替换。那一天到来时介绍才从尾部
+ * 快照提升成 `computer:policy` **分段**，此后固定在头部，不必再每步带一条快照。别的时候
+ * 一律不动：用户只是开关一次能力，不该单独付一次整段历史重新计费的账。
+ *
+ * ## 介绍按呈现形态与语言选一份
+ *
+ * 同一份"怎么用"的指导，在 native 与 PTC 下说的不是同一条路：native 让模型直呼
+ * `script`（它在工具清单里），PTC 下那个名字根本不在线上，模型只能从 `run_code` 程序
+ * 内部到达它（`await tools.script({ code })`）。说错哪一份，模型都会去调一个那一轮
+ * 请求里不存在的函数名。
+ *
+ * 两个维度都不属于本包：**形态属于预设**（它那一行 `tool-presentation` 声明），
+ * **语言属于这次装配**。所以正文在渲染时按两者现选——见 {@link ComputerUseController} 的
+ * `policyFor` 与 `prompt.ts` 的 `computerPolicyText`。这也意味着中央译表里不能留
+ * `computer:policy` 条目：那张表按分段名无条件替换、不认识形态，会正好把 PTC 措辞换回
+ * native 措辞。
  *
  * 一个已知折衷：`computer:policy` 只有在常驻形态下才是**分段**，所以反思文档里写在
  * `## computer:policy` 下面的经验，在提升之前没有落点、不会被注入。
+ *
+ * 另一个已知折衷：入口是通用的，所以带 `@deepseek-ai/dsh-tools/script` 那一行的预设里，
+ * 没启用电脑操作的会话也会看见 `script`。这没有关系——它没有带上任何电脑特有的字眼，
+ * 未启用时调用它只会得到"`screenshot` 当前不可用"这样的逐行提示，而该提示要模型告诉用户
+ * 该能力尚未启用。宁可宣告一个按需打开的入口，也不让开关能力去动缓存前缀。没带那一行的
+ * 预设（`minimal`）不受影响，它的 `/computer` 仍然是老形状：启用时直接把九个动作挂给模型。
  *
  * @module @deepseek-ai/dsh-tool-computer-use
  */
@@ -53,22 +109,23 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-compaction/types'
 import type { ComputerUse } from '@deepseek-ai/dsh-computer'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { AssembleContext } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
-import { TOOL_SEARCH_NAME } from '@deepseek-ai/dsh-tools/search'
+import { SCRIPT_TOOL_NAME } from '@deepseek-ai/dsh-tools/script'
 import { collectUserText, matchesTrigger } from './activation.ts'
-import { COMPUTER_POLICY, COMPUTER_COMMAND_ALIASES, COMPUTER_COMMAND_NAME, DEFAULT_TRIGGER_PHRASES } from './prompt.ts'
+import { COMPUTER_COMMAND_ALIASES, COMPUTER_COMMAND_NAME, DEFAULT_TRIGGER_PHRASES, computerPolicyText } from './prompt.ts'
+import { COMPUTER_SCRIPT_CONTRIBUTION } from './script.ts'
 import { computerProjectionDefinition, type ComputerUnitState } from './state.ts'
-import { COMPUTER_TOOL_NAMES, registerComputerTools } from './tools.ts'
+import { registerComputerTools } from './tools.ts'
 
 export type { ComputerUnitState } from './state.ts'
 export { COMPUTER_TOOL_NAMES } from './tools.ts'
-export { COMPUTER_POLICY, DEFAULT_TRIGGER_PHRASES, COMPUTER_COMMAND_NAME, COMPUTER_COMMAND_ALIASES } from './prompt.ts'
+export { COMPUTER_POLICY, COMPUTER_POLICY_EN, computerPolicyText, DEFAULT_TRIGGER_PHRASES, COMPUTER_COMMAND_NAME, COMPUTER_COMMAND_ALIASES } from './prompt.ts'
 export { collectUserText, matchesTrigger, hasCommandToken } from './activation.ts'
 export { computerProjectionDefinition } from './state.ts'
+export { COMPUTER_SCRIPT_CONTRIBUTION, COMPUTER_SCRIPT_VERBS } from './script.ts'
 
 /**
  * 策略分段名，也是反思文档里的主题键。
@@ -140,14 +197,14 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * 装载形态。
+ * 装载形态：只决定**介绍**落在哪。工具在两种形态下都照常注册。
  *
- * - `on-demand`：启用当时的**临时**形态。工具注册但 schema 不上 wire（组合里有取用
- *   通道时），介绍落在尾部的运行时上下文快照里。开关一次能力不动稳定前缀。
- * - `resident`：压缩之后提升成的**永久**形态。工具常驻，介绍是这个会话真正的一节
- *   系统提示词。此后不会再有任何形态切换。
+ * - `snapshot`：启用当时的临时形态。介绍落成一条**尾部**运行时上下文快照，只在自己变化
+ *   时替换自己，稳定前缀一个字节都不动。
+ * - `section`：压缩之后提升成的永久形态。介绍是这个会话真正的一节系统提示词
+ *   （`computer:policy`），此后不必再每步带一条快照，也不会再有形态切换。
  */
-type InstallationMode = 'on-demand' | 'resident'
+type InstallationMode = 'snapshot' | 'section'
 
 /** 每个会话当前装载的形态。 */
 interface Installation {
@@ -157,14 +214,15 @@ interface Installation {
 }
 
 /**
- * `ctx.computerController`: owns the on-demand enablement state, the
+ * `ctx.computerController`: owns the per-session enablement state, the
  * model-facing `/computer` command, and the `computer:policy` material plus tool
  * set loaded into the agent scope while it is enabled.
  *
  * The material is loaded in one of two modes (see {@link InstallationMode}): the
- * temporary `on-demand` form a fresh `/computer` gets, and the permanent
- * `resident` form applied at the next compaction boundary if computer use is
- * still on.
+ * temporary `snapshot` form a fresh `/computer` gets, where the intro is a trailing
+ * runtime-context snapshot, and the permanent `section` form applied at the next
+ * compaction boundary if computer use is still on, where it becomes a real prompt
+ * section.
  *
  * Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse`
  * as a "only one provider may register at a time" slot
@@ -192,6 +250,12 @@ export class ComputerUseController extends Service {
 
     ctx.sessionProjections.register(computerProjectionDefinition)
 
+    // 把九个动词与"扣留这九个名字"交给通用 `script` 工具。登记必须发生在**预设行挂载
+    // 之前**，因为那一行在挂载时读一次合并后的动作集来决定注册什么、扣留哪些名字；本行
+    // 是宿主行、进程启动时装载，而预设的 standing mount 发生在会话建立时，顺序天然满足。
+    // 登记的是数据（动词表），不是注册表里的工具，所以它落在哪个作用域都不构成越权。
+    ctx.tools.contributeScript(COMPUTER_SCRIPT_CONTRIBUTION)
+
     // 最早的可判定点：消息刚被认领、提示词尚未装配。
     // 这里必须同步完成注册，才能让本步就带上工具与策略。
     ctx.on('agent/inbox/claimed', ({ agent, message }) => {
@@ -212,9 +276,9 @@ export class ComputerUseController extends Service {
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'compaction/end' || event.data.error !== undefined) return
       const installation = this.installations.get(session)
-      if (installation === undefined || installation.mode === 'resident') return
+      if (installation === undefined || installation.mode === 'section') return
       if (!this.isActive(session)) return
-      this.install(installation.agent, 'resident')
+      this.install(installation.agent, 'section')
     })
 
     // 命令是显式入口，也是唯一能"关闭"的入口。
@@ -246,9 +310,26 @@ export class ComputerUseController extends Service {
     })
   }
 
-  /** 生效的策略文本：部署覆盖优先，其次内置资产。 */
-  private get policyText(): string {
-    return this.resolved.policy === '' ? COMPUTER_POLICY : this.resolved.policy
+  /**
+   * 生效的策略文本：部署覆盖优先，其次内置资产（按呈现形态与语言选一份）。
+   *
+   * 内置资产要选，是因为两份措辞说的**不是同一台机器**：native 措辞让模型直呼
+   * `script`，PTC 措辞告诉它必须先写一段 `run_code` 程序。说错哪一份，模型就会去调一个
+   * 那一轮请求里根本不存在的函数名。两个维度都不是本包能提前定下的——
+   * - **形态属于预设**：同一个 `standard`/`ptc`/`ptc-opt` 组合里各挂一行本包，
+   *   形态由预设那一行的 `tool-presentation` 声明，读的是渲染作用域沿链解析的结果。
+   * - **语言属于这次装配**：界面语言什么时候切与本包无关。
+   * 所以两者都在**渲染时**从装配上下文里读（`text` 是 thunk 的原因）。
+   *
+   * 覆盖文本原样使用、不参与派生：`policy` 是部署自己写的措辞，替换的就是这两种措辞，
+   * 本包猜不出它的哪一句在说入口。
+   *
+   * @param context - 本次装配的上下文，提供作用域（定形态）与语言（定文本）。
+   * @returns 该部署、该会话在这个作用域下应当读到的策略正文。
+   */
+  private policyFor(context: AssembleContext): string {
+    if (this.resolved.policy !== '') return this.resolved.policy
+    return computerPolicyText(this.ctx.tools.presentation(context.scope), context.locale ?? 'zh')
   }
 
   /**
@@ -330,7 +411,8 @@ export class ComputerUseController extends Service {
     return {
       kind: 'success',
       text: `电脑操作已启用（提供方 ${status.provider}）。`
-        + '模型现在可以截取屏幕、移动与点击鼠标、输入文本。用 /computer off 关闭。',
+        + `模型现在可以用 ${SCRIPT_TOOL_NAME} 执行脚本：截取屏幕、移动与点击鼠标、输入文本。`
+        + '用 /computer off 关闭。',
     }
   }
 
@@ -352,7 +434,7 @@ export class ComputerUseController extends Service {
       this.ctx.logger.warn('tool-computer-use: 记录关闭事件失败：%o', error)
     }
     this.ctx.logger.info('tool-computer-use: 会话 %s 已关闭电脑操作', agent.session.id)
-    return { kind: 'success', text: '电脑操作已关闭，相关工具已从模型视野移除。' }
+    return { kind: 'success', text: '电脑操作已关闭：脚本里的动作不再可用，介绍也已移除。' }
   }
 
   /** 探测宿主能力；没有挂载 provider 时报告为不可用而不是抛错。 */
@@ -376,16 +458,20 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 把介绍与工具按 `mode` 装载到该 agent 的作用域；重复装载同一形态是空操作。
+   * 把介绍与动作按 `mode` 装载到该 agent 的作用域；重复装载同一形态是空操作。
    *
-   * 工具在两种形态下都注册，差的只是上不上 wire 与介绍落在哪——见 {@link present}。
+   * 九个动作在两种形态下都注册，差的只是介绍落在尾部快照还是头部段落——见 {@link present}。
+   * 扣留这九个 schema 的是**预设行** `@deepseek-ai/dsh-tools/script`（按本包登记的动作集），
+   * 不是这里：注册表沿作用域链合并扣留表，
+   * 所以预设层的扣留盖得住这里注册的动作。没带那一行的预设因此保持老形状——动作照常
+   * 出现在请求体里。
    * 注册发生在 `agent.ctx`，因此它们只对这个会话（及其子 agent，作用域链本来就这么
    * 继承）可见。
    *
    * @param agent - 目标 agent。
-   * @param mode - 装载形态；默认是启用当时的临时形态 `on-demand`。
+   * @param mode - 装载形态；默认是启用当时的临时形态 `snapshot`。
    */
-  private install(agent: Agent, mode: InstallationMode = 'on-demand'): void {
+  private install(agent: Agent, mode: InstallationMode = 'snapshot'): void {
     const existing = this.installations.get(agent.session)
     if (existing !== undefined && existing.agent === agent && existing.mode === mode) return
     if (existing !== undefined) this.uninstall(agent.session)
@@ -404,43 +490,41 @@ export class ComputerUseController extends Service {
   }
 
   /**
-   * 介绍的落点与工具的可见性，按形态二选一。
+   * 介绍的落点，按形态二选一。
    *
-   * 常驻形态就是老样子：一个 `computer:policy` 分段 + 一组普通工具。
+   * 永久形态是 `computer:policy` 分段：介绍真成了这个会话系统提示词的一节。
    *
-   * 临时形态把两样都挪到"改了也不动稳定前缀"的位置。工具那一半只在组合**本来就有**
-   * 取用通道时才跟进——`tool_search` 的取用工具与 on-demand 索引分段是同一行装配出来
-   * 的，所以"入口在不在"直接问注册表。没有入口却把 schema 藏起来，等于让模型永远拿
-   * 不到它：那种组合里工具保持常驻，能力照常可用，代价只是回到老样子。
+   * 临时形态把它落成运行时上下文：变的只是它落在消息尾部而不是请求头部，
+   * 于是开关能力不动稳定前缀。
+   *
+   * 两种形态都注册成**函数**，因为正文要到渲染时才知道：呈现形态属于预设
+   * （见 {@link policyFor}），语言属于这次装配。这里也不再借助装配期的本地化包装
+   * 间接换语言——`computer:policy` 在中央译表里已经**没有**条目了，那张表按分段名
+   * 无条件替换、不认识形态，会把 PTC 措辞换回 native 措辞。本包自己按
+   * `context.locale` 给英文，是那张表模块头写明的终态。
+   *
+   * 介绍因此是**动作清单唯一的落点**：动作的 schema 不在请求体里（被预设行
+   * `@deepseek-ai/dsh-tools/script` 扣留），模型要知道脚本能写哪些动作，读的就是这一节。
    *
    * @param agent - 目标 agent。
    * @param mode - 装载形态。
    * @returns 该形态下需要一并注销的注册项。
    */
   private present(agent: Agent, mode: InstallationMode): Array<() => void> {
-    if (mode === 'resident') {
+    if (mode === 'section') {
       return [agent.ctx.systemPrompt.section({
         name: COMPUTER_POLICY_SECTION,
         order: agent.ctx.systemPrompt.getSectionOrder('COMPUTER_USE_POLICY'),
-        text: () => this.policyText,
+        text: context => this.policyFor(context),
       })]
-    }
-    const disposers: Array<() => void> = []
-    if (agent.ctx.tools.get(TOOL_SEARCH_NAME, scopeOf(agent.ctx)) !== undefined) {
-      disposers.push(agent.ctx.tools.defer(COMPUTER_TOOL_NAMES))
     }
     // 与 MCP 服务器同构的一步：能力在，介绍才在。"未启用不显示"因此不靠过滤实现，
     // 而是靠根本没注册——编辑面也就不会留下一行空的电脑操作。
-    //
-    // 这一段暂时不是分段而是运行时上下文：文本照旧是函数求值（装配期的本地化包装
-    // 走的还是原路径，中文资产 ↔ 英文兜底见 localized-sections），变的只是它落在
-    // 消息尾部而不是请求头部。
-    disposers.push(agent.ctx.systemPrompt.context({
+    return [agent.ctx.systemPrompt.context({
       name: COMPUTER_POLICY_SECTION,
       order: agent.ctx.systemPrompt.getContextOrder('COMPUTER_USE_POLICY'),
-      text: () => this.policyText,
-    }))
-    return disposers
+      text: context => this.policyFor(context),
+    })]
   }
 
   /** 注销该会话已装载的工具集与介绍，无论它当前处于哪种形态。 */

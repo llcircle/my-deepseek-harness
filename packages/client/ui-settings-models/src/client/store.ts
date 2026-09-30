@@ -134,6 +134,37 @@ export function protocolChoices(
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
 }
 
+/**
+ * The thinking levels a profile model may declare, read out of the same schema
+ * as {@link protocolChoices} and for the same reason: the levels a model may
+ * offer are the adapter's vocabulary, so reading them from its `Config` is
+ * what keeps this page from offering a level resolution would refuse.
+ *
+ * The levels are the DICT'S KEY schema, not its value schema: a profile writes
+ * `reasoningEfforts: { <level>: <wire spelling> }`, so the keys are the
+ * capability and the values are how each one is spelled on the wire.
+ * @param namespace - the namespace view whose schema declares the profile shape.
+ * @param schema - settings schema operations.
+ * @returns the level identifiers, or an empty list when the schema has none.
+ */
+export function reasoningLevelChoices(
+  namespace: SettingsNamespaceView | undefined,
+  schema: SettingsSchemaOperations,
+): string[] {
+  if (namespace === undefined) return []
+  // The field is `union([const(false), dict(...)])`, so the union is walked to
+  // the dict member before its key schema can be read. Schemastery nodes are
+  // callable functions, not plain objects, so membership is judged by the
+  // node's own `type` rather than by a `typeof` test.
+  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), [
+    'providers', PROBE_ROUTE, 'models', '0', 'reasoningEfforts',
+  ])
+  const members = (node as { list?: readonly ({ type?: string } | undefined)[] } | undefined)?.list ?? []
+  const dict = members.find(member => member?.type === 'dict')
+  const keys = (dict as { sKey?: { list?: readonly { value?: unknown }[] } } | undefined)?.sKey?.list ?? []
+  return keys.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
+}
+
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */
 function apiKeyEnvOf(
   namespace: SettingsNamespaceView | undefined,

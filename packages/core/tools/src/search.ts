@@ -27,6 +27,19 @@
  * never needs `web_fetch` never pays for its schema, and the loss is bounded to
  * the step that actually asks for one.
  *
+ * ## Why the index is a runtime context, not a section
+ *
+ * The index names the live withheld set, so its text changes the moment a
+ * plugin defers something and again on every fetch. A `section` would put that
+ * varying text in the **stable prefix** — ahead of all history — so each change
+ * would re-charge the entire conversation to save one schema, which is the
+ * opposite of what this module is for.
+ *
+ * It is therefore registered as a `context`: contexts are appended to the tail
+ * as a runtime-context snapshot, so a change costs one appended message and
+ * leaves the cached prefix intact. The bound on this module's cost is then the
+ * honest one — the tool list itself — rather than a whole-prefix rewrite.
+ *
  * @module @deepseek-ai/dsh-tools/search
  */
 
@@ -369,9 +382,9 @@ export function apply(ctx: Context, config: Config = {}): void {
   // `web_fetch` on demand leaves another preset's `web_fetch` resident.
   if (resolved.defer.length > 0) ctx.tools.defer(resolved.defer)
 
-  ctx.systemPrompt.section({
+  ctx.systemPrompt.context({
     name: ON_DEMAND_SECTION,
-    order: ctx.systemPrompt.getSectionOrder('TOOLS_ON_DEMAND'),
+    order: ctx.systemPrompt.getContextOrder('TOOLS_ON_DEMAND'),
     // Dynamic per scope: a fetch drops its name from here, so the index always
     // names exactly what the model would still have to fetch. Empty text
     // renders nothing, which is what a composition with no deferrals gets.

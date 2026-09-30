@@ -498,6 +498,23 @@ Tool registry and execution pipeline. Scoped registrations shadow globals; one v
 
 ```ts cordis-catalog
 /**
+ * The presentation the calling scope's model actually sees: the nearest
+ * declaration on its scope chain, else the deployment default — the same
+ * resolution the wire schemas, the SDK section, and the executor's collapse
+ * all read.
+ *
+ * A capability that words its own prompt text has to know which route the
+ * model takes to reach it. Guidance naming a tool as directly callable is
+ * wrong wherever that name is absent from the request, and WHICH request that
+ * is belongs to the preset rather than to the capability: one package's text
+ * is rendered into every preset that mounts it. Reading the mode here is what
+ * lets such text describe the deployment it is actually rendered into.
+ * @param scope - the scope to read; omitted reads the deployment default.
+ * @returns the resolved presentation mode.
+ */
+presentation(scope?: ScopeKey): ToolPresentationMode
+
+/**
  * Present the calling scope's tools in `mode` instead of the deployment
  * default. Nearest scope on the chain wins, so a preset's standing
  * declaration covers every agent joined under it.
@@ -517,11 +534,15 @@ presentAs(mode: ToolPresentationMode): () => void
  *
  * Withholding narrows the request and nothing else: the tool stays
  * registered, stays dispatchable, and stays a known name for `toolOrder`
- * and `restrict`. That is the whole point — a model that learns the name
- * and its schema from a `tool_search` result can call it immediately, and a
- * tool description that names it stays truthful. See
+ * and `restrict`. A withheld schema is, however, UNCALLABLE until it is
+ * fetched back — a model emits a call only for a function the request
+ * itself declares — so fetching is what makes the name usable, and every
+ * fetch rewrites the front of the request. See
  * [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the
- * fetching.
+ * fetching; no preset shipped with this fork mounts it, because sending the
+ * whole catalog beats both hiding it and translating it into a generated
+ * SDK. Neither alternative makes the request shorter, and this one at least
+ * leaves every name directly callable.
  *
  * Scoped only, like {@link presentAs}: whether a tool is resident is a
  * property of the COMPOSITION, not of the tool, so the row that carries it
@@ -588,6 +609,36 @@ restrict(filter: ToolRestriction): () => void
  * @returns the exact disposer that unregisters the guard.
  */
 guard(guard: ToolGuard): () => void
+
+/**
+ * Add one capability's verb table to the `script` entry
+ * (`@deepseek-ai/dsh-tools/script`).
+ *
+ * The script tool owns the GRAMMAR and the dispatch; what an action IS belongs
+ * to the capability that can perform it. A capability registers here once and
+ * the preset row's mount then gets, for free: the entry itself, the withholding
+ * of {@link ScriptContribution.withheld}, and a guard refusing a model-direct
+ * call to a withheld name. That is what makes the next capability write a verb
+ * table instead of a second tool.
+ *
+ * Contributions are a PROCESS-level fact, not a per-scope one — the verb table
+ * is inert data and a verb is usable only while its target tool is registered in
+ * the calling agent's scope, so nothing leaks by contributing globally. A host
+ * plane row therefore contributes at boot (before any preset's standing mount
+ * reads the merged surface) and a preset needs no contribution of its own.
+ *
+ * @param contribution - the capability's id, verbs, and script-only tool names.
+ * @returns the disposer that withdraws the contribution.
+ */
+contributeScript(contribution: ScriptContribution): () => void
+
+/**
+ * The merged surface a script entry reads: every contributed verb, and every
+ * name its contributions keep off the wire.
+ *
+ * @returns the merged verb table and withheld-name set.
+ */
+scriptSurface(): ScriptSurface
 
 /**
  * Look up a tool as one scope sees it (scoped

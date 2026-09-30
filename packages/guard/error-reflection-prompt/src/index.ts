@@ -9,13 +9,16 @@
  * are simply not injected: an ability that is not composed in this session must
  * not advertise itself through stale lessons.
  *
- * MCP tools are the one exception: a server contributes a single prompt section
- * (`mcp:<server>`) but each of its tools keeps its own subject
+ * MCP tools are the best-known exception: a server contributes a single prompt
+ * section (`mcp:<server>`) but each of its tools keeps its own subject
  * (`mcp__<server>__<tool>`). Those subjects have no section to land in, so they
  * are appended to their server's section as `### <tool>` blocks, sorted by tool
  * name, with the server's own lessons ahead of them. Each subject is capped on
  * its own (`maxSubjectChars`) — one chatty tool must not crowd out its
- * siblings the way it must not crowd out another ability.
+ * siblings the way it must not crowd out another ability. A subject whose
+ * ability carries no section of its own is redirected the same way, by name,
+ * through {@link SUBJECT_SECTION_ALIAS} — PTC mode's `run_code` transport has
+ * no `tool:*` section because its guidance lives inside `tools:sdk`.
  *
  * Whatever is left over — prose before the first heading, legacy `## YYYY-MM-DD`
  * blocks, hand-written notes with a title that names no subject — still lands in
@@ -151,6 +154,25 @@ function tailFromHeadingBoundary(trimmed: string, maxChars: number): string {
 const SUBJECT_HEADING = '以下是这项能力过往失败的教训（自动生成）：'
 
 /**
+ * 没有同名分段可落的主题，以及它该落进哪一节。
+ *
+ * 主题键通常就是分段名，所以注入侧拿分段名查表即可。PTC 的载体 `run_code` 是
+ * 迄今为止唯一的例外：它**没有自己的 `tool:*` 分段**——它的用法说明整段住在
+ * `tools:sdk` 里（`## Writing code for run_code` 与程序内约定都在那一节）。
+ * 于是 `## tool:run_code` 的经验若不改道，就既不是全局、也没有任何分段接得住，
+ * **静默地从所有提示词里消失**。改道到 SDK 那一节，教训就落在它本来该在的地方。
+ *
+ * 这是"主语没有自己的分段"这一类问题的一般解，不是给 PTC 打的补丁：以后再有
+ * 这样的载体，往这张表加一行即可。
+ */
+const SUBJECT_SECTION_ALIAS: Readonly<Record<string, string>> = {
+  // 两边都是字面量、必须同步：`tool:run_code` 是 `packages/core/tools` 的
+  // `RUN_CODE_NAME`，`tools:sdk` 是它 `sdkSection()` 里的 `name`。
+  // 写成字面量是为了不让 guard 侧为了两个字符串而反向依赖 tools 的实现。
+  'tool:run_code': 'tools:sdk',
+}
+
+/**
  * The section text for the document's global part; empty when there is none.
  * @param raw - the document's global, subject-less text.
  * @param maxPromptChars - tail cap, applied on a `## ` boundary when one exists.
@@ -189,8 +211,8 @@ export function subjectLessonsText(raw: string, maxSubjectChars: number): string
 }
 
 /**
- * 一个分段该收到的全部经验正文（不含抬头）：它自己的，加上它名下各个 MCP 工具
- * 的各一条。
+ * 一个分段该收到的全部经验正文（不含抬头）：它自己的、改了道的主题的，加上它名下
+ * 各个 MCP 工具的各一条。
  *
  * 工具主题没有自己的提示词分段可挂，只能落进服务器的分段里。用 `### <工具>`
  * 分块而不是揉成一段散文，是为了让模型看得出"这条坑属于哪个工具"——同一服务器
@@ -211,6 +233,13 @@ export function sectionLessonsText(
   const parts: string[] = []
   const own = subjectBodyText(document.subjects.get(sectionName) ?? '', maxSubjectChars)
   if (own !== '') parts.push(own)
+  // 主语没有自己分段的主题（见 {@link SUBJECT_SECTION_ALIAS}）：按别名落到这一节，
+  // 用 `### <主题>` 标明它另有出处——不这样标，读者会以为这段是这一节自己写的。
+  for (const [subject, section] of Object.entries(SUBJECT_SECTION_ALIAS)) {
+    if (section !== sectionName) continue
+    const body = subjectBodyText(document.subjects.get(subject) ?? '', maxSubjectChars)
+    if (body !== '') parts.push(`### ${subject}\n\n${body}`)
+  }
   const server = MCP_SERVER_SECTION.exec(sectionName)?.[1]
   if (server !== undefined) {
     const prefix = mcpToolSubjectPrefix(server)

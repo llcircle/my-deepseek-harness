@@ -62,6 +62,8 @@ export interface CustomProviderCardProps {
   taken: readonly string[]
   /** Wire protocols the adapter can serve, in the order it reports them. */
   protocols: readonly string[]
+  /** Thinking levels the adapter lets a model declare, in escalation order. */
+  levels: readonly string[]
   /**
    * Revision of the `llm-pi-ai` user section this card opened at, sent with
    * the create so a route another tab declared meanwhile is a refusal rather
@@ -288,6 +290,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           ? 'customBaseUrlInvalid'
           : keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure}
         operations={operations}
+        levels={props.levels}
         t={t}
         disabled={profileDisabled}
       />

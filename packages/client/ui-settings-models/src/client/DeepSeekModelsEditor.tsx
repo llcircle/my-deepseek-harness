@@ -74,7 +74,7 @@ export interface DeepSeekModelsValidationFailure {
   index: number
   /** Message key owned by the Models settings section. */
   key: 'modelIdRequired' | 'modelIdDuplicate' | 'modelNameInvalid' | 'modelContextInvalid'
-  | 'modelMaxTokensInvalid'
+  | 'modelMaxTokensInvalid' | 'modelEffortInvalid' | 'modelEffortValueRequired' | 'modelEffortNoneOffered'
 }
 
 /** Convert a schema-validated catalog value into records without dropping hidden fields. */
@@ -117,6 +117,28 @@ export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidation
     if (maxTokens !== undefined
       && (typeof maxTokens !== 'number' || !Number.isInteger(maxTokens) || maxTokens <= 0)) {
       return { index, key: 'modelMaxTokensInvalid' }
+    }
+    // `reasoningEfforts` is a pi-ai field; a catalog row never carries one, and
+    // the adapter's own resolution rules are re-judged here so the card can
+    // name the row instead of letting the write fail with a path. Only another
+    // plain dict of levels is refused at all — `false` declares a
+    // non-reasoning model and an absent field inherits the installed catalog.
+    const efforts = model['reasoningEfforts']
+    if (efforts !== undefined && efforts !== false) {
+      if (typeof efforts !== 'object' || efforts === null || Array.isArray(efforts)) {
+        return { index, key: 'modelEffortInvalid' }
+      }
+      const declared = Object.entries(efforts)
+      for (const [level, wire] of declared) {
+        // `off` alone may leave its value empty, where empty means "send no
+        // parameter at all"; every other level must name what dispatch sends.
+        if (wire === null) {
+          if (level !== 'off') return { index, key: 'modelEffortValueRequired' }
+        } else if (typeof wire !== 'string' || wire.length === 0) {
+          return { index, key: 'modelEffortValueRequired' }
+        }
+      }
+      if (!declared.some(([level]) => level !== 'off')) return { index, key: 'modelEffortNoneOffered' }
     }
   }
   return undefined

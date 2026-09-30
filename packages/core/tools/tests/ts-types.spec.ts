@@ -61,6 +61,30 @@ describe('jsonSchemaToTs', () => {
     ].join('\n'))
   })
 
+  it('types a provider-supplied schema that carries a dialect declaration', () => {
+    // The MCP SDK's `tools/list` emits `inputSchema` with `$schema` on it, and the
+    // bridge relays the object verbatim. This exact schema used to render
+    // `unknown`, so a PTC mode program was told which MCP tools exist and what
+    // they return but nothing about how to call them.
+    const mcpStyle = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        a: { type: 'number', description: 'First number' },
+        b: { type: 'number', description: 'Second number' },
+      },
+      required: ['a', 'b'],
+    }
+    expect(jsonSchemaToTs(mcpStyle, 1)).toBe([
+      '{',
+      '    /** First number */',
+      '    a: number;',
+      '    /** Second number */',
+      '    b: number;',
+      '  } & Record<string, JsonValue>',
+    ].join('\n'))
+  })
+
   it('is total: unsupported or hostile constructs degrade to unknown, never throw', () => {
     const cases: unknown[] = [
       undefined,

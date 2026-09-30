@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-A failed tool call already reaches the model as an error result and then disappears into the session log. `dsh-tool-error-journal` keeps a durable, cross-session record: it observes the post-commit session feed, selects failed `tool/result` records from every session in the process (core and MCP tools both surface through the same event), and appends one bounded JSON line per failure to a JSONL file. The journal is write-only state for operators and correction tooling; nothing reads it back. Choose it to answer "which calls failed, when, and why" across sessions; skip it when per-session log inspection is enough.
+A failed tool call already reaches the model as an error result and then disappears into the session log. `dsh-tool-error-journal` keeps a durable, cross-session record: it observes the post-commit session feed, selects both failure shapes — a native `tool/result` and a PTC mode sub-call's `tool/ptc-dispatch` — and appends one bounded JSON line per failure to a JSONL file, keyed by the tool that actually failed. It is write-only state for operators and correction tooling; nothing reads it back. Choose it to answer "which calls failed, when, and why" across sessions; skip it when per-session log inspection is enough.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Mount the plugin beside the session store and it starts journaling — no other 
 
 ### When to choose it
 
-Choose it when operators or correction tooling need a durable, process-wide record of tool failures that survives session boundaries. Skip it when the session log is the only consumer: the same `tool/result` records are already durable there, so the journal adds value only through its single-file, cross-session shape.
+Choose it when operators or correction tooling need a durable, process-wide record of tool failures that survives session boundaries. Skip it when the session log is the only consumer: the same `tool/result` and `tool/ptc-dispatch` records are already durable there, so the journal adds value only through its single-file, cross-session shape.
 
 ### Set up
 
@@ -52,7 +52,7 @@ One JSON object per line:
 {"time":"2026-09-08T00:00:00.000Z","sessionId":"…","seq":7,"name":"mcp__memorix__save","callId":"call-1","text":"Error: …"}
 ```
 
-`name` is learned from the paired `tool/call` record and reads `unknown` when the journal sees a result whose call record was never observed. An internal failure identity (for example a timeout) is carried in `internalError` beside the model-facing text.
+`name` comes from the paired `tool/call` record for a native call, and from the dispatch record itself for a PTC mode sub-call — which has no call record of its own; it reads `unknown` when the journal sees a native result whose call record was never observed. `callId` is the call identity natively and the sub-call identity under PTC. An internal failure identity (for example a timeout) is carried in `internalError` beside the model-facing text.
 
 -----
 
@@ -68,11 +68,13 @@ This section explains how the journal observes failures and writes them; the obs
 
 - **Observe, never intercept.** The plugin registers one `session/event` listener on the post-commit feed and appends asynchronously; it sits outside the tool dispatch path, so it cannot change any result.
 - **The session log stays the authority.** The journal is a derived, best-effort projection: a failed append is logged and contained, never retried across restarts, and never blocks the emitter.
-- **Bounded entries.** The failure text is excerpted to `maxTextChars`; the tool-name memory is a per-session map that deletes each call identity when its result arrives, so it cannot grow without bound.
+- **Bounded entries.** The failure text is excerpted to `maxTextChars`; the tool-name memory is a per-session map that deletes each call identity when its result arrives, so it cannot grow without bound. Only the native path needs that map — a dispatch record names its own tool.
 
 ### Failure selection and pairing
 
 A `tool/call` record stores `callId → name` per session. A `tool/result` record journals when its single tool-result block carries `isError` or the envelope names an internal `error`; the entry pairs the stored name, caps the joined text blocks at `maxTextChars`, and stamps the event's own time and sequence.
+
+A PTC mode sub-call never produces a `tool/result` — keeping sub-calls off the message surface is the whole point of the collapse — so the same tap also selects `tool/ptc-dispatch` by the same test, reading the tool name and the sub-call identity off that record. Without it, a program that caught its own failure (the recommended way to write one) left no entry at all, and an uncaught one filed under `run_code` rather than the tool that broke.
 
 ### Source map
 
@@ -87,7 +89,7 @@ A `tool/call` record stores `callId → name` per session. A `tool/result` recor
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Session subsystem reference](../../../docs/subsystems/session.md) — the durable `tool/result` records this journal derives from.
+- [Session subsystem reference](../../../docs/subsystems/session.md) — the durable `tool/result` and `tool/ptc-dispatch` records this journal derives from.
 - [guard group map](../README.md) — the sibling guard packages and the loop-hygiene family.
 
 -----
@@ -104,7 +106,7 @@ Independent: the journal contributes no model-visible content, so it never chang
 ## Known Limitations and Deferred Work
 
 - **Best-effort, not transactional** — a failed append (unwritable path, disk error) drops that entry after an operator-log warning; the session log remains the complete record.
-- **Tool names need the paired call record** — a result observed without its `tool/call` predecessor journals under `unknown`; seeds replayed into a fresh process before the journal mounted look exactly like that.
+- **Native tool names need the paired call record** — a `tool/result` observed without its `tool/call` predecessor journals under `unknown`; seeds replayed into a fresh process before the journal mounted look exactly like that. A PTC mode sub-call is exempt, since its dispatch record carries the name.
 - **Single-process scope** — the journal records the sessions of the process that mounts it; it is not a cluster-wide sink.
 
 <a id="dev-note"></a>

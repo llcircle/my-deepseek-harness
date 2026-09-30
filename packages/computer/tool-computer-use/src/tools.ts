@@ -1,13 +1,22 @@
 /**
- * 模型侧工具集：九个细粒度动作，覆盖"看屏幕 → 定位 → 操作 → 核对"的完整循环。
+ * 动作层：九个细粒度动作，覆盖"看屏幕 → 定位 → 操作 → 核对"的完整循环。
  *
- * 为什么是细粒度而不是一个"写脚本"的粗工具：每个动作都成为一条
- * `tool/call` + `tool/result`，日志可按原样重建、审批可以按动作粒度介入、
- * 失败可以定位到具体一步。粗粒度执行体（Codex 的 `exec` 形态）省 token，
- * 但把行为藏进模型生成的代码里，代价是审计与审批都只能整体放行。
+ * 它们**不再直接面对模型**。模型侧唯一的入口是通用 `script` 工具——一段逐行动作脚本，
+ * 由它自己的解析器解析后，每一行经 `registry.execute` 派发到这里的某一个动作上。
+ * 于是这个文件仍然握着全部动作语义（参数、默认值、回执信封、能否并发），
+ * 而脚本层只负责"把一行文字变成一次调用"。
  *
- * 工具只在启用后注册到 **agent 作用域**，因此不启用电脑操作的会话里
- * 这些 schema 根本不进入请求，也不出现在提示词的工具序里。
+ * 为什么保留细粒度而不是把动作语义搬进脚本解析器：每个动作因此仍是一条
+ * `tool/call` 级别的记录（脚本的嵌套派发会写 `tool/ptc-dispatch-start` /
+ * `tool/ptc-dispatch`），日志可按原样重建、审批可以按动作粒度介入、失败可以定位到
+ * 具体一步——只是模型不再需要用九份 schema 去学它。粗粒度执行体（Codex 的 `exec` 形态）
+ * 省下的那点 token，不值得把行为藏进模型生成的代码里、让审计与审批只能整体放行。
+ *
+ * 这些定义在启用时注册到 **agent 作用域**。带了预设行 `tool-script` 的预设里，schema 会
+ * 被那一行扣留（`tools.defer`）——扣留名单由本包在构造时交上去（见 `./script.ts` 的
+ * `COMPUTER_SCRIPT_CONTRIBUTION`），而扣留表沿作用域链合并，预设层的扣留盖得住这里的
+ * 注册，于是启用前后这些 schema 都不进请求体，只有脚本的嵌套派发能到达；没带那一行的
+ * 预设（`minimal`）不扣留，动作启用后照常出现在请求体里。
  *
  * @module @deepseek-ai/dsh-tool-computer-use/tools
  */
@@ -203,14 +212,18 @@ function pointFields(x: number | undefined, y: number | undefined): { x?: number
 }
 
 /**
- * 把整套电脑操作工具注册到给定作用域。
+ * 把整套动作注册到给定作用域。
  *
  * 调用方传进来的通常是 `agent.ctx`，注册因此随 agent 生命周期自动退场；
  * 返回值是显式注销器，用于中途关闭能力。
  *
+ * 注册**不等于**进请求体：带了预设行 `tool-script` 的预设里，那一行会把本包交上去的
+ * 扣留名单落实成 `tools.defer`，模型侧只留 `script` 一个入口，动作本身由脚本的嵌套
+ * 派发到达。没带那一行的预设不扣留，动作照常进请求体。
+ *
  * @param scope - 注册作用域（agent 作用域即可实现"只对这个会话可见"）。
  * @param ctx - 插件上下文，用于读取 `computer` 与 `attachments` 服务。
- * @returns 注销全部工具的 disposer。
+ * @returns 注销全部动作的 disposer。
  */
 export function registerComputerTools(scope: Context, ctx: Context): () => void {
   const disposers: Array<() => void> = []
@@ -566,7 +579,13 @@ export function registerComputerTools(scope: Context, ctx: Context): () => void 
   }
 }
 
-/** 这套工具的全部名字，用于提示词与诊断。 */
+/**
+ * 这套动作的全部名字。
+ *
+ * 两种用途：交给通用 `script` 工具一次性扣留这批 schema（见 `./script.ts` 的
+ * `COMPUTER_SCRIPT_CONTRIBUTION`），诊断时拿它核对注册表里有哪些动作。它们不是模型侧的
+ * 入口名——模型侧只有 `script`。
+ */
 export const COMPUTER_TOOL_NAMES: readonly string[] = [
   'computer_screenshot',
   'computer_display',

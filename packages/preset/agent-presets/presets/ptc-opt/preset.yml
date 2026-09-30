@@ -1,0 +1,3 @@
+name: PTC 优化模式
+description: PTC 模式的提示词整理版：SDK 段落紧跟「只有 run_code 可直接调用」那句规则，SDK 与 PTC 专属分段随界面语言出中文，计划模式那段与插件内置默认重复的文案改回继承。
+order: 4

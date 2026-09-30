@@ -13,7 +13,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import { assertNever, deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { PromptSection, ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
+import type { PromptLocale, PromptSection, ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { PtcRuntime } from '@deepseek-ai/dsh-ptc-runtime'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 // Type-only: makes `ctx.get('approval')` resolve to the ApprovalService
@@ -51,10 +51,10 @@ import { renderToolsSdkPy } from './py-types.ts'
  */
 const PTC_ONLY_INSTRUCTION = `\`${RUN_CODE_NAME}\` is the only tool you can call directly — a tool call naming any other tool fails. Reach every tool the SDK declares below from inside the program.`
 
-const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[]) => string> = {
+const SDK_RENDERERS: Record<string, (schemas: ToolSdkSchema[], locale: PromptLocale) => string> = {
   typescript: renderToolsSdk,
   python: renderToolsSdkPy,
-} satisfies Record<PtcSdkLanguage, (schemas: ToolSdkSchema[]) => string>
+} satisfies Record<PtcSdkLanguage, (schemas: ToolSdkSchema[], locale: PromptLocale) => string>
 
 export {
   defineTool,
@@ -814,6 +814,52 @@ function resolveMaxParallelSubCalls(value: number | undefined): number {
 }
 
 /**
+ * One verb a capability exposes to the `script` entry: the registry tool a line
+ * dispatches to, plus the parameter names positional arguments bind to, in order.
+ *
+ * Positional names are the only grammar a capability states. Argument TYPES are
+ * deliberately absent — the script layer reads the target tool's own parameter
+ * schema, so adding a parameter to an action changes nothing here.
+ */
+export interface ScriptVerb {
+  /** The registered tool name this verb dispatches to. */
+  readonly tool: string
+  /** Parameter names, in the order positional arguments fill them. */
+  readonly positional: readonly string[]
+}
+
+/**
+ * One capability's contribution to the `script` entry, registered with
+ * {@link ToolRuntime.contributeScript}.
+ */
+export interface ScriptContribution {
+  /** Identity for diagnostics and duplicate detection (a reload must withdraw the old one first). */
+  readonly id: string
+  /** Verbs this capability adds; the key is what a script writes. */
+  readonly verbs: Readonly<Record<string, ScriptVerb>>
+  /**
+   * This capability's tools whose schemas stay off the wire while a script entry
+   * is mounted.
+   *
+   * A capability states this rather than the preset row, because only the
+   * capability knows which of its tools are script-shaped. The names are withheld
+   * and guarded, never hidden: they stay registered, and the script's nested
+   * dispatch is their only route — a name a request does not declare draws no
+   * call from the model, so withholding an end-capability tool without such a
+   * route would make it unreachable rather than smaller.
+   */
+  readonly withheld?: readonly string[]
+}
+
+/** The merged surface every {@link ToolRuntime.contributeScript} call adds up to. */
+export interface ScriptSurface {
+  /** Every contributed verb, keyed by what a script writes. */
+  readonly verbs: Readonly<Record<string, ScriptVerb>>
+  /** Every contributed {@link ScriptContribution.withheld} name, de-duplicated. */
+  readonly withheld: ReadonlySet<string>
+}
+
+/**
  * Tool registry and execution pipeline. Scoped registrations shadow globals;
  * one visibility resolver feeds presentation, lookup, and dispatch.
  */
@@ -855,6 +901,11 @@ export class ToolRuntime extends Service {
    * transport is stateless beyond its closures over `this`.
    */
   private ptcTransport: ToolDefinition | undefined
+  /**
+   * Verb tables capabilities hand to the `script` entry, by contribution id.
+   * Process-level on purpose — see {@link contributeScript}.
+   */
+  private readonly scriptContributions = new Map<string, ScriptContribution>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'tools')
@@ -919,7 +970,8 @@ export class ToolRuntime extends Service {
         const render = SDK_RENDERERS[runtime.language]
         /* v8 ignore next -- requirePtcRuntime rejects an unknown language before this runs. */
         if (render === undefined) throw new Error(`dsh-tools: no SDK renderer for ${runtime.language}`)
-        return render(this.sdkSchemas(context.scope))
+        // 散文跟随**本次装配**的语言（`enriched` 带下来），声明本身是类型投影、不译。
+        return render(this.sdkSchemas(context.scope), context.locale ?? 'en')
       },
     }
   }
@@ -972,6 +1024,25 @@ export class ToolRuntime extends Service {
   }
 
   /**
+   * The presentation the calling scope's model actually sees: the nearest
+   * declaration on its scope chain, else the deployment default — the same
+   * resolution the wire schemas, the SDK section, and the executor's collapse
+   * all read.
+   *
+   * A capability that words its own prompt text has to know which route the
+   * model takes to reach it. Guidance naming a tool as directly callable is
+   * wrong wherever that name is absent from the request, and WHICH request that
+   * is belongs to the preset rather than to the capability: one package's text
+   * is rendered into every preset that mounts it. Reading the mode here is what
+   * lets such text describe the deployment it is actually rendered into.
+   * @param scope - the scope to read; omitted reads the deployment default.
+   * @returns the resolved presentation mode.
+   */
+  presentation(scope?: ScopeKey): ToolPresentationMode {
+    return this.modeFor(scope)
+  }
+
+  /**
    * Present the calling scope's tools in `mode` instead of the deployment
    * default. Nearest scope on the chain wins, so a preset's standing
    * declaration covers every agent joined under it.
@@ -1019,11 +1090,15 @@ export class ToolRuntime extends Service {
    *
    * Withholding narrows the request and nothing else: the tool stays
    * registered, stays dispatchable, and stays a known name for `toolOrder`
-   * and `restrict`. That is the whole point — a model that learns the name
-   * and its schema from a `tool_search` result can call it immediately, and a
-   * tool description that names it stays truthful. See
+   * and `restrict`. A withheld schema is, however, UNCALLABLE until it is
+   * fetched back — a model emits a call only for a function the request
+   * itself declares — so fetching is what makes the name usable, and every
+   * fetch rewrites the front of the request. See
    * [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the
-   * fetching.
+   * fetching; no preset shipped with this fork mounts it, because sending the
+   * whole catalog beats both hiding it and translating it into a generated
+   * SDK. Neither alternative makes the request shorter, and this one at least
+   * leaves every name directly callable.
    *
    * Scoped only, like {@link presentAs}: whether a tool is resident is a
    * property of the COMPOSITION, not of the tool, so the row that carries it
@@ -1251,6 +1326,67 @@ export class ToolRuntime extends Service {
       layer => layer.guards.append(guard),
       { label: 'tools.guard()', notify: false },
     )
+  }
+
+  /**
+   * Add one capability's verb table to the `script` entry
+   * (`@deepseek-ai/dsh-tools/script`).
+   *
+   * The script tool owns the GRAMMAR and the dispatch; what an action IS belongs
+   * to the capability that can perform it. A capability registers here once and
+   * the preset row's mount then gets, for free: the entry itself, the withholding
+   * of {@link ScriptContribution.withheld}, and a guard refusing a model-direct
+   * call to a withheld name. That is what makes the next capability write a verb
+   * table instead of a second tool.
+   *
+   * Contributions are a PROCESS-level fact, not a per-scope one — the verb table
+   * is inert data and a verb is usable only while its target tool is registered in
+   * the calling agent's scope, so nothing leaks by contributing globally. A host
+   * plane row therefore contributes at boot (before any preset's standing mount
+   * reads the merged surface) and a preset needs no contribution of its own.
+   *
+   * @param contribution - the capability's id, verbs, and script-only tool names.
+   * @returns the disposer that withdraws the contribution.
+   */
+  contributeScript(contribution: ScriptContribution): () => void {
+    const { id } = contribution
+    if (this.scriptContributions.has(id)) {
+      throw new Error(`tools.contributeScript(): contribution "${id}" is already registered`)
+    }
+    for (const verb of Object.keys(contribution.verbs)) {
+      const owner = this.scriptVerbOwner(verb)
+      if (owner !== undefined) {
+        throw new Error(`tools.contributeScript(): verb "${verb}" is already contributed by "${owner}" — a silently shadowed verb would dispatch to the wrong tool`)
+      }
+    }
+    this.scriptContributions.set(id, contribution)
+    return () => {
+      this.scriptContributions.delete(id)
+    }
+  }
+
+  /**
+   * The merged surface a script entry reads: every contributed verb, and every
+   * name its contributions keep off the wire.
+   *
+   * @returns the merged verb table and withheld-name set.
+   */
+  scriptSurface(): ScriptSurface {
+    const verbs: Record<string, ScriptVerb> = {}
+    const withheld = new Set<string>()
+    for (const contribution of this.scriptContributions.values()) {
+      Object.assign(verbs, contribution.verbs)
+      for (const name of contribution.withheld ?? []) withheld.add(name)
+    }
+    return { verbs, withheld }
+  }
+
+  /** Which contribution already owns `verb`, for the duplicate diagnostic. */
+  private scriptVerbOwner(verb: string): string | undefined {
+    for (const [id, contribution] of this.scriptContributions) {
+      if (Object.hasOwn(contribution.verbs, verb)) return id
+    }
+    return undefined
   }
 
   /** First monotonic denial from the global then the scope chain's guard layers, farthest first. */

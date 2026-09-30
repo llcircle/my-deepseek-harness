@@ -112,6 +112,7 @@ The registry holds typed `ToolDefinition`s in scoped layers and projects them on
 | [`src/json-schema.ts`](src/json-schema.ts) | The enforced raw JSON Schema subset and validation |
 | [`src/presentation.ts`](src/presentation.ts) | The `card`-tagged UI render intents |
 | [`src/ptc.ts`](src/ptc.ts) | PTC mode: SDK generation, `run_code` dispatch bridge, settlement |
+| [`src/script.ts`](src/script.ts) | The `script` row: line-action grammar, the per-line dispatch, and the verb-table contributions behind it |
 | [`src/ts-types.ts`](src/ts-types.ts) | TypeScript SDK type rendering |
 | [`src/py-types.ts`](src/py-types.ts) | Python SDK type rendering |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
@@ -131,7 +132,7 @@ New sub-calls use `<parent>:ptc:<n>` ids. Consumers treat these ids as opaque an
 <a id="extension-points"></a>
 ### Extension points
 
-Tool plugins call `ctx.tools.register()` and their schemas flow into prompt assembly automatically. `tools/pre-execute` is the reorderable allow/deny/ask gate; `ctx.tools.guard()` adds monotonic owner policy after it; `tools/execute` wraps normalized canonical dispatch for timeout, retry, or metrics; `tools/post-execute` may replace content or value, block with feedback, or attach ordered contexts; `tools/result` observes the immutable final outcome. MCP servers discover tools and register them with the server's schemas.
+Tool plugins call `ctx.tools.register()` and their schemas flow into prompt assembly automatically. `tools/pre-execute` is the reorderable allow/deny/ask gate; `ctx.tools.guard()` adds monotonic owner policy after it; `tools/execute` wraps normalized canonical dispatch for timeout, retry, or metrics; `tools/post-execute` may replace content or value, block with feedback, or attach ordered contexts; `tools/result` observes the immutable final outcome. A capability that wants a script surface instead of one tool per action calls `ctx.tools.contributeScript()` with a verb table; the [`script` row](src/script.ts) then owns the grammar, the resident schema, the withholding of the names the capability declares script-only, and the guard refusing a model-direct call to one. MCP servers discover tools and register them with the server's schemas.
 
 </details>
 
@@ -167,6 +168,27 @@ Fixed per-request cost proportional to the visible definitions. Restrictions tha
 #### KV Cache effect
 
 Prefix-stable while visible definitions and their order are unchanged. Registration, disposal, or scoped restriction may invalidate reuse from the first changed schema token.
+
+### The script entry
+
+#### What the model sees
+
+The [`script` row](src/script.ts) — `@deepseek-ai/dsh-tools/script`, mounted by a composition rather than by this package — contributes one resident tool of its own, `script`. Its schema is capability-independent: two parameters and no verbs. That is what lets a capability arrive mid-session without moving the request's `tools` array — the actions it contributes are withheld behind the entry and reached by writing a line, not by naming a tool — and it is why the description names no capability. [Computer use](../../computer/tool-computer-use/README.md) is the capability that ships a verb table today.
+
+##### script parameters
+
+```markdown
+code         string  required  The script: one action per line.
+description  string  optional  One line saying what this script is meant to achieve, shown to the user.
+```
+
+#### Token effect
+
+One small schema on every request of every preset that declares the row, whether or not a capability is enabled. The contributed actions cost nothing while the entry is mounted: their schemas stay off the wire.
+
+#### KV Cache effect
+
+Prefix-stable across a capability's enable and disable, because the entry's schema and the withheld set do not move; what enabling adds is trailing prompt material owned by the capability. Mounting or dropping the row, or contributing a verb set after the row has mounted, changes the catalog from the first changed schema.
 
 ### PTC mode schema and system prompt
 

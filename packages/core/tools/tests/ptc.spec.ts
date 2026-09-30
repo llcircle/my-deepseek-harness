@@ -52,11 +52,15 @@ interface SetupOptions {
   maxParallelSubCalls?: number
   runtime?: false | { language?: string }
   toolOrder?: string[]
+  promptLocale?: 'zh' | 'en'
 }
 
 async function setup(options: SetupOptions = {}) {
   const ctx = new Context()
-  await ctx.plugin(SystemPrompt, { ...options.toolOrder ? { toolOrder: options.toolOrder } : {} })
+  await ctx.plugin(SystemPrompt, {
+    ...options.toolOrder ? { toolOrder: options.toolOrder } : {},
+    ...options.promptLocale ? { promptLocale: options.promptLocale } : {},
+  })
   await ctx.plugin(ToolRuntime, { mode: options.mode ?? 'ptc', ...options.maxParallelSubCalls !== undefined ? { maxParallelSubCalls: options.maxParallelSubCalls } : {} })
   let runtime: FakeRuntime | undefined
   if (options.runtime !== false) {
@@ -175,7 +179,7 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).not.toContain('tools.bash(')
   })
 
-  it("mode 'ptc' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {
+  it("mode 'ptc' states the run_code-only rule BEFORE the per-tool guidance that names each tool, and hands it the SDK next", async () => {
     const { ctx, systemPrompt } = await setup({ mode: 'ptc' })
     registerEcho(ctx)
     // Stand in for a real tool's guidance section, which names its tool without
@@ -192,7 +196,29 @@ describe('mode-aware wire contribution', () => {
     expect(rule?.text).toContain(`\`${RUN_CODE_NAME}\` is the only tool you can call directly`)
     // The rule is worthless after the guidance it qualifies.
     expect(names.indexOf('tools:ptc-only')).toBeLessThan(names.indexOf('tool:echo'))
+    // …and it is worth nothing after the SDK either: the rule says "reach every
+    // tool the SDK declares BELOW", so the SDK is what must come next. Under
+    // `ptc` the SDK is the only place a tool name becomes callable, which makes
+    // it the catalog — and a catalog read after the per-tool guidance teaches
+    // the model about names it cannot call yet.
     expect(names.indexOf('tools:ptc-only')).toBeLessThan(names.indexOf('tools:sdk'))
+    expect(names.indexOf('tools:sdk')).toBeLessThan(names.indexOf('tool:echo'))
+  })
+
+  it("mode 'ptc' writes the SDK prose in the assembly language and leaves the declaration alone", async () => {
+    const { ctx, systemPrompt } = await setup({ mode: 'ptc', promptLocale: 'zh' })
+    registerEcho(ctx)
+
+    const sdk = (await systemPrompt.assemble()).sections
+      .find(section => section.name === 'tools:sdk')?.text ?? ''
+
+    expect(sdk).toContain('## 为 run_code 写代码')
+    expect(sdk).not.toContain('## Writing code for run_code')
+    // The declaration is a type projection: it is the same bytes in every
+    // locale, and the exotic-name escape hatch has to survive translation.
+    expect(sdk).toContain('declare const tools: {')
+    expect(sdk).toContain('echo: {')
+    expect(sdk).toContain('type ToolName = keyof ToolOutputMap')
   })
 
   it("mode 'both' omits the run_code-only rule, because native calls do execute there", async () => {

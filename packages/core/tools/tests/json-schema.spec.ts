@@ -138,6 +138,30 @@ describe('the enforced raw JSON Schema subset', () => {
       ])
   })
 
+  it('carries the dialect declaration without weakening enforcement', () => {
+    // MCP servers stamp `inputSchema` with this URL, and the MCP bridge relays
+    // the schema verbatim; rejecting the whole node over one inert annotation is
+    // what used to cost the PTC mode SDK every MCP tool's argument types.
+    // Typed `unknown` on purpose: a schema that arrives from outside the
+    // repository is unvalidated until the assertion narrows it, and the assertion
+    // is the only thing that ever promises a `JsonSchemaNode`.
+    const declared: unknown = {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: { a: { type: 'number' } },
+      required: ['a'],
+    }
+    assertSupportedJsonSchema(declared)
+    assertObjectJsonSchema(declared)
+    // Accepted as an annotation, not as a hole in the subset: the rest still bites.
+    expect(validateJsonSchemaValue(declared, { a: 'x' }, '')).toEqual(['"a" must be a number'])
+    expect(validateJsonSchemaValue(declared, {}, '')).toEqual(['missing required property "a"'])
+    expect(validateJsonSchemaValue(declared, { a: 1 }, '')).toEqual([])
+    // The neighbouring strictness is untouched — a real constraint keyword still rejects.
+    expect(violationsOf({ ...declared, pattern: '^a$' })[0])
+      .toContain('schema.pattern is not a supported keyword')
+  })
+
   it('reports every independent schema violation', () => {
     expect(violationsOf({
       type: 'object',

@@ -118,9 +118,11 @@ declare abstract class ComputerUse extends Service {
 
 截图以"未受信任的界面证据"的形式回灌，因此一张对话框的截图无法悄悄把自己升级成任务要求。
 
-## 语言
+## 语言与呈现形态
 
 策略文案跟随提示词语言，而提示词语言默认跟随用户在设置里选的界面语言。部署也可以用 `system-prompt.promptLocale` 把语言钉死在 `zh` 或 `en`。
+
+它还跟随工具的呈现形态：native 下模型直呼 `script`，PTC 下线上只有 `run_code`，文案于是告诉它从程序内部到达入口。两者都在装配提示词时读取——形态来自作用域链，语言来自本次装配——所以同一个包能服务选了不同呈现形态的预设，而两种措辞不会互相渗过去。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -232,9 +234,9 @@ Source: [`packages/computer/computer/src/index.ts`](../../packages/computer/comp
 
 ### `ctx.computerController` — `ComputerUseController`
 
-`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.
+`ctx.computerController`: owns the per-session enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.
 
-The material is loaded in one of two modes (see InstallationMode): the temporary `on-demand` form a fresh `/computer` gets, and the permanent `resident` form applied at the next compaction boundary if computer use is still on.
+The material is loaded in one of two modes (see InstallationMode): the temporary `snapshot` form a fresh `/computer` gets, where the intro is a trailing runtime-context snapshot, and the permanent `section` form applied at the next compaction boundary if computer use is still on, where it becomes a real prompt section.
 
 Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis's provide collide and would leave the type augmentations unmergeable, so this controller yields the name.
 

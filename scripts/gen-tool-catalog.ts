@@ -74,6 +74,7 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import ToolComputerUse, { COMPUTER_TOOL_NAMES } from '@deepseek-ai/dsh-tool-computer-use'
+import * as ToolScript from '@deepseek-ai/dsh-tools/script'
 import * as ToolErrorJournal from '@deepseek-ai/dsh-tool-error-journal'
 import { githubSlug } from './verify-md-links.ts'
 
@@ -287,7 +288,35 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolSearch, { defer: ['read'] })
     },
     note:
-      'The fetch half of the two-category catalog: a composition names the tools it withholds via `defer`, their schemas stay off the wire until the model asks for them by name or keyword, and the `tools:on-demand` section lists what has not been fetched yet. The tool itself is never deferrable — it is the only way back — and fetching is per calling scope, so one agent\'s fetch cannot spend another\'s budget. Only `lean` mounts it; every other shipped preset keeps the whole catalog resident.',
+      'The fetch half of the two-category catalog: a composition names the tools it withholds via `defer`, their schemas stay off the wire until the model asks for them by name or keyword, and the `tools:on-demand` runtime context lists what has not been fetched yet. The tool itself is never deferrable — it is the only way back — and fetching is per calling scope, so one agent\'s fetch cannot spend another\'s budget. No preset shipped with this fork mounts it: a withheld schema turned out to be an UNCALLABLE one, and neither the fetch nor PTC\'s translation of the catalog into an SDK makes the request smaller. The mechanism stays available to a deployment that composes it deliberately.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tools/script',
+    dir: 'tools-script',
+    source: 'packages/core/tools/src/script.ts',
+    requires: ['ctx.tools', 'the contributing capability (execution time)'],
+    writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per script line', 'tool/result'],
+    async mount(ctx) {
+      // The entry itself knows no capability: the ROW registers nothing until
+      // something contributes a verb table (see `contributeScript`). So this
+      // boot mounts the capability that ships one today, exactly as a deployment
+      // does — the host row first, the preset row second.
+      await ctx.plugin(ToolComputerUse)
+      await ctx.plugin(ToolScript)
+    },
+    note:
+      'One resident entry whose body is a line-per-action script. The tool owns the grammar, the '
+      + 'whole-script-first parse, and the per-line dispatch; what it can DO is a contribution — a '
+      + 'capability calls `ctx.tools.contributeScript(...)` with a verb table and the row derives '
+      + 'everything else from it: the resident schema, the withholding of the names the capability '
+      + 'declares script-only, and a guard refusing a model-direct call to one (a withheld name stays '
+      + 'registered, so the script\'s nested dispatch is what reaches it). The description is short and '
+      + 'capability-independent for the same reason: the verbs belong to the capability\'s own prompt '
+      + 'material, which enters the prompt only while the capability is enabled. This entry boots the '
+      + 'computer capability (the one that ships a verb table today) so the row has something to '
+      + 'register; the harvested schema does not depend on which verbs were contributed. A deployment '
+      + 'whose capabilities are all `disabled` therefore registers nothing at all, which is why the row '
+      + 'needs no platform gate of its own.',
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',
@@ -679,20 +708,29 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-computer-use',
     dir: 'tool-computer-use',
-    source: 'packages/computer/tool-computer-use/src/index.ts',
+    source: Object.fromEntries(COMPUTER_TOOL_NAMES.map(name => [name, 'packages/computer/tool-computer-use/src/tools.ts'])),
     requires: ['ctx.tools', 'ctx.systemPrompt', 'ctx.sessionProjections', 'ctx.computer (execution time)'],
     writes: ['tool/call', 'tool/result', 'computer/mode (on every enable and disable)'],
+    // 九个动作只在用户显式要求之后才注册进 agent 作用域，收割进程里没人要求，所以一次普通
+    // 启动一个 schema 也收不到——目录只登记这九个名字。模型侧入口不在这里，而在
+    // `@deepseek-ai/dsh-tools/script` 那一行（本包只把动词表登记给它）。
     onDemandTools: true,
     shippedNames: [...COMPUTER_TOOL_NAMES],
     async mount(ctx) {
       await ctx.plugin(ToolComputerUse)
     },
     note:
-      'Computer use is opt-in: the nine tools enter an agent\'s scope, and the policy section enters the '
-      + 'prompt, only when the user says to operate the computer or asks explicitly with /computer. A '
-      + 'harvesting process never triggers the enable, so only the tool names are registered here — they '
-      + 'are invisible to the model by default, which is this capability\'s design premise (desktop control '
-      + 'is not granted by default).',
+      'Computer use is opt-in, and the nine desktop actions are reachable only from inside a '
+      + '`script` (`@deepseek-ai/dsh-tools/script`): this package registers them on `/computer` or on a '
+      + 'message that asks for one, contributes their nine verbs to the script entry, and leaves their '
+      + 'schemas withheld — a guard refuses a model-direct call, so a script\'s nested dispatch is the '
+      + 'only route to them. That is why a plain boot harvests no schema here and the nine are declared '
+      + 'as shipped names instead: no agent has enabled the capability, so the actions are not registered '
+      + 'yet. The policy section is where the model learns what a script may write, and it exists only '
+      + 'while the capability is on. This row exposes nothing model-facing by itself, and the script '
+      + 'entry it feeds belongs to the preset layer, not to the host plane — a tool registered in the '
+      + 'host plane lands in the GLOBAL layer, where it reaches every preset and bypasses the '
+      + 'restriction that lets `minimal` pin its catalog to one tool.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-error-journal',

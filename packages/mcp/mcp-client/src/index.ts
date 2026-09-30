@@ -54,14 +54,22 @@ export function mcpServerSectionName(serverName: string): string {
  * One MCP server's introduction in the system prompt.
  *
  * The text is computed from the assembly locale instead of a translation table:
- * the server name and the tool list are runtime facts and the section name
+ * the server name and the tool count are runtime facts and the section name
  * (`mcp:<serverName>`) is dynamic too, so the name-indexed bilingual asset
- * cannot reach it. Carrying the tool list in the section name also has a
- * useful side effect — the model learns which tools belong to one server
- * instead of reading them as scattered first-party tools.
+ * cannot reach it.
+ *
+ * The count is announced, the tool NAMES are not. Every one of them is already
+ * declared where the model reads tools — the request's `tools` array natively,
+ * the generated `tools:sdk` declaration under PTC — as
+ * `mcp__<serverName>__<raw>`, so the enumeration was a second copy of a list
+ * the model had just read, growing linearly (about 34 characters per tool, so
+ * a fifty-tool server paid ~1.7K for nothing). What the section owes the model
+ * is the fact no single declaration carries: that a server is connected at
+ * all, and how much catalog it contributes.
  *
  * @param serverName - the instance's `serverName`.
- * @param toolNames - public tool names the server currently owns.
+ * @param toolNames - public tool names the server currently owns; only the
+ *   count is announced, so an unsorted or partially stale list is harmless.
  * @param locale - assembly language; unknown values fall back to English.
  * @returns the section text, never blank (a mounted server is always announced).
  */
@@ -70,15 +78,15 @@ export function mcpServerIntro(
   toolNames: readonly string[],
   locale: string | undefined,
 ): string {
-  const tools = [...toolNames].sort()
+  const count = toolNames.length
   if (locale === 'zh') {
-    return tools.length === 0
+    return count === 0
       ? `本会话装有 MCP 服务器 "${serverName}"，当前尚未同步到任何工具。`
-      : `本会话装有 MCP 服务器 "${serverName}"，它提供这些工具：${tools.join('、')}。`
+      : `本会话装有 MCP 服务器 "${serverName}"，它提供 ${count} 个工具。`
   }
-  return tools.length === 0
+  return count === 0
     ? `This session has the MCP server "${serverName}" connected with no tools synchronized yet.`
-    : `This session has the MCP server "${serverName}" connected, providing: ${tools.join(', ')}.`
+    : `This session has the MCP server "${serverName}" connected, providing ${count} ${count === 1 ? 'tool' : 'tools'}.`
 }
 
 /**

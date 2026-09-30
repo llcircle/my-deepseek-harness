@@ -794,8 +794,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'computerController',
-    summary: '`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.',
-    description: '`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.\n\nThe material is loaded in one of two modes (see InstallationMode): the temporary `on-demand` form a fresh `/computer` gets, and the permanent `resident` form applied at the next compaction boundary if computer use is still on.\n\nWhy the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis\'s provide collide and would leave the type augmentations unmergeable, so this controller yields the name.',
+    summary: '`ctx.computerController`: owns the per-session enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.',
+    description: '`ctx.computerController`: owns the per-session enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.\n\nThe material is loaded in one of two modes (see InstallationMode): the temporary `snapshot` form a fresh `/computer` gets, where the intro is a trailing runtime-context snapshot, and the permanent `section` form applied at the next compaction boundary if computer use is still on, where it becomes a real prompt section.\n\nWhy the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis\'s provide collide and would leave the type augmentations unmergeable, so this controller yields the name.',
     methods: [
       {
         signature: 'isActive(session: Session): boolean',
@@ -2908,6 +2908,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Tool registry and execution pipeline. Scoped registrations shadow globals; one visibility resolver feeds presentation, lookup, and dispatch.',
     methods: [
       {
+        signature: 'presentation(scope?: ScopeKey): ToolPresentationMode',
+        description: 'The presentation the calling scope\'s model actually sees: the nearest declaration on its scope chain, else the deployment default — the same resolution the wire schemas, the SDK section, and the executor\'s collapse all read.\n\nA capability that words its own prompt text has to know which route the model takes to reach it. Guidance naming a tool as directly callable is wrong wherever that name is absent from the request, and WHICH request that is belongs to the preset rather than to the capability: one package\'s text is rendered into every preset that mounts it. Reading the mode here is what lets such text describe the deployment it is actually rendered into.',
+        parameters: [{ name: 'scope', description: 'the scope to read; omitted reads the deployment default.' }],
+        returns: 'the resolved presentation mode.',
+      },
+      {
         signature: 'presentAs(mode: ToolPresentationMode): () => void',
         description: 'Present the calling scope\'s tools in `mode` instead of the deployment default. Nearest scope on the chain wins, so a preset\'s standing declaration covers every agent joined under it.\n\nScoped only, and one declaration per scope: this is how an agent preset composes PTC mode agents beside native ones in the same process, and a process-global override would be the `mode` config field instead.',
         parameters: [{ name: 'mode', description: 'the presentation the covered agents\' models see.' }],
@@ -2915,7 +2921,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'defer(names: readonly string[]): () => void',
-        description: 'Move the SCHEMAS of `names` off the wire for every agent the calling scope covers, until a `tool_search` call in the agent\'s own scope fetches them back.\n\nWithholding narrows the request and nothing else: the tool stays registered, stays dispatchable, and stays a known name for `toolOrder` and `restrict`. That is the whole point — a model that learns the name and its schema from a `tool_search` result can call it immediately, and a tool description that names it stays truthful. See [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the fetching.\n\nScoped only, like presentAs: whether a tool is resident is a property of the COMPOSITION, not of the tool, so the row that carries it is an agent preset\'s. The same `web_fetch` is a resident tool in one preset and an on-demand one in another, and a per-tool flag inside its own package could not express both.\n\nNames that are not registered are IGNORED, not rejected. A preset defers a capability group, and a group member whose row is absent or `disabled` in this deployment is a legitimate absence — indistinguishable, from the registry\'s side, from a name the preset no longer uses. A name deferred and never registered simply withholds nothing.',
+        description: 'Move the SCHEMAS of `names` off the wire for every agent the calling scope covers, until a `tool_search` call in the agent\'s own scope fetches them back.\n\nWithholding narrows the request and nothing else: the tool stays registered, stays dispatchable, and stays a known name for `toolOrder` and `restrict`. A withheld schema is, however, UNCALLABLE until it is fetched back — a model emits a call only for a function the request itself declares — so fetching is what makes the name usable, and every fetch rewrites the front of the request. See [`@deepseek-ai/dsh-tools/search`](./search.ts) for the tool that does the fetching; no preset shipped with this fork mounts it, because sending the whole catalog beats both hiding it and translating it into a generated SDK. Neither alternative makes the request shorter, and this one at least leaves every name directly callable.\n\nScoped only, like presentAs: whether a tool is resident is a property of the COMPOSITION, not of the tool, so the row that carries it is an agent preset\'s. The same `web_fetch` is a resident tool in one preset and an on-demand one in another, and a per-tool flag inside its own package could not express both.\n\nNames that are not registered are IGNORED, not rejected. A preset defers a capability group, and a group member whose row is absent or `disabled` in this deployment is a legitimate absence — indistinguishable, from the registry\'s side, from a name the preset no longer uses. A name deferred and never registered simply withholds nothing.',
         parameters: [{ name: 'names', description: 'tool names whose schemas stay off the wire until fetched.' }],
         returns: 'the exact disposer that makes them resident again.',
       },
@@ -2948,6 +2954,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register a monotonic guard after the extensible `tools/pre-execute` waterfall. A plain-context guard applies globally; one registered through `agent.ctx` applies only to that agent. Any matching guard may deny by returning a reason, while no guard can force-allow a call another guard denied. The exact effect disposer is returned for ordered ownership and HMR cleanup.',
         parameters: [{ name: 'guard', description: 'synchronous check; a returned string denies the execution.' }],
         returns: 'the exact disposer that unregisters the guard.',
+      },
+      {
+        signature: 'contributeScript(contribution: ScriptContribution): () => void',
+        description: 'Add one capability\'s verb table to the `script` entry (`@deepseek-ai/dsh-tools/script`).\n\nThe script tool owns the GRAMMAR and the dispatch; what an action IS belongs to the capability that can perform it. A capability registers here once and the preset row\'s mount then gets, for free: the entry itself, the withholding of ScriptContribution.withheld, and a guard refusing a model-direct call to a withheld name. That is what makes the next capability write a verb table instead of a second tool.\n\nContributions are a PROCESS-level fact, not a per-scope one — the verb table is inert data and a verb is usable only while its target tool is registered in the calling agent\'s scope, so nothing leaks by contributing globally. A host plane row therefore contributes at boot (before any preset\'s standing mount reads the merged surface) and a preset needs no contribution of its own.',
+        parameters: [{ name: 'contribution', description: 'the capability\'s id, verbs, and script-only tool names.' }],
+        returns: 'the disposer that withdraws the contribution.',
+      },
+      {
+        signature: 'scriptSurface(): ScriptSurface',
+        description: 'The merged surface a script entry reads: every contributed verb, and every name its contributions keep off the wire.',
+        parameters: [],
+        returns: 'the merged verb table and withheld-name set.',
       },
       {
         signature: 'get(name: string, scope?: ScopeKey): ToolDefinition | undefined',
@@ -5430,6 +5448,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ScopeKey = object;',
   },
   {
+    name: 'ScriptContribution',
+    declaration: 'export interface ScriptContribution {\n    readonly id: string;\n    readonly verbs: Readonly<Record<string, ScriptVerb>>;\n    readonly withheld?: readonly string[];\n}',
+  },
+  {
+    name: 'ScriptSurface',
+    declaration: 'export interface ScriptSurface {\n    readonly verbs: Readonly<Record<string, ScriptVerb>>;\n    readonly withheld: ReadonlySet<string>;\n}',
+  },
+  {
+    name: 'ScriptVerb',
+    declaration: 'export interface ScriptVerb {\n    readonly tool: string;\n    readonly positional: readonly string[];\n}',
+  },
+  {
     name: 'SearchFileMatches',
     declaration: 'export interface SearchFileMatches {\n    path: string;\n    matches: SearchLineMatch[];\n}',
   },
@@ -6587,7 +6617,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    defer(names: readonly string[]): () => void;\n    loadDeferred(names: readonly string[]): () => void;\n    deferredTools(scope?: ScopeKey): readonly DeferredTool[];\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    constructor(ctx: Context, config: Config = {});\n    presentation(scope?: ScopeKey): ToolPresentationMode;\n    presentAs(mode: ToolPresentationMode): () => void;\n    defer(names: readonly string[]): () => void;\n    loadDeferred(names: readonly string[]): () => void;\n    deferredTools(scope?: ScopeKey): readonly DeferredTool[];\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    guard(guard: ToolGuard): () => void;\n    contributeScript(contribution: ScriptContribution): () => void;\n    scriptSurface(): ScriptSurface;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

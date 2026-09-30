@@ -112,6 +112,7 @@ ctx.tools.register(defineTool({
 | [`src/json-schema.ts`](src/json-schema.ts) | 强制执行的原始 JSON Schema 子集与校验 |
 | [`src/presentation.ts`](src/presentation.ts) | 带 `card` 标签的 UI 呈现意图 |
 | [`src/ptc.ts`](src/ptc.ts) | PTC mode：SDK 生成、`run_code` 分发桥接层、结算 |
+| [`src/script.ts`](src/script.ts) | `script` 行：逐行动作的语法、逐行派发，以及它背后的动词表贡献 |
 | [`src/ts-types.ts`](src/ts-types.ts) | TypeScript SDK 类型渲染 |
 | [`src/py-types.ts`](src/py-types.ts) | Python SDK 类型渲染 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式配套 |
@@ -131,7 +132,7 @@ ctx.tools.register(defineTool({
 <a id="extension-points"></a>
 ### 扩展点
 
-工具插件调用 `ctx.tools.register()`，其 schema 会自动流入提示词组装。`tools/pre-execute` 是可重排的允许／拒绝／询问门禁；`ctx.tools.guard()` 在其后添加单调的拥有方策略；`tools/execute` 为超时、重试或指标包装规范化后的规范分发；`tools/post-execute` 可以替换内容或值、通过反馈阻止，或附加有序上下文；`tools/result` 观测不可变的最终结果。MCP 服务器发现工具后，用服务器的 schema 调用 `ctx.tools.register()`。
+工具插件调用 `ctx.tools.register()`，其 schema 会自动流入提示词组装。`tools/pre-execute` 是可重排的允许／拒绝／询问门禁；`ctx.tools.guard()` 在其后添加单调的拥有方策略；`tools/execute` 为超时、重试或指标包装规范化后的规范分发；`tools/post-execute` 可以替换内容或值、通过反馈阻止，或附加有序上下文；`tools/result` 观测不可变的最终结果。想在脚本形态下暴露一组动作、而不是一个动作一个工具的能力，调用 `ctx.tools.contributeScript()` 交出一张动词表即可；随后 [`script` 行](src/script.ts) 负责语法、常驻 schema、把能力声明为"只该由脚本到达"的名字扣留，以及拒绝模型直呼的守卫。MCP 服务器发现工具后，用服务器的 schema 调用 `ctx.tools.register()`。
 
 </details>
 
@@ -167,6 +168,27 @@ ctx.tools.register(defineTool({
 #### KV Cache 影响
 
 只要可见定义及其顺序不变，前缀就保持稳定。注册、dispose 或作用域限制可能从第一个改变的 schema token 起使复用失效。
+
+### 脚本入口
+
+#### 模型看到什么
+
+[`script` 行](src/script.ts)——`@deepseek-ai/dsh-tools/script`，由组合而不是本包挂载——自己贡献一个常驻工具 `script`，它的 schema 与任何能力无关：两个参数，没有动词。正因如此，能力才能在会话中途到来而不改动请求里的 `tools` 数组——它贡献的那些动作被扣留在这个入口之后，靠写一行脚本来抵达，而不是靠点名一个工具——描述里不提任何能力也是同一个原因。今天交出动词表的那个能力是[电脑操作](../../computer/tool-computer-use/README.zh.md)。
+
+##### script parameters
+
+```markdown
+code         string  required  The script: one action per line.
+description  string  optional  One line saying what this script is meant to achieve, shown to the user.
+```
+
+#### Token 影响
+
+每个声明了那一行的预设，每个请求都要付出一份小 schema，无论是否有能力启用。被贡献的动作在入口挂载期间零成本：它们的 schema 不上线。
+
+#### KV Cache 影响
+
+开关一项能力时前缀保持稳定，因为入口的 schema 与扣留集合都不动；启用带来的只是该能力自己拥有的尾部提示词材料。挂上或摘掉这一行、或者在它挂载之后才贡献动词表，都会从第一个改变的 schema 起使复用失效。
 
 ### PTC mode schema 与系统提示词
 

@@ -118,9 +118,11 @@ The policy section is assembled immediately before the MCP introduction, so iden
 
 Screenshots come back wrapped as untrusted interface evidence, so a picture of a dialog cannot silently promote itself into a task requirement.
 
-## Language
+## Language and presentation
 
 The policy copy follows the prompt locale, which by default follows the interface language the user picked in settings. A deployment may pin `system-prompt.promptLocale` to `zh` or `en` instead.
+
+It also follows the tool presentation: under `native` the model calls `script` by name, while under `ptc` the wire carries only `run_code` and the copy tells it to reach the entry from inside a program. Both are read when the prompt is assembled — the presentation from the scope chain, the language from the assembly — so one package serves presets that select different presentations without either wording leaking into the other.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -232,9 +234,9 @@ Source: [`packages/computer/computer/src/index.ts`](../../packages/computer/comp
 
 ### `ctx.computerController` — `ComputerUseController`
 
-`ctx.computerController`: owns the on-demand enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.
+`ctx.computerController`: owns the per-session enablement state, the model-facing `/computer` command, and the `computer:policy` material plus tool set loaded into the agent scope while it is enabled.
 
-The material is loaded in one of two modes (see InstallationMode): the temporary `on-demand` form a fresh `/computer` gets, and the permanent `resident` form applied at the next compaction boundary if computer use is still on.
+The material is loaded in one of two modes (see InstallationMode): the temporary `snapshot` form a fresh `/computer` gets, where the intro is a trailing runtime-context snapshot, and the permanent `section` form applied at the next compaction boundary if computer use is still on, where it becomes a real prompt section.
 
 Why the name is not `computerUse`: upstream 0.1.6 defines `ctx.computerUse` as a "only one provider may register at a time" slot (`packages/computer-use`), which is a different concern from this controller. Coexisting under one name would make cordis's provide collide and would leave the type augmentations unmergeable, so this controller yields the name.
 

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, {
   AssembleContext, PromptAssembly, renderContextSnapshot, renderPrompt,
-  LOCALIZED_SECTIONS, localizedSectionNames, normalizePromptLocale,
+  LOCALIZED_SECTIONS, localizedSectionNames, localizedSectionText, normalizePromptLocale,
 } from '@deepseek-ai/dsh-system-prompt'
 import type {
   PromptContextOrderName, PromptOverridesSettings, PromptSectionOrderName,
@@ -22,13 +22,17 @@ import { apply as applyOverrides, readLocalePreference } from '../src/overrides.
  */
 const BUILT_IN = ['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix']
 const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
+// Declaration order IS the expected render order: `reusable` below takes this
+// list as given, so a name must move here whenever its order moves. `TOOLS_SDK`
+// sits next to `PTC_ONLY` on purpose — the rule at 800 points at the SDK, and
+// the local-environments case below renders the list verbatim.
 const SECTION_ORDER_NAMES = [
   'HARNESS_IDENTITY', 'DEPLOYMENT_PERSONA_PREFIX',
-  'PLAN_POLICY', 'TEAM_POLICY', 'PTC_ONLY', 'FILE_REFERENCE', 'TOOL_BASH',
+  'PLAN_POLICY', 'TEAM_POLICY', 'PTC_ONLY', 'TOOLS_SDK', 'FILE_REFERENCE', 'TOOL_BASH',
   'TOOL_PWSH', 'TOOL_READ', 'TOOL_WRITE', 'TOOL_EDIT', 'TOOL_GLOB',
   'TOOL_GREP', 'TOOL_JOBS', 'TOOL_PTY', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH',
   'TOOL_LSP', 'TOOL_SESSION_QUERY', 'TOOL_GOAL', 'TOOL_CORDIS', 'TOOL_WORKFLOW',
-  'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT', 'TOOLS_SDK',
+  'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT',
   'DELIVERABLE_FILE_REFERENCES', 'MCP_INTRO', 'ERROR_LESSONS', 'STRUCTURED_OUTPUT',
   'HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX',
   'SKILL_CATALOG',
@@ -1187,6 +1191,53 @@ describe('SystemPrompt', () => {
       // 服务器名是运行期事实：译文留着旧名字比留着英文更糟。
       expect(text).toContain('["codegraph"]')
       expect(text).not.toContain('MCP resource servers')
+    })
+
+    it('translates the PTC-only rule with the interface language', async () => {
+      const render = async (promptLocale: 'zh' | 'en'): Promise<string> => {
+        const ctx = new Context()
+        try {
+          await ctx.plugin(SystemPrompt, { promptLocale })
+          // The shape the registry registers: the text is empty unless the
+          // effective mode is `ptc`, and the section is registered for `both`.
+          ctx.systemPrompt.section({
+            name: 'tools:ptc-only',
+            order: ctx.systemPrompt.getSectionOrder('PTC_ONLY'),
+            text: '`run_code` is the only tool you can call directly — a tool call naming any other tool fails. '
+              + 'Reach every tool the SDK declares below from inside the program.',
+          })
+          return (await ctx.systemPrompt.assemble()).sections
+            .find(section => section.name === 'tools:ptc-only')?.text ?? ''
+        } finally {
+          await ctx.fiber.dispose()
+        }
+      }
+
+      expect(await render('zh')).toBe(LOCALIZED_SECTIONS['tools:ptc-only']?.zh?.text)
+      expect(await render('en')).toContain('is the only tool you can call directly')
+    })
+
+    it('translates plan guidance only while it is still the first-party template', () => {
+      const canonical = 'You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user '
+        + 'switches the session mode. The tool catalog stays the same across modes for request-cache stability; '
+        + 'those tools remain listed only to keep the request shape stable. do not proceed with implementation.'
+      // 预设那份抄写与插件内置默认已经漂移：只差中间一句话，仍算同一份模板——译文要能
+      // 同时覆盖两种写法，否则中文部署读到的是一句中文都没有的策略。
+      const drifted = canonical.replace('only to keep the request shape stable', 'to keep the tool catalog unchanged')
+
+      expect(localizedSectionText('plan:policy', canonical, 'zh')).toContain('你正处于计划模式')
+      expect(localizedSectionText('plan:policy', `${drifted}\n`, 'zh')).toContain('你正处于计划模式')
+      // 部署在后面追加自己的段落＝那是别人的策略：抽不出来就整段让路，替人改主意比留英文更糟。
+      expect(localizedSectionText('plan:policy', `${canonical}\n\nAlso ping #plan-review first.`, 'zh')).toBeUndefined()
+      expect(localizedSectionText('plan:policy', 'Plan first, then build.', 'zh')).toBeUndefined()
+    })
+
+    it('keeps the generated SDK out of the static asset, because its body is computed', () => {
+      // `tools:sdk` 的正文按调用方作用域的可见工具集现算，正是这张表不收的那一类
+      // （"内容静态"）。所以它由渲染器按装配语言自行选散文；这里钉住"没有第二条
+      // 写入路径"——一条 `tools:sdk` 条目会盖掉渲染器刚选好的语言，并且只保得住
+      // 声明块、保不住 `renderBashExample` 那一段。
+      expect(LOCALIZED_SECTIONS['tools:sdk']).toBeUndefined()
     })
 
     it('ships a translation for every section it names, in both directions where needed', () => {

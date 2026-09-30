@@ -246,6 +246,19 @@
     fetch: true
     searchTimeoutMs: 60000
 
+# 通用脚本工具（`script`）：本仓唯一"粗粒度入口"形状的常驻工具。它必须在**预设层**声明，
+# 而不是跟宿主层那几行 `computer-*` 一起注册——宿主层的注册落在全局作用域，那里的工具会
+# 进入每一条会话、绕过预设的限制。本仓的规矩是"每个面向模型的工具都属于某个预设"。
+#
+# 它本身不认识任何能力：能写哪些动作，由向它**登记过动词表**的能力决定（电脑操作登记了
+# 九个，见 packages/computer/tool-computer-use/src/script.ts）。这一行按登记内容注册入口、
+# 扣留那些"只该由脚本到达"的名字、并拒绝模型直呼；于是 `/computer` 只往尾部追加一段介绍。
+#
+# 没有任何能力登记动词的部署里，这一行什么都不注册，因此也不需要平台判定。没声明它的
+# 预设（`minimal`）不受影响：目录不变，`/computer` 在那里退回老形状。
+- id: tool-script
+  name: '@deepseek-ai/dsh-tools/script'
+
 # ── self-modification ───────────────────────────────────────────────────────
 
 # Read the live runtime, mount a temporary plugin, unmount it. The toolset is a

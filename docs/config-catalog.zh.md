@@ -3039,7 +3039,7 @@ export type PromptLocalePreference = 'auto' | PromptLocale
 export type PromptLocale = 'zh' | 'en'
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:644`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:648`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3199,7 +3199,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/computer/tool-computer-use/src/index.ts:83`](../packages/computer/tool-computer-use/src/index.ts)
+来源：[`packages/computer/tool-computer-use/src/index.ts:127`](../packages/computer/tool-computer-use/src/index.ts)
 
 <a id="deepseek-aidsh-tool-error-journal"></a>
 

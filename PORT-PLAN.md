@@ -196,7 +196,7 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 | P2 | 重生成生成物 + 重录 i18n 配对 | **文档部分完成**：四张目录（config/tool/persistence/cordis）+ 中文侧补 8 个包章节 / 2 个工具章节；配对 955/955。快照与 `cli expected` 未重录 |
 | P3 | `pnpm install` + 构建（`tsc -b`、`tsdown --env.DSH_BUILD_FACE host`） | **完成**：`pnpm install --frozen-lockfile` 成功（10.2s，lockfile 未改）；`tsc -b tsconfig.host.json` **EXIT 0**、`tsdown host` EXIT 0、`tsc -b tsconfig.client.json` EXIT 0（修复见 11.5，09-18 更正） |
 | P4 | 跑测试取信号（`packages/{skill,preset,bundle}` + `apps/cli`，含 `web-agent-presets.e2e`） | **部分**：八个包族 99 文件 / 1872 通过 / 0 失败（见 11.3）+ 本轮修复涉及的两包 9 文件 / 169 例全绿；`apps/cli` 与 e2e 待做 |
-| P5 | 提交、推送 fork、按需开 PR | **门禁已通**：lefthook `run pre-push` EXIT 0、pre-commit 全绿；三个提交 `5e2c0ad40b` / `c30f6b5372` / `014d8982cb` 待推——本机无 GitHub 非交互凭据，**需由用户带凭据推** |
+| P5 | 提交、推送 fork、按需开 PR | **门禁已通**：lefthook `run pre-push` EXIT 0、pre-commit 全绿；三个移植提交已就绪待推（`git log port-0.1.6` 末三条）——本机无 GitHub 非交互凭据，**需由用户带凭据推** |
 
 ### 仍欠的账（按优先级）
 
@@ -229,7 +229,7 @@ README*.md、packages/**/README*.md（中英配对，改完要重录 .i18n.yaml�
 | 失败 | 定性 | 证据 |
 |---|---|---|
 | `mcp-client.e2e.ts` 7 条未处理拒绝 | **移植引入的功能性回归（已修）** | 见下「MCP 介绍分段的撞名回归」 |
-| `pwsh-sandbox/acl.e2e.ts` 2 例 | **上游潜伏缺陷（已修）** | 上游 tag 的 `acl.e2e.ts` blob 与 HEAD **完全相同**（`b2ceff46`），且其中 `sessionProjections` 出现 **0 次**；而引入该 inject 的 `1a72ae202a` **是上游 tag 的祖先** → 缺陷属上游。`e2e.yml` 只在 `ubuntu-latest` 跑，`isWin32` 守卫让该用例在 CI 里**整段跳过**，故从未暴露。修法：按仓库既有 `if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)` 惯例补注册 |
+| `pwsh-sandbox/acl.e2e.ts` 2 例 | **上游潜伏缺陷（已修）** | 上游 tag 的 `acl.e2e.ts` 与 HEAD **逐字节相同**（blob 哈希一致），且其中 `sessionProjections` 出现 **0 次**；而引入该 inject 的那个上游提交**是上游 tag 的祖先** → 缺陷属上游。`e2e.yml` 只在 `ubuntu-latest` 跑，`isWin32` 守卫让该用例在 CI 里**整段跳过**，故从未暴露。修法：按仓库既有 `if (!ctx.get('sessionProjections')) await ctx.plugin(SessionProjections)` 惯例补注册 |
 | `inspector`/`webworker-packer` 的 `built-lib.e2e.ts` | **本机 PATH 解析** | PATH 上 `tar` = Git Bash 的 GNU tar 1.35（`/usr/bin/tar`），Windows 自带 bsdtar 3.8.8 在 System32。GNU tar 不认 `C:` 盘路径 → `tar: Cannot connect to C: resolve failed`。把 bsdtar 放 PATH 最前 + 注入 `npm_execpath` 后，`inspector`/`remotes`/`lsp-stdio`/`agent-team`/`webworker-packer` 五个 built-lib 用例 **4/4 全绿**（第三个被跳过） |
 | `apps/cli/web-auth.e2e.ts` | **本机 POSIX 文件模式不生效** | `expected 438 to be 384` 是 `expect(credentialMode).toBe(0o600)`：384 = `0o600`、438 = `0o666`。Windows 不实现 POSIX 模式，`chmod` 是空操作。上游同款文件（blob 相同） |
 | `pwsh-sandbox/acl` 偶发（约 1/5，偏首跑） | **本机受限语言模式** | 失败时 stderr 是 `CannotCreateTypeConstrainedLanguage`：`pwsh-local` 的 `ENCODING_PREAMBLE`（`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)`）在受限语言模式下被拒，**命令根本没执行**，故无拒绝签名可匹配（`denied:false` 是正确分类，但暴露出上游 `runnerFailureRules` 未把"runner 自身前置语句失败"归为 runner 失败）。`pwsh-local` 全目录与上游逐字节一致 |
@@ -313,7 +313,7 @@ node D:/dsh-port/port.mjs --apply
 | 子代理裁剪 | `subagent/src/types.ts` 的 `allowTools` / `omitSections`；`system-prompt` 的 `suppressSection` | 在位 |
 | plan → goal | `plan-mode/src/index.ts` 的 `goalOnApprove` | 在位 |
 | lean 预设 | `packages/preset/agent-presets/presets/lean/agent.cordis.yml`；`display.ts` 的 `presetLeanName` / `presetLeanDescription` | 在位 |
-| lean 的工具合并 | `tool-goal` / `tool-jobs` 的 `Config.toolShape`；`dsh-tools/search` 子入口（`tool_search`） | 在位 |
+| lean 的工具合并与呈现 | `tool-goal` / `tool-jobs` 的 `Config.toolShape`；**全目录常驻、native 呈现**。`dsh-tools/search` 与 `tool-presentation: ptc` 都试过并**都已从 lean 移除**——前者实测"扣留=不可调用"，后者实测请求**更大**（+8000 字符） | 在位 |
 | 提示词编辑器分栏 | `NON_EDITABLE_SECTION_NAMES` 含 `computer:policy`；按 `tool:` / `mcp:` / `computer:` 前缀一能力一行 | 在位 |
 | `start-web.cmd` 最短依赖路径 | 根目录 `start-web.cmd`（纯 ASCII + 端口预检） | 在位 |
 
@@ -424,7 +424,7 @@ env -u NODE_OPTIONS node node_modules/tsdown/dist/run.mjs --env.DSH_BUILD_FACE c
    → **39 TS2769/TS2344/TS2345**。改成 `.../types` 即修复。
 
 修复后：`tsc -b tsconfig.host.json` EXIT 0、`tsdown --env.DSH_BUILD_FACE host` EXIT 0、
-`tsc -b tsconfig.client.json` EXIT 0；受影响包 9 文件 / 169 例单测全绿。提交 `014d8982cb`。
+`tsc -b tsconfig.client.json` EXIT 0；受影响包 9 文件 / 169 例单测全绿。修复即当时那一条移植提交。
 **lefthook `run pre-push` 实测 EXIT 0**（typecheck 43.45s）。
 
 > 方法论：判"红灯是不是我弄的"，**不能**只看配置文件 diff，也**不能**只看"独立旧副本跑同一命令

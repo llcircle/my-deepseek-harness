@@ -1,11 +1,15 @@
 /**
  * Failed-tool-call journal: persists every model-facing tool failure — core
- * tools and MCP tools alike, because both surface as `tool/result` records —
- * to one JSONL file for later inspection and AI-assisted correction.
+ * tools, MCP tools, and PTC mode sub-calls alike — to one JSONL file for later
+ * inspection and AI-assisted correction.
  *
- * The plugin listens on the post-commit `session/event` feed, selects
- * `tool/result` events whose message carries `isError` or whose envelope
- * names an internal failure, and appends one bounded JSON line per failure.
+ * The plugin listens on the post-commit `session/event` feed and selects two
+ * shapes of failure. A native call settles as a `tool/result` whose message
+ * carries `isError` or whose envelope names an internal failure. A PTC mode
+ * sub-call settles as `tool/ptc-dispatch` instead — the collapse deliberately
+ * keeps sub-calls off the message surface, so no `tool/result` ever names them
+ * — and is selected by the same `isError`/`error` test. Both append one bounded
+ * JSON line per failure under the name of the tool that actually failed.
  * Writes run one at a time on a serialized queue; a failed append is logged
  * and contained so the session feed never notices the sink.
  *
@@ -29,6 +33,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+// Type-only: pulls the `tool/ptc-dispatch` session-event declaration this file
+// taps, and the type of the content blocks that record carries.
+import type { PtcDispatchEventData } from '@deepseek-ai/dsh-tools/types'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   resolveToolErrorDocuments,
@@ -43,6 +50,25 @@ export const name = 'tool-error-journal'
 
 /** Default per-entry cap for the model-facing failure text. */
 const DEFAULT_MAX_TEXT_CHARS = 4000
+
+/**
+ * The model-facing text of one recorded failure, capped for the entry.
+ *
+ * Both failure shapes reach this with the same block vocabulary — a
+ * `tool/ptc-dispatch` record is documented to carry a sub-call's outcome "in
+ * `tool/result`'s own vocabulary" — so one reader serves both.
+ *
+ * @param content - the failure's content blocks.
+ * @param maxTextChars - cap on the stored excerpt.
+ * @returns the joined text blocks, truncated.
+ */
+function failureText(content: PtcDispatchEventData['content'], maxTextChars: number): string {
+  return content
+    .filter(part => part.type === 'text')
+    .map(part => part.text)
+    .join('\n')
+    .slice(0, maxTextChars)
+}
 
 /** Plugin configuration. */
 export interface Config {
@@ -116,6 +142,29 @@ export function apply(ctx: Context, config: Config = {}): void {
       names.set(session, map)
       return
     }
+    // A PTC mode sub-call settles as this log-only record, never as a
+    // `tool/result`: keeping sub-calls off the message surface is the whole
+    // point of the collapse, so a program that catches its own failures — the
+    // RECOMMENDED way to write one — used to leave the journal with nothing at
+    // all, and an uncaught one filed the failure under `run_code` instead of
+    // the tool that broke. The record already carries the real tool name and
+    // the sub-call id, so no `tool/call` pairing is needed here.
+    if (event.type === 'tool/ptc-dispatch') {
+      const data = event.data
+      if (!data.isError && data.error === undefined) return
+      append({
+        time: new Date(event.time).toISOString(),
+        sessionId: session.id,
+        seq: event.seq,
+        name: data.name,
+        callId: data.subCallId,
+        ...data.error === undefined
+          ? {}
+          : { internalError: { name: data.error.name, code: data.error.code } },
+        text: failureText(data.content, resolved.maxTextChars),
+      })
+      return
+    }
     if (event.type !== 'tool/result') return
     const data = event.data
     // ToolResultMessage.content is a single-element tuple: the one tool-result block.
@@ -125,11 +174,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     const failed = inner.isError === true || data.error !== undefined
     if (!failed) return
     const callId = inner.toolCallId
-    const text = inner.content
-      .filter(part => part.type === 'text')
-      .map(part => part.text)
-      .join('\n')
-      .slice(0, resolved.maxTextChars)
     const internalError = data.error
     append({
       time: new Date(event.time).toISOString(),
@@ -138,7 +182,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       name: names.get(session)?.get(callId) ?? 'unknown',
       callId,
       ...internalError !== undefined ? { internalError } : {},
-      text,
+      text: failureText(inner.content, resolved.maxTextChars),
     })
     // One result consumes one call identity: the map cannot grow without bound.
     names.get(session)?.delete(callId)

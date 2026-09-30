@@ -14,6 +14,7 @@
  * @module @deepseek-ai/dsh-tools/src/py-types
  */
 
+import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
 import { assertSupportedJsonSchema } from './json-schema.ts'
 import type { JsonSchemaNode, JsonSchemaScalar } from './json-schema.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
@@ -730,8 +731,14 @@ export function jsonSchemaToPy(schema: unknown): string {
   return renderType(schema, '', { classes: [], usedClassNames: new Set(), nextClassCounter: new Map(), typing: new Set() })
 }
 
-/** The fixed model-facing usage contract rendered above the declarations. */
-const SDK_INSTRUCTIONS = `## Writing code for run_code
+/**
+ * The fixed model-facing usage contract rendered above the declarations.
+ *
+ * 与 TypeScript 那侧同理：这段散文按装配语言选一份，而不是进 `system-prompt`
+ * 的双语资产表——那张表只收内容静态的分段，而这一段的正文随可见工具集现算。
+ */
+const SDK_INSTRUCTIONS: Record<PromptLocale, string> = {
+  en: `## Writing code for run_code
 
 \`run_code\` takes two required arguments: \`code\` — the body of an async Python function (top-level \`await\` and \`return\` both work) — and \`description\`, a short summary of what the program does. At run time exactly two of the names declared below are bound: \`tools\` and \`ToolCallError\`. Everything else is a STATIC STUB describing argument and return types — in particular the \`TypedDict\` classes do NOT exist at run time, so build arguments as plain \`dict\`/\`list\` JSON values: \`await tools.name({"field": 1})\`, never \`FooArgs(field=1)\`, which raises \`NameError\`. Inside the program:
 
@@ -740,7 +747,18 @@ const SDK_INSTRUCTIONS = `## Writing code for run_code
 - Independent read-only calls MAY overlap under \`asyncio.gather\` (safe calls run concurrently; mutating calls run alone, in submission order). Sequence dependent work with \`await\`.
 - Emit the run's answer with \`print(...)\` and/or a top-level \`return <value>\`; the returned value must be lossless JSON. Only what you print and return is program output. A successful tool result containing an image is attached after the run so you can inspect it on the next step; every other intermediate result stays out of the conversation, so extract just what you need.
 
-The available tools:`
+The available tools:`,
+  zh: `## 为 run_code 写代码
+
+\`run_code\` 有两个必填参数：\`code\` 是一个 async Python 函数的函数体（顶层 \`await\` 与 \`return\` 都能用），\`description\` 是一句话说明这段程序做什么。运行时下面声明的名字里**只有两个**真的绑定了：\`tools\` 与 \`ToolCallError\`。其余全是**静态桩**，只描述参数与返回类型——尤其是那些 \`TypedDict\` 类在运行时**并不存在**，所以参数要用普通的 \`dict\`/\`list\` JSON 值来构造：\`await tools.name({"field": 1})\`，绝不能写 \`FooArgs(field=1)\`，那会抛 \`NameError\`。在程序内部：
+
+- 用 \`await tools.名字(args)\` 调工具——名字生僻、命中保留字、或以下划线开头时改用下标写法：\`await tools["my-tool"](args)\`。每次调用都解析成该工具规范的、带类型的 JSON 值（即下面各方法的返回类型）。工具参数必须是无损 JSON。
+- 调用失败会抛 \`ToolCallError\`，它的 \`toolName\` 指出是哪个工具失败了、消息是人话——用 \`try/except\` 接住然后继续。
+- 相互独立的只读调用**可以**在 \`asyncio.gather\` 下并发（安全的调用并发跑；会产生改动的调用单独跑，按提交顺序）。有依赖的步骤用 \`await\` 串起来。
+- 用 \`print(...)\` 和/或顶层 \`return <值>\` 产出这次运行的结果；返回的值必须是无损 JSON。只有你打印和返回的东西才是程序输出。成功结果里若带图片，会在这次运行结束后附上，供你下一步查看；**其余中间结果都不会进对话**，所以只把你真正需要的东西取出来。
+
+本次可用的工具：`,
+}
 
 /**
  * Render the full `tools:sdk` prompt section under `runtime.language ===
@@ -758,9 +776,11 @@ The available tools:`
  * never carries a duplicate.
  * @param schemas - the tool schemas plus canonical output schemas to declare
  *   (the caller excludes `run_code` itself).
+ * @param locale - assembly language for the prose above the declarations;
+ *   defaults to `en`, the language this section had before it took a locale.
  * @returns the complete section text.
  */
-export function renderToolsSdkPy(schemas: ToolSdkSchema[]): string {
+export function renderToolsSdkPy(schemas: ToolSdkSchema[], locale: PromptLocale = 'en'): string {
   const sorted = [...schemas].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   const state: RenderState = { classes: [], usedClassNames: new Set(), nextClassCounter: new Map(), typing: new Set(['Protocol']) }
   // ONE ordered member stream, matching the documented lexicographic contract
@@ -814,5 +834,5 @@ export function renderToolsSdkPy(schemas: ToolSdkSchema[]): string {
   const classBlock = state.classes.length > 0 ? `${state.classes.join('\n\n')}\n\n` : ''
   const errorDeclaration = 'class ToolCallError(Exception):\n    toolName: str'
   const declaration = `from typing import ${imports.join(', ')}\n\n${errorDeclaration}\n\n${classBlock}class Tools(Protocol):\n${body}\n\ntools: Tools`
-  return `${SDK_INSTRUCTIONS}\n\n\`\`\`python\n${declaration}\n\`\`\``
+  return `${SDK_INSTRUCTIONS[locale]}\n\n\`\`\`python\n${declaration}\n\`\`\``
 }

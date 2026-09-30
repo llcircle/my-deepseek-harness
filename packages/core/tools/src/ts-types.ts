@@ -7,6 +7,7 @@
  */
 
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
+import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
 import { assertSupportedJsonSchema } from './json-schema.ts'
 import type { JsonSchemaNode, JsonSchemaScalar } from './json-schema.ts'
 /** Internal PTC mode projection: the model-facing schema plus the canonical output schema. */
@@ -246,19 +247,44 @@ export function jsonSchemaToTs(schema: unknown, indent = 0): string {
   }
 }
 
-/** The fixed model-facing usage contract rendered above the declarations (see the PTC mode Agent Note's "What the model sees"). */
-const SDK_INSTRUCTIONS = `## Writing code for run_code
+/**
+ * The fixed model-facing usage contract rendered above the declarations (see
+ * the PTC mode Agent Note's "What the model sees").
+ *
+ * 这份散文**不**进 `system-prompt` 的双语资产表：那张表的收录标准是"第一方、
+ * 内容静态"，而这一段是按调用方作用域的可见工具集现算的（同族的 `mcp:<server>`
+ * 与 `skills:catalog` 也由各自的提供方自行选文案）。所以这里按装配语言选一份，
+ * 和 `mcpServerIntro(..., locale)` 同一个做法。
+ *
+ * 只有散文分语言：下面的 `declare const tools` 是类型投影，中文声明语法上就不成立。
+ */
+const SDK_INSTRUCTIONS: Record<PromptLocale, string> = {
+  en: `## Writing code for run_code
 
-\`run_code\` takes two required arguments: \`code\` — the body of an async TypeScript function (erasable syntax only — no \`enum\` or namespaces; type annotations are advisory, the code runs type-stripped) — and \`description\`, a short summary of what the program does. The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly.`
+\`run_code\` takes two required arguments: \`code\` — the body of an async TypeScript function (erasable syntax only — no \`enum\` or namespaces; type annotations are advisory, the code runs type-stripped) — and \`description\`, a short summary of what the program does. The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly.`,
+  zh: `## 为 run_code 写代码
 
-const SDK_PROGRAM_INSTRUCTIONS = `Inside the program:
+\`run_code\` 有两个必填参数：\`code\` 是一个 async TypeScript 函数的函数体（只允许可擦除语法——不能用 \`enum\` 与命名空间；类型标注只是给人看的，代码会先剥掉类型再运行），\`description\` 是一句话说明这段程序做什么。下面声明的名字是本程序的 SDK 绑定。**被声明不等于可以直接调用**：只有作为独立工具 schema 提供的名字才能直接调用。`,
+}
+
+const SDK_PROGRAM_INSTRUCTIONS: Record<PromptLocale, string> = {
+  en: `Inside the program:
 
 - Call tools as \`await tools.name(args)\` — quoted access for exotic names: \`tools["my-tool"](args)\`. Every call resolves to the tool's typed canonical JSON value. Tool arguments must be lossless JSON.
 - A FAILED tool call rejects with \`ToolCallError\`, whose \`toolName\` identifies the failed tool and whose \`message\` is human-readable — \`try/catch\` it to handle and continue.
 - Independent read-only calls MAY overlap under \`Promise.all\` (safe calls run concurrently; mutating calls run alone, in submission order). Sequence dependent work with \`await\`.
 - Emit results with \`return\` and/or \`console.log(...)\`. Only what you print or return is program output. A successful tool result containing an image is attached after the run so you can inspect it on the next step; every other intermediate result stays out of the conversation, so extract just what you need.
 
-Program-only SDK bindings:`
+Program-only SDK bindings:`,
+  zh: `在程序内部：
+
+- 用 \`await tools.名字(args)\` 调工具——名字不合法时用带引号的写法：\`tools["my-tool"](args)\`。每次调用都解析成该工具规范的、带类型的 JSON 值。工具参数必须是无损 JSON。
+- 调用失败会 reject 成 \`ToolCallError\`，它的 \`toolName\` 指出是哪个工具失败了、\`message\` 是人话——用 \`try/catch\` 接住然后继续。
+- 相互独立的只读调用**可以**在 \`Promise.all\` 下并发（安全的调用并发跑；会产生改动的调用单独跑，按提交顺序）。有依赖的步骤用 \`await\` 串起来。
+- 用 \`return\` 和/或 \`console.log(...)\` 产出结果。只有你打印或返回的东西才是程序输出。成功结果里若带图片，会在这次运行结束后附上，供你下一步查看；**其余中间结果都不会进对话**，所以只把你真正需要的东西取出来。
+
+仅程序内可用的 SDK 绑定：`,
+}
 
 /** Whether one string schema accepts the literal used by the bash example. */
 function acceptsExampleString(schema: JsonSchemaNode | undefined, value: string): boolean {
@@ -267,8 +293,15 @@ function acceptsExampleString(schema: JsonSchemaNode | undefined, value: string)
     && (schema.enum === undefined || schema.enum.includes(value))
 }
 
-/** Render the bash example only when its literal arguments satisfy the current parameter schema. */
-function renderBashExample(schemas: ToolSdkSchema[]): string {
+/**
+ * Render the bash example only when its literal arguments satisfy the current
+ * parameter schema. Only the surrounding prose follows the locale; the example
+ * itself is code and stays literal.
+ * @param schemas - the tool schemas being projected.
+ * @param locale - the assembly language.
+ * @returns the example paragraph, or `''` when no eligible `bash` binding exists.
+ */
+function renderBashExample(schemas: ToolSdkSchema[], locale: PromptLocale): string {
   const bash = schemas.find(schema => schema.name === 'bash')
   if (bash === undefined) return ''
   const parameters = bash.parameters as JsonSchemaNode
@@ -279,7 +312,10 @@ function renderBashExample(schemas: ToolSdkSchema[]): string {
   const needsDescription = required.includes('description')
   if (needsDescription && !acceptsExampleString(parameters.properties?.description, 'Show current directory')) return ''
   const description = needsDescription ? ", description: 'Show current directory'" : ''
-  return ` When no separate \`bash\` schema is supplied, invoke a declared \`bash\` binding inside \`run_code\`:\n\n\`run_code({ code: "return await tools.bash({ command: 'pwd'${description} })", description: "Show current directory" })\``
+  const lead = locale === 'zh'
+    ? ' 本次请求没有单独提供 `bash` schema 时，就调用上面声明的 `bash` 绑定：'
+    : ' When no separate `bash` schema is supplied, invoke a declared `bash` binding inside `run_code`:'
+  return `${lead}\n\n\`run_code({ code: "return await tools.bash({ command: 'pwd'${description} })", description: "Show current directory" })\``
 }
 
 /**
@@ -292,9 +328,11 @@ function renderBashExample(schemas: ToolSdkSchema[]): string {
  * by name, so the input never carries a duplicate.
  * @param schemas - the tool schemas to declare (the caller excludes
  *   `run_code` itself).
+ * @param locale - assembly language for the prose around the declarations;
+ *   defaults to `en`, the language this section had before it took a locale.
  * @returns the complete section text.
  */
-export function renderToolsSdk(schemas: ToolSdkSchema[]): string {
+export function renderToolsSdk(schemas: ToolSdkSchema[], locale: PromptLocale = 'en'): string {
   const sorted = [...schemas].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   const argsMembers: string[] = []
   const outputMembers: string[] = []
@@ -313,5 +351,5 @@ export function renderToolsSdk(schemas: ToolSdkSchema[]): string {
     ['declare const tools: {', '  [K in ToolName]: (args: ToolArgsMap[K]) => Promise<ToolOutputMap[K]>;', '}'].join('\n'),
   ].join('\n\n')
   const jsonValue = 'type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }'
-  return `${SDK_INSTRUCTIONS}${renderBashExample(sorted)}\n\n${SDK_PROGRAM_INSTRUCTIONS}\n\n\`\`\`ts\n${jsonValue}\n\n${declaration}\n\`\`\``
+  return `${SDK_INSTRUCTIONS[locale]}${renderBashExample(sorted, locale)}\n\n${SDK_PROGRAM_INSTRUCTIONS[locale]}\n\n\`\`\`ts\n${jsonValue}\n\n${declaration}\n\`\`\``
 }

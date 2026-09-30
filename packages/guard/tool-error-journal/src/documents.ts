@@ -43,11 +43,16 @@ export interface ToolErrorEntry {
   readonly time: string
   /** Session that owns the failed call. */
   readonly sessionId: string
-  /** Sequence number of the `tool/result` record. */
+  /** Sequence number of the `tool/result` or `tool/ptc-dispatch` record the failure was read from. */
   readonly seq: number
-  /** Tool name learned from the paired `tool/call` record; `unknown` when none was seen. */
+  /**
+   * Name of the tool that actually failed. Read from the paired `tool/call`
+   * record for a native call, and from the dispatch record itself for a PTC
+   * mode sub-call (which has no `tool/call` of its own); `unknown` when a
+   * `tool/result` arrived with no call ever seen.
+   */
   readonly name: string
-  /** Model-facing call identity. */
+  /** Model-facing call identity: the call id natively, the sub-call id under PTC. */
   readonly callId: string
   /** Internal failure identity when the envelope carried one. */
   readonly internalError?: { readonly name: string; readonly code: string }

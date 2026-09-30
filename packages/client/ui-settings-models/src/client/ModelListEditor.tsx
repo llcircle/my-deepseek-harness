@@ -12,6 +12,16 @@
  * A provider that cannot be interrogated (an unreachable endpoint, a protocol
  * with no readable listing) is not a dead end: the failure is shown next to the
  * rows the user can still fill in by hand.
+ *
+ * Each row's disclosure also carries its **thinking levels**. This is the only
+ * place the capability can be declared, and it is why the composer's model
+ * picker shows no effort control for a hand-declared route: pi-ai reports a
+ * model as non-reasoning — no levels, no picker cell — until its profile says
+ * which levels it offers. The field is three-state rather than a level list,
+ * because "inherit the installed catalog" and "this model cannot reason" are
+ * different answers and only one of them is a mistake to write down; the
+ * levels themselves come from the adapter's own schema, so the page cannot
+ * offer one resolution would refuse.
  */
 
 import { useState } from 'react'
@@ -40,6 +50,43 @@ function textOf(model: ModelDraft, key: string): string {
 function numberOf(model: ModelDraft, key: string): number | undefined {
   const value = model[key]
   return typeof value === 'number' ? value : undefined
+}
+
+/**
+ * How one row answers "can this model think, and at which levels".
+ *
+ * These are the three shapes the adapter distinguishes, not three views of one
+ * value: `none` writes `false` (a non-reasoning model, which is how a profile
+ * strips reasoning a gateway cannot serve), `inherit` leaves the field out so
+ * the installed catalog's own answer applies, and `custom` replaces it with an
+ * explicit level map.
+ */
+type EffortMode = 'inherit' | 'none' | 'custom'
+
+/** The mode a row's stored `reasoningEfforts` expresses. */
+function effortModeOf(model: ModelDraft): EffortMode {
+  const value = model['reasoningEfforts']
+  if (value === false) return 'none'
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? 'custom' : 'inherit'
+}
+
+/** One row's declared levels, as an editable copy; absent when the field is not a level map. */
+function declaredEfforts(model: ModelDraft): Record<string, unknown> {
+  const value = model['reasoningEfforts']
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? { ...value as Record<string, unknown> }
+    : {}
+}
+
+/**
+ * The wire spelling a level sends the moment it is switched on: its own name,
+ * which is what an OpenAI-compatible endpoint expects — except `off`, whose
+ * spelling is the parameter's absence.
+ * @param level - the level being declared.
+ * @returns the initial wire value.
+ */
+function defaultWire(level: string): string | null {
+  return level === 'off' ? null : level
 }
 
 /** What an interrogation needs, taken from the live form. */
@@ -81,6 +128,12 @@ export interface ModelListEditorProps {
   probeBlocked?: keyof typeof en | undefined
   /** The Host operations whose interrogation answers the fetch action. */
   operations: ModelsOperations
+  /**
+   * The thinking levels the owning adapter's schema declares, in escalation
+   * order. Empty means the field is not nameable on this deployment, and the
+   * rows then offer only the two states that need no vocabulary.
+   */
+  levels: readonly string[]
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable every control (read-only deployment or a pending write). */
@@ -209,7 +262,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -224,6 +277,100 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         Object.entries({ ...model, ...next }).filter(([key]) => !cleared.has(key)),
       )
     }))
+  }
+
+  /** Switch one row between inheriting, refusing, and declaring its own levels. */
+  const setEffortMode = (index: number, mode: EffortMode): void => {
+    patch(index, {
+      reasoningEfforts: mode === 'inherit' ? undefined : mode === 'none' ? false : {},
+    })
+  }
+
+  /** Declare or withdraw one level, seeding its wire spelling on the way in. */
+  const toggleLevel = (index: number, model: ModelDraft, level: string, on: boolean): void => {
+    const next = declaredEfforts(model)
+    if (on) next[level] = defaultWire(level)
+    else Reflect.deleteProperty(next, level)
+    patch(index, { reasoningEfforts: next })
+  }
+
+  /**
+   * Retarget one declared level's wire spelling. An emptied field keeps the
+   * level declared but sends nothing, which is the spelling `off` exists for;
+   * every other level has no empty spelling, so the empty string is stored for
+   * the row checker to refuse rather than being silently dropped.
+   *
+   * Only a declared level has a field to type into, so the assignment always
+   * lands on an existing key: an undeclared level stays undeclared.
+   */
+  const setLevelWire = (index: number, model: ModelDraft, level: string, text: string): void => {
+    const next = declaredEfforts(model)
+    next[level] = text.length === 0 && level === 'off' ? null : text
+    patch(index, { reasoningEfforts: next })
+  }
+
+  /** One row's thinking-level declaration, rendered inside the row's disclosure. */
+  const effortField = (model: ModelDraft, index: number): ReactNode => {
+    const mode = effortModeOf(model)
+    const declared = declaredEfforts(model)
+    const suffix = String(index + 1)
+    return (
+      <div className={styles['modelEffort']}>
+        <label className={styles['modelField']}>
+          <span className={styles['modelFieldLabel']}>{t('modelEffort')}</span>
+          <select
+            className={`${styles['input']} ${styles['selectInput']}`}
+            value={mode}
+            aria-label={`${t('modelEffort')} ${suffix}`}
+            disabled={disabled}
+            onChange={(event) => { setEffortMode(index, event.target.value as EffortMode) }}
+          >
+            <option value="inherit">{t('modelEffortInherit')}</option>
+            <option value="none">{t('modelEffortNone')}</option>
+            {/* Declaring nothing is not one of the choices: the adapter
+                refuses an empty level map rather than reading it as either
+                of the two states beside it. */}
+            {props.levels.length === 0 ? null : <option value="custom">{t('modelEffortCustom')}</option>}
+          </select>
+        </label>
+        <p className={styles['advancedHint']}>{t('modelEffortHint')}</p>
+        {mode === 'custom'
+          ? (
+            <div
+              className={styles['effortLevels']}
+              role="group"
+              aria-label={`${t('modelEffortLevels')} ${suffix}`}
+            >
+              {props.levels.map((level) => {
+                const declaredHere = Object.hasOwn(declared, level)
+                const wire = declared[level]
+                return (
+                  <div className={styles['effortLevel']} key={level}>
+                    <input
+                      type="checkbox"
+                      checked={declaredHere}
+                      aria-label={`${t('modelEffortLevel')} ${level} ${suffix}`}
+                      disabled={disabled}
+                      onChange={() => { toggleLevel(index, model, level, !declaredHere) }}
+                    />
+                    <span className={styles['effortLevelName']}>{level}</span>
+                    <input
+                      className={styles['input']}
+                      type="text"
+                      value={typeof wire === 'string' ? wire : ''}
+                      placeholder={level === 'off' ? t('modelEffortOffValue') : level}
+                      aria-label={`${t('modelEffortValue')} ${level} ${suffix}`}
+                      disabled={disabled || !declaredHere}
+                      onChange={(event) => { setLevelWire(index, model, level, event.target.value) }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )
+          : null}
+      </div>
+    )
   }
 
   const fetchModels = async (): Promise<void> => {
@@ -433,6 +580,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                {effortField(model, index)}
               </div>
             )
             : null}

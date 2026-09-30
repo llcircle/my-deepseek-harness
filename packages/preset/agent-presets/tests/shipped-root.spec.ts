@@ -89,7 +89,7 @@ describe('the shipped preset root', () => {
     const ctx = await roster({ includeUserRoot: false })
 
     const listed = await ctx.agentPresets.list()
-    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'lean', 'minimal', 'ptc', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['cordis', 'lean', 'minimal', 'ptc', 'ptc-opt', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     // Not `broken === undefined`: health asks whether each row's package is
     // installed above the base, and the shipped rows name packages the
@@ -129,7 +129,7 @@ describe('the shipped preset root', () => {
   })
 
   it('enables web_fetch in each tool-bearing Web app preset', async () => {
-    for (const id of ['cordis', 'ptc', 'standard']) {
+    for (const id of ['cordis', 'ptc', 'ptc-opt', 'standard']) {
       const entries = await shippedEntries(id)
       const toolWeb: unknown = entries.find((entry: unknown) =>
         typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === 'tool-web')
@@ -141,10 +141,12 @@ describe('the shipped preset root', () => {
     }
   })
 
-  it('omits the general workflow tool and its unused engine only from PTC', async () => {
-    const ptc = await shippedEntries('ptc')
-    expect(findEntry(ptc, 'tool-workflow')?.disabled).toBe(true)
-    expect(findEntry(ptc, 'workflow-ptc')?.disabled).toBe(true)
+  it('omits the general workflow tool and its unused engine from both PTC presets', async () => {
+    for (const id of ['ptc', 'ptc-opt']) {
+      const entries = await shippedEntries(id)
+      expect(findEntry(entries, 'tool-workflow')?.disabled, id).toBe(true)
+      expect(findEntry(entries, 'workflow-ptc')?.disabled, id).toBe(true)
+    }
 
     for (const id of ['standard', 'cordis']) {
       const entries = await shippedEntries(id)
@@ -154,9 +156,24 @@ describe('the shipped preset root', () => {
   })
 
   it('disables the ralph tool in every shipped preset that carries it', async () => {
-    for (const id of ['cordis', 'ptc', 'standard']) {
+    for (const id of ['cordis', 'ptc', 'ptc-opt', 'standard']) {
       expect(findEntry(await shippedEntries(id), 'tool-ralph')?.disabled, id).toBe(true)
     }
     expect(findEntry(await shippedEntries('minimal'), 'tool-ralph')).toBeUndefined()
+  })
+
+  it('lets ptc-opt inherit the plugin default plan guidance instead of repeating it', async () => {
+    // The other shipped presets restate the whole `plan:policy` text in this
+    // file, which is how two copies of one first-party template drifted apart.
+    // ptc-opt is the preset that stops the duplication; a copy that grows a
+    // `section:` back is the regression this pins.
+    const ptcOpt = await shippedEntries('ptc-opt')
+    expect(findEntry(ptcOpt, 'plan-mode')).toEqual({ id: 'plan-mode', name: '@deepseek-ai/dsh-plan-mode' })
+
+    for (const id of ['ptc', 'standard', 'lean']) {
+      const planMode = findEntry(await shippedEntries(id), 'plan-mode')
+      expect(typeof planMode?.config, id).toBe('object')
+      expect(typeof (planMode?.config as { section?: unknown }).section, id).toBe('string')
+    }
   })
 })

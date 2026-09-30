@@ -7,6 +7,7 @@ export type AgentPresetSettingsKey =
   | 'presetStandardName' | 'presetStandardDescription'
   | 'presetLeanName' | 'presetLeanDescription'
   | 'presetPtcName' | 'presetPtcDescription'
+  | 'presetPtcOptName' | 'presetPtcOptDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
@@ -43,6 +44,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetPtcName: 'PTC mode',
   presetPtcDescription:
     'Full coding agent without the workflow tool; other tools are exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
+  presetPtcOptName: 'PTC Optimized mode',
+  presetPtcOptDescription:
+    'PTC mode with a tidied prompt: the SDK section follows the run_code-only rule that introduces it, the PTC-specific text and SDK instructions are translated with the interface, and plan-mode guidance is inherited instead of repeated.',
   presetMinimalName: 'Minimal mode',
   presetMinimalDescription:
     'Single-tool coding agent with a persistent shell.',
@@ -112,6 +116,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetLeanDescription: '在标准模式基础上收敛工具目录：goal、job、subagent 各自合并为单个带 action 参数的工具，冷门工具改为按需取回，不提供 workflow 与 ralph。',
   presetPtcName: 'PTC 模式',
   presetPtcDescription: '功能完整的编码 Agent，但默认不提供 workflow 工具；其他工具通过 PTC 模式 SDK 呈现，让模型用一个 TypeScript 程序组合多步操作。',
+  presetPtcOptName: 'PTC 优化模式',
+  presetPtcOptDescription: 'PTC 模式的提示词整理版：SDK 段落紧跟引导它的「只有 run_code 可直接调用」那句规则，PTC 专属文案与 SDK 说明跟随界面语言出中文，计划模式策略改为继承插件内置默认而不是重复一遍。',
   presetMinimalName: '极简模式',
   presetMinimalDescription: '仅提供持久 shell 的单工具编码 Agent。',
   presetCordisName: '创造模式',

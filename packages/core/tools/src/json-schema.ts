@@ -83,7 +83,20 @@ const CONSTRAINT_KEYWORDS = new Set([
   'enum',
   'const',
 ])
-const ANNOTATION_KEYWORDS = new Set(['description', 'title', 'default', 'examples'])
+/**
+ * Keywords carried through untouched.
+ *
+ * `$schema` rides here, not with the constraints: it declares a JSON-Schema
+ * dialect, and a subset that resolves no reference of any dialect can only find
+ * the declaration inert. It is tolerated by {@link validateJsonSchemaValue}
+ * already, and the schemas that arrive from outside the repository routinely
+ * carry it — the MCP SDK stamps every tool's `inputSchema` with one — so the
+ * only thing a strict keyword check buys is losing the whole schema. That is
+ * not a hypothetical: `jsonSchemaToTs` degrades a rejected schema to `unknown`,
+ * so rejecting `$schema` cost the PTC mode SDK every MCP tool's argument types
+ * while the value validator happily enforced the same schema.
+ */
+const ANNOTATION_KEYWORDS = new Set(['description', 'title', 'default', 'examples', '$schema'])
 const SCHEMA_TYPES: readonly JsonSchemaType[] = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
 
 /* jscpd:ignore-start -- this realm boundary mirrors the session-owned lossless-JSON intrinsic test */
