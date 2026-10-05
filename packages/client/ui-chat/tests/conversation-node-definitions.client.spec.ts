@@ -1717,10 +1717,13 @@ describe('built-in conversation node Definitions', () => {
     })).toEqual([{ anchorSeq: 3, data: { text: '# Identity\n\ngraph tools', sections } }])
   })
 
-  it('keeps an in-history prompt update on one row and adds its sources', () => {
+  it('keeps an in-history prompt update on one row and names only what it moved', () => {
     // The surface row presents the update at its own position and the following
     // header repeats it; the header takes that row over, so the update keeps its
-    // own title and gains the sources the surface row cannot name.
+    // own title and gains the sources the surface row cannot name. Those sources
+    // are the sections that moved, not the whole prompt: an in-history append
+    // pushes the complete new prompt into the history, and repeating all of it
+    // beside the surface row buries the one section the reader is looking for.
     const opening = [{ name: 'harness:identity', text: '# Identity' }]
     const updated = [...opening, { name: 'computer:policy', text: 'click things' }]
     const value = assembler([
@@ -1748,7 +1751,14 @@ describe('built-in conversation node Definitions', () => {
         : []
     })).toEqual([
       { anchorSeq: 1, data: { text: '# Identity', sections: opening } },
-      { anchorSeq: 7, data: { text: '# Identity\n\nclick things', sections: updated, update: true } },
+      {
+        anchorSeq: 7,
+        data: {
+          text: '# Identity\n\nclick things',
+          sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
+          update: true,
+        },
+      },
     ])
   })
 

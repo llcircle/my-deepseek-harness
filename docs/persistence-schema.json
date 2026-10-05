@@ -41294,7 +41294,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:53"
+        "packages/skill/tool-skill/src/index.ts:55"
       ]
     },
     {
@@ -60989,7 +60989,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:47"
+        "packages/skill/tool-skill/src/index.ts:49"
       ]
     },
     {

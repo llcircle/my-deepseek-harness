@@ -3503,7 +3503,7 @@ export interface Config {
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 ```
 
-Source: [`packages/skill/tool-skill/src/index.ts:102`](../packages/skill/tool-skill/src/index.ts)
+Source: [`packages/skill/tool-skill/src/index.ts:104`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="deepseek-aidsh-tool-str-replace-editor"></a>
 

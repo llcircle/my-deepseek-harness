@@ -86,6 +86,48 @@ describe('SystemPromptNodeView', () => {
     expect(screen.getByRole('button', { name: /mcp:gone/ })).toBeTruthy()
   })
 
+  it('labels a change list with what the list is', () => {
+    const node: ChatNode<'system-prompt'> = {
+      key: 'request-prompt:4', kind: 'system-prompt', id: '4', target: 'chat', anchorSeq: 4,
+      location: { kind: 'unresolved' }, visibility: 'visible',
+      data: {
+        text: '# Persona\n\nclick things',
+        sections: [{ name: 'computer:policy', text: 'click things', change: 'added' }],
+      },
+    }
+    const { container } = render(<SystemPromptNodeView node={node} t={makeTranslate(en)} />)
+
+    // 变更清单只有两三个名字，孤零零摆着像是提示词少了一角；标题才是那句"这就是变化的
+    // 全部"。标题本身必须是**不可展开**的一行 —— 变化的字段名要一眼可见，不能藏进折叠区。
+    expect(screen.getByText('System prompt update')).toBeTruthy()
+    const rows = screen.getAllByRole('button')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.textContent).toContain('computer:policy')
+    expect(container.querySelector('[data-system-prompt-change]')?.textContent).toBe('added')
+  })
+
+  it('labels an update whose sections could not be enumerated', () => {
+    // 两侧分段快照不可比时（老会话）只能照旧列出整份提示词，但标题仍要说明这是一次
+    // 更新，而不是一份全新的提示词。
+    const node: ChatNode<'system-prompt'> = {
+      key: 'request-prompt:5', kind: 'system-prompt', id: '5', target: 'chat', anchorSeq: 5,
+      location: { kind: 'unresolved' }, visibility: 'visible',
+      data: {
+        text: '# Identity\n\nclick things',
+        sections: [
+          { name: 'harness:identity', text: '# Identity' },
+          { name: 'computer:policy', text: 'click things' },
+        ],
+        update: true,
+      },
+    }
+    render(<SystemPromptNodeView node={node} t={makeTranslate(en)} />)
+
+    expect(screen.getByText('System prompt update')).toBeTruthy()
+    expect(screen.getAllByRole('button').map(row => row.textContent))
+      .toEqual(['harness:identity', 'computer:policy'])
+  })
+
   it('titles an in-history prompt update as an update of the same row', () => {
     const node: ChatNode<'system-prompt'> = {
       key: 'system-message:10',

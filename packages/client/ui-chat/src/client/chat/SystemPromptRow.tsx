@@ -70,11 +70,32 @@ function PromptSectionRow({ section, t }: {
   )
 }
 
+/** True for a list that enumerates a difference rather than a whole prompt. */
+function isChangeList(sections: readonly SystemPromptSection[]): boolean {
+  return sections.some(section => section.change !== undefined)
+}
+
 export function SystemPromptRow({ text, sections, update = false, t }: SystemPromptRowProps) {
   const [open, setOpen] = useState(false)
+  const toggle = (): void => { setOpen(value => !value) }
   if (sections !== undefined && sections.length > 0) {
     return (
       <>
+        {/* A change list is two or three names out of twenty-odd, so on its own
+            it reads like an incomplete prompt. The heading is what says the list
+            is the whole of what moved, and that the rest stayed put. */}
+        {isChangeList(sections) || update
+          ? (
+            <DisclosureRow
+              className={css.root}
+              icon={<IconBrowseOutline16 size={14} />}
+              title={t('message.systemPromptUpdate')}
+              open={false}
+              expandable={false}
+              onToggle={toggle}
+            />
+          )
+          : null}
         {sections.map(section => <PromptSectionRow key={section.name} section={section} t={t} />)}
       </>
     )
@@ -88,7 +109,7 @@ export function SystemPromptRow({ text, sections, update = false, t }: SystemPro
       open={open}
       expandable
       expandOnRowClick
-      onToggle={() => { setOpen(value => !value) }}
+      onToggle={toggle}
     >
       <div className={css.body} data-system-prompt-body>
         <OpaqueBody content={[{ type: 'text', text }]} source={null} t={t} />

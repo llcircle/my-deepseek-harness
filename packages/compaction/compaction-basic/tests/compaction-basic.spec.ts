@@ -1365,6 +1365,20 @@ describe('default one-shot summarizer', () => {
     expect(lastText).toContain('## Primary Request and Intent')
   })
 
+  it('follows the assembled language for the instruction text', async () => {
+    const { ctx, adapter, compact } = await summarizerHarness([{ type: 'text', text: '摘要' }])
+    // 中文部署（界面语言为中文）应当拿到中文指令；这一点与各提示词分段同源。
+    ctx.provide('systemPrompt', { activeLocale: () => 'zh' } as never)
+    await compact.runSummarize(promptInput('history'), agent(conversation(1), MODEL), SIGNAL)
+
+    const last = adapter.lastOptions?.messages.at(-1)?.content[0]
+    const lastText = last?.type === 'text' ? last.text : ''
+    expect(lastText).toContain('用简洁的中文工程语言书写')
+    expect(lastText).not.toContain('Write concise English engineering prose.')
+    // 结构标题是跨语言契约，两种语言下都保持英文，历史检查点才合并得起来。
+    expect(lastText).toContain('## Primary Request and Intent')
+  })
+
   it('applies the routed model policy without changing the replayed prefix', async () => {
     const { ctx, compact } = await summarizerHarness(
       [{ type: 'text', text: 'unused default summary' }],

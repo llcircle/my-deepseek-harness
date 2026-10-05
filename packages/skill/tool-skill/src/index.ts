@@ -7,12 +7,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+// Type-only: pulls the `compaction/end` session-event declaration the catalog gate listens on.
+import type {} from '@deepseek-ai/dsh-compaction/types'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
 import '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import {
   escapeText,
   isModelInvocable,
@@ -271,6 +273,14 @@ export function apply(ctx: Context, config: Config = {}): void {
   // whoever authored the skill, and a description containing `{{name}}` must not be
   // read as a prompt variable — that would fail the whole assembly, not just this
   // section, the moment any skill mentions a template placeholder.
+  // 压缩边界是目录唯一的放行点（见 {@link CatalogRefreshGate}）——目录住在请求头部，
+  // 中途换新会把整个会话的缓存前缀一次作废。
+  const catalogGate = new CatalogRefreshGate()
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'compaction/end' && event.data.error === undefined) {
+      catalogGate.markBoundary(session)
+    }
+  })
   ctx.systemPrompt.section({
     name: 'skills:catalog',
     order: ctx.systemPrompt.getSectionOrder('SKILL_CATALOG'),
@@ -297,7 +307,11 @@ export function apply(ctx: Context, config: Config = {}): void {
       catalogDescriptionMaxLength,
       catalogInChinese ? translations : undefined,
     )
-    const text = entries.length === 0 ? '' : renderCatalogText(entries, catalogInChinese)
+    const text = catalogGate.admit(
+      agent.session,
+      catalogFingerprint(entries),
+      entries.length === 0 ? '' : renderCatalogText(entries, catalogInChinese),
+    )
     return {
       ...transformed,
       sections: transformed.sections.map(section => section.name === 'skills:catalog'
@@ -403,6 +417,69 @@ function assertPositiveInteger(name: string, value: number, minimum = 1): void {
   if (!Number.isInteger(value) || value < minimum) {
     throw new Error(`tool-skill: ${name} must be an integer greater than or equal to ${minimum}`)
   }
+}
+
+/**
+ * 技能目录的换新闸门：目录只在压缩边界之后才允许换新。
+ *
+ * 目录是请求头部的一个分段（`skills:catalog`，order 10300）。会话中途改一个
+ * SKILL.md（增删技能、改简介）会让下一次装配渲染出不同的目录文本，而头部一换，
+ * 这个会话此前的整段缓存前缀就作废了。压缩是前缀本来就要重建的唯一时刻，所以
+ * 新目录在那里放行，别处一律沿用上一次发布的那一份。
+ *
+ * 闸门按**会话**隔离：不同 cwd / scope 的 agent 各有一份目录，一个会话的压缩
+ * 边界不该替另一个会话换新。
+ *
+ * 首次装配没有可比的一份，必须照常发布——闸门拦的是"换新"，不是"首次"。发现
+ * 不完整时调用方不进这里（它直接跳过本节），所以"宁可空着也不给不可信的清单"
+ * 这条既有规则不受影响：那时端出来的是空，而不是这份快照。
+ */
+export class CatalogRefreshGate {
+  private readonly published = new WeakMap<Session, { fingerprint: string; text: string }>()
+  private readonly due = new WeakSet<Session>()
+
+  /**
+   * 记一次压缩边界；该会话下一次目录变化据此放行。
+   * @param session - 刚刚越过压缩边界、因而可以接受新目录的会话。
+   */
+  markBoundary(session: Session): void {
+    this.due.add(session)
+  }
+
+  /**
+   * 取本次装配该渲染的目录文本。
+   * @param session - 正在装配的会话。
+   * @param fingerprint - 本次目录条目的稳定指纹。
+   * @param rendered - 本次算出的目录文本。
+   * @returns 放行时是 `rendered`；否则是上一次发布的那一份。
+   */
+  admit(session: Session, fingerprint: string, rendered: string): string {
+    // 空目录不是"一份目录"，而是"这一节现在不存在"：它不贡献任何 token，也没有
+    // 内容可供沿用，沿用一份已经作废的清单才是真正的陈旧。所以撤销与重新出现都
+    // 照常发布——闸门管的是"两份有内容的目录之间"的换新，那才是击穿前缀的那种。
+    if (rendered === '') {
+      this.published.delete(session)
+      return rendered
+    }
+    const previous = this.published.get(session)
+    if (previous !== undefined && previous.fingerprint !== fingerprint && !this.due.delete(session)) {
+      return previous.text
+    }
+    this.published.set(session, { fingerprint, text: rendered })
+    return rendered
+  }
+}
+
+/**
+ * 目录条目的稳定指纹：技能名与简介都参与，正文不参与。
+ *
+ * 正文本来就进不了目录（它由 `skill` 工具按需加载），所以改正文不该让目录换新；
+ * 名字与简介是目录的全部内容，任一个变了才算"目录变了"。
+ * @param entries - 本次发布的条目。
+ * @returns 可比较的指纹串。
+ */
+function catalogFingerprint(entries: SkillCatalogSource['entries']): string {
+  return entries.map(entry => `${entry.name}\u0000${entry.description}`).join('\u0001')
 }
 
 /**

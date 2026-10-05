@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
 import {
-  SESSION_FORMAT_VERSION, Session, SessionId, type UserMessage,
+  SESSION_FORMAT_VERSION, Session, SessionId, type SessionEvent, type UserMessage,
 } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -72,6 +72,19 @@ function agentForCwd(cwd: string): Agent {
     runMaintenance: task => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   }
+}
+
+/**
+ * 触发一次压缩边界。目录的换新只在那一刻放行——目录落在请求头部，会话中途换新
+ * 会把此前整段缓存前缀作废。闸门按会话隔离，所以要给真实的会话对象。
+ * @param ctx - 被测插件所在的上下文。
+ * @param session - 收到这次压缩边界的会话。
+ */
+function compact(ctx: Context, session: Session): void {
+  ctx.emit('session/event', session, {
+    type: 'compaction/end',
+    data: { compactionId: 'test', turn: null },
+  } as unknown as SessionEvent)
 }
 
 async function proposeStep(
@@ -255,6 +268,17 @@ describe('dsh-tool-skill', () => {
     expect(await catalogForCwd(ctx, '/workspace')).toBe('')
   })
 
+  it('leaves the catalog empty for an assembly that carries no calling agent', async () => {
+    const home = await tempDir('tool-no-agent')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
+
+    // 没有调用方的装配解析不了作用域——不知道"这一批技能对谁可见"，就什么都不说。
+    // 段本身照旧存在，只是停在注册时的空文本。
+    const assembly = await ctx.systemPrompt.assemble()
+    expect(assembly.sections.find(section => section.name === 'skills:catalog')?.text).toBe('')
+  })
+
   it('renders the whole catalog in Chinese when the assembly language is Chinese', async () => {
     const home = await tempDir('tool-zh-catalog')
     const ctx = await setup(home, {}, 'zh')
@@ -313,9 +337,9 @@ describe('dsh-tool-skill', () => {
     expect(catalog).not.toContain('中文描述。')
   })
 
-  it('rebuilds the catalog on every assembly, so a later archive switches the whole catalog', async () => {
-    // 目录不再是一条"发布过的"会话消息：译文档案出现后，下一次装配就是中文，
-    // 既没有替换消息，也不需要会话承载任何目录状态。
+  it('holds a changed archive until a compaction boundary admits it', async () => {
+    // 目录落在请求头部：译文档案出现后不能立刻换新（那会把该会话此前的整段缓存
+    // 前缀作废），要等压缩——前缀本来就要重建的那一刻。
     const home = await tempDir('tool-zh-replace')
     const ctx = await setup(home, {}, 'zh')
     ctx.skills.register({
@@ -334,6 +358,12 @@ describe('dsh-tool-skill', () => {
       join(cwd, '.dsh', 'skill-translations.zh.json'),
       JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
     )
+
+    // 归档已经落盘，但压缩边界之前这一节照旧——两次装配都给同一份旧目录。
+    expect(await catalogFor(ctx, agent)).toContain('English description.')
+    expect(await catalogFor(ctx, agent)).not.toContain('中文描述。')
+
+    compact(ctx, agent.session)
 
     const switched = await catalogFor(ctx, agent)
     expect(switched).toContain('技能是一组可复用的任务专用指令。以下技能在当前会话中可用：')
@@ -374,7 +404,7 @@ describe('dsh-tool-skill', () => {
     expect(await catalogFor(ctx, agent)).toContain('listed-skill')
   })
 
-  it('rebuilds the catalog from the live registry on every assembly', async () => {
+  it('holds registry changes until a compaction boundary admits them', async () => {
     const home = await tempDir('tool-dynamic-catalog')
     const ctx = await setup(home)
     const disposeFirst = ctx.skills.register({
@@ -395,6 +425,13 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'Second body.',
     })
+    // 新技能要等一次压缩边界才进目录——目录是请求头部，中途换新会作废缓存前缀。
+    const held = await catalogFor(ctx, agent)
+    expect(held).toContain('first-skill')
+    expect(held).not.toContain('second-skill')
+
+    compact(ctx, agent.session)
+
     const widened = await catalogFor(ctx, agent)
     expect(widened).toContain('first-skill')
     expect(widened).toContain('second-skill')
@@ -402,9 +439,32 @@ describe('dsh-tool-skill', () => {
     disposeSecond()
     disposeFirst()
 
-    // 全部注销后这一节不再有内容——既不保留上一版目录，也不需要墓碑消息去
-    // 撤销它：下一次装配就是事实。
+    // 全部注销后这一节不再有内容——空目录不是"一份目录"，没有可沿用的旧清单，
+    // 也不需要墓碑消息去撤销它：下一次装配就是事实。
     expect(await catalogFor(ctx, agent)).toBe('')
+  })
+
+  it('withholds the catalog refresh when the compaction boundary itself failed', async () => {
+    const home = await tempDir('tool-failed-compaction')
+    const ctx = await setup(home)
+    const agent = agentForCwd('/workspace')
+    ctx.skills.register({ name: 'first-skill', description: 'First skill', source: 'runtime', content: 'First body.' })
+    expect(await catalogFor(ctx, agent)).toContain('first-skill')
+
+    ctx.skills.register({ name: 'second-skill', description: 'Second skill', source: 'runtime', content: 'Second body.' })
+    ctx.emit('session/event', agent.session, {
+      type: 'compaction/end',
+      data: { compactionId: 'failed', turn: null, error: new Error('summarizer unavailable') },
+    } as unknown as SessionEvent)
+
+    // 压缩失败意味着没有发生"前缀本来就要重建"的那一刻：放行只会白白作废缓存，
+    // 所以这一次边界不换新，目录照旧。
+    const held = await catalogFor(ctx, agent)
+    expect(held).toContain('first-skill')
+    expect(held).not.toContain('second-skill')
+
+    compact(ctx, agent.session)
+    expect(await catalogFor(ctx, agent)).toContain('second-skill')
   })
 
   it('keeps body-only edits out of the catalog and loads the latest body on demand', async () => {
@@ -960,6 +1020,21 @@ describe('loadCatalogTranslations', () => {
 
     expect(translations.get('tdd')).toBe('本工作区译文')
     expect(translations.get('diagnose')).toBe('共享诊断')
+  })
+
+  it('drops a translation entry that carries no description', async () => {
+    const home = await tempDir('translations-no-description')
+    await writeFile(join(home, 'skill-translations.zh.json'), JSON.stringify({
+      'routing-only': { whenToUse: '只在路由时用到' },
+      tdd: { description: '测试驱动开发' },
+    }), 'utf8')
+    const workspace = await tempDir('translations-workspace')
+
+    const translations = await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)
+
+    // 目录只发布简介：只译了路由提示的条目对目录没有任何可用的译文，不能拿空串顶替。
+    expect(translations.has('routing-only')).toBe(false)
+    expect(translations.get('tdd')).toBe('测试驱动开发')
   })
 
   it('stays empty when neither archive exists or the workspace one is malformed', async () => {

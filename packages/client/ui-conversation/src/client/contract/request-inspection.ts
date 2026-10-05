@@ -122,8 +122,10 @@ export interface RequestPromptChange {
    *
    * A reader who is told "the system prompt changed" wants the change, not the
    * twenty-odd sections that did not; a presentation that has this list should
-   * show it instead of the complete prompt. Absent when it cannot be computed,
-   * which is also the signal to fall back to everything.
+   * show it instead of the complete prompt. Absent when it cannot be computed
+   * — either side without source sections — which is also the signal to fall
+   * back to everything, and when nothing moved at all: an empty list would read
+   * as "no sections changed" beside a change that plainly happened.
    */
   changedSections?: readonly ConversationPromptSectionChange[]
 }
@@ -153,7 +155,9 @@ export type RequestPromptInspector = (
  * @param previous - Prompt from the preceding loaded request header, when available.
  * @param event - Durable full request header to inspect.
  * @param system - Effective nonempty system prompt after loaded surface replacements; empty when removed.
- * An in-history update already presented its text at its own position, so the header reports no system change for it.
+ * An in-history update already presented its text at its own position, so the rendered text alone
+ * reports no system change for it; a source-section move still does, because this header is the only
+ * place that can enumerate which sections it moved.
  * @returns The canonical prompt and an initial/system/tool change when it can be established.
  */
 export function inspectRequestPrompt(
@@ -172,14 +176,25 @@ export function inspectRequestPrompt(
     tools: Array.isArray(rawTools) ? rawTools as readonly ToolSchema[] : [],
   }
   if (previous === undefined && event.data.reason !== 'initial') return { prompt }
-  const systemChanged = previous !== undefined && previous.system !== prompt.system && system?.update !== true
+  const movedSections = previous === undefined
+    ? undefined
+    : promptSectionChanges(previous.systemSections, prompt.systemSections)
+  const enumerated = movedSections === undefined || movedSections.length === 0 ? undefined : movedSections
+  // A moved section is a system change in its own right, not merely a rider on a
+  // changed rendering. On an `in-history` route the model reads the new prompt as
+  // an appended message, so the rendered text the header carries already matches
+  // and the surface node already showed it whole — but this header is the only
+  // row that can name *which* sections moved. Judging the change by the rendered
+  // text alone would report none, and the presentation would fall back to listing
+  // every section that did not move.
+  const renderedChanged = previous !== undefined
+    && previous.system !== prompt.system && system?.update !== true
+  const systemChanged = renderedChanged || enumerated !== undefined
   const toolsChanged = previous !== undefined
     && JSON.stringify(previous.tools) !== JSON.stringify(prompt.tools)
   if (previous !== undefined && !systemChanged && !toolsChanged) return { prompt }
   const origin = system !== undefined && (previous === undefined || systemChanged) ? system : event
-  const changedSections = previous === undefined || !systemChanged
-    ? undefined
-    : promptSectionChanges(previous.systemSections, prompt.systemSections)
+  const changedSections = previous === undefined ? undefined : enumerated
   return {
     prompt,
     change: {

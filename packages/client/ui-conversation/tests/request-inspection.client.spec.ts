@@ -166,6 +166,74 @@ describe('inspectRequestPrompt', () => {
     expect(inspected.change?.kind).toBe('tools')
     expect(inspected.change?.changedSections).toBeUndefined()
   })
+
+  it('treats a moved source section as a system change on an in-history route', () => {
+    // 默认 `in-history` 路由下新提示词是被 append 的一整条 `system/message`：header 里的
+    // 渲染文本与上一版一致，surface 节点也已经把整段展示过了。但这一行是唯一能说出
+    // 「搬动了哪几段」的地方 —— 只按渲染文本比较会把这次变化报成"没变"，界面就只好把
+    // 二十几个没动的分段再列一遍。
+    const previous = inspectRequestPrompt(undefined, header(SessionSeq(2), 'initial', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity']),
+      tools: [READ_TOOL],
+    }), systemNode(1, '# Identity')).prompt
+
+    const moved = inspectRequestPrompt(previous, header(SessionSeq(8), 'change', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity'], ['computer:policy', 'click']),
+      tools: [READ_TOOL],
+    }), systemNode(7, '# Identity\n\nclick', true))
+
+    expect(moved.change).toEqual({
+      seq: 7,
+      time: 1_700_000_000_007,
+      kind: 'system',
+      previous,
+      changedSections: [{ name: 'computer:policy', text: 'click', change: 'added' }],
+    })
+  })
+
+  it('reports a section move alongside a tool change as both', () => {
+    const previous = inspectRequestPrompt(undefined, header(SessionSeq(2), 'initial', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity']),
+      tools: [READ_TOOL],
+    }), systemNode(1, '# Identity')).prompt
+
+    const both = inspectRequestPrompt(previous, header(SessionSeq(8), 'change', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity'], ['computer:policy', 'click']),
+      tools: [WRITE_TOOL],
+    }), systemNode(7, '# Identity\n\nclick', true))
+
+    expect(both.change?.kind).toBe('system-and-tools')
+    expect(both.change?.changedSections).toEqual([
+      { name: 'computer:policy', text: 'click', change: 'added' },
+    ])
+  })
+
+  it('keeps a re-statement of an unchanged prompt free of a change report', () => {
+    // 分段一模一样时不能报出一个空 diff：那会读成"没有任何分段变化"，而这条记录
+    // 本来就不是在报告变化（它只是把同一份提示词重新陈述了一遍）。
+    const previous = inspectRequestPrompt(undefined, header(SessionSeq(2), 'initial', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity']),
+      tools: [READ_TOOL],
+    }), systemNode(1, '# Identity')).prompt
+
+    expect(inspectRequestPrompt(previous, header(SessionSeq(8), 'change', {
+      config: CONFIG,
+      systemSections: sections(['harness:identity', '# Identity']),
+      tools: [READ_TOOL],
+    }), systemNode(7, '# Identity', true))).toEqual({
+      prompt: {
+        config: CONFIG,
+        system: '# Identity',
+        systemSections: sections(['harness:identity', '# Identity']),
+        tools: [READ_TOOL],
+      },
+    })
+  })
 })
 
 describe('promptSectionChanges', () => {
