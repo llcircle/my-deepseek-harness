@@ -8,6 +8,10 @@ import {
   type JsonSchemaNode,
   type ObjectJsonSchema,
 } from '../src/index.ts'
+// The rendering-side reading is internal to the package: the public surface is
+// the assertion, and this is the projection `jsonSchemaToTs`/`jsonSchemaToPy`
+// call on their way to text.
+import { widenJsonSchema } from '../src/json-schema.ts'
 
 function asserted(schema: unknown): JsonSchemaNode {
   assertSupportedJsonSchema(schema)
@@ -475,5 +479,230 @@ describe('validateJsonSchemaValue', () => {
   it('keeps assertNever as a forged-schema backstop', () => {
     const forged = { type: 'tuple' } as unknown as JsonSchemaNode
     expect(() => validateJsonSchemaValue(forged, 1)).toThrow(/tuple/)
+  })
+})
+
+describe('widenJsonSchema', () => {
+  // Enforcement and rendering want opposite things from a foreign schema, so
+  // the reading is pinned separately from the assertion: what matters here is
+  // which subset construct each dialect spelling lands on, not whether it was
+  // accepted. A node the subset cannot express must still reach the renderer
+  // as SOME type, because under PTC mode that text is the model's only
+  // description of how to call a tool.
+  it('keeps the constructs the subset enforces and drops every refining keyword', () => {
+    expect(widenJsonSchema({
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      $id: 'https://example.com/s',
+      title: 'T',
+      description: 'D',
+      type: 'object',
+      properties: { a: { type: 'string', format: 'date-time', pattern: '^x$', minLength: 1 } },
+      required: ['a'],
+      additionalProperties: false,
+      $defs: { Unused: { type: 'string' } },
+      deprecated: true,
+      'x-vendor': 1,
+    })).toEqual({
+      title: 'T',
+      description: 'D',
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false,
+    })
+  })
+
+  it('reads a value that is not a schema as the annotation-only node', () => {
+    for (const value of [undefined, null, 42, 'schema', [], true]) {
+      expect(widenJsonSchema(value), JSON.stringify(value)).toEqual({})
+    }
+  })
+
+  it('resolves a local JSON pointer against the root, unwrapping its escapes', () => {
+    expect(widenJsonSchema({
+      $defs: { 'a/b': { type: 'string' }, 'a~b': { type: 'boolean' }, Deep: { properties: { x: { type: 'integer' } } } },
+      type: 'object',
+      properties: {
+        direct: { $ref: '#/$defs/Deep/properties/x' },
+        escaped: { $ref: '#/$defs/a~1b' },
+        tilde: { $ref: '#/$defs/a~0b' },
+      },
+      additionalProperties: false,
+    })).toEqual({
+      type: 'object',
+      properties: { direct: { type: 'integer' }, escaped: { type: 'string' }, tilde: { type: 'boolean' } },
+      additionalProperties: false,
+    })
+  })
+
+  it('widens a reference it cannot reach, and terminates on a recursive one', () => {
+    expect(widenJsonSchema({ $ref: '#/$defs/Missing' })).toEqual({})
+    expect(widenJsonSchema({ $ref: 'https://example.com/s.json' })).toEqual({})
+    expect(widenJsonSchema({ $ref: '#' })).toEqual({})
+    expect(widenJsonSchema({ $defs: { S: 'not-a-schema' }, $ref: '#/$defs/S' })).toEqual({})
+    expect(widenJsonSchema({ $ref: '#/a/b', a: 1 })).toEqual({})
+    expect(widenJsonSchema({
+      $defs: { Node: { type: 'object', properties: { child: { $ref: '#/$defs/Node' } }, additionalProperties: false } },
+      $ref: '#/$defs/Node',
+    })).toEqual({ type: 'object', properties: { child: {} }, additionalProperties: false })
+  })
+
+  it('folds the keywords a node writes beside its $ref, and keeps them when the pointer resolves to nothing', () => {
+    expect(widenJsonSchema({
+      $defs: { Base: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      type: 'object',
+      properties: {
+        merged: {
+          $ref: '#/$defs/Base',
+          description: 'd',
+          type: 'object',
+          properties: { extra: { type: 'boolean' } },
+          required: ['extra'],
+        },
+        plain: { $ref: '#/$defs/Base', description: 'd' },
+      },
+    })).toEqual({
+      type: 'object',
+      properties: {
+        merged: {
+          description: 'd',
+          type: 'object',
+          properties: { id: { type: 'string' }, extra: { type: 'boolean' } },
+          required: ['id', 'extra'],
+        },
+        plain: { description: 'd', type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      },
+    })
+    expect(widenJsonSchema({ $ref: '#/$defs/Missing', type: 'string', description: 'd' }))
+      .toEqual({ description: 'd', type: 'string' })
+    expect(widenJsonSchema({ $ref: '#/$defs/Missing', properties: { a: { type: 'integer' } } }))
+      .toEqual({ type: 'object', properties: { a: { type: 'integer' } } })
+    expect(widenJsonSchema({
+      $defs: { Node: { type: 'object', properties: { child: { $ref: '#/$defs/Node', description: 'd' } } } },
+      $ref: '#/$defs/Node',
+    })).toEqual({ type: 'object', properties: { child: { description: 'd' } } })
+  })
+
+  it('reads a tuple prefix as the array element type, collapsing a repeated shape', () => {
+    expect(widenJsonSchema({ type: 'array', prefixItems: [{ type: 'string' }] }))
+      .toEqual({ type: 'array', items: { type: 'string' } })
+    expect(widenJsonSchema({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'string' }] }))
+      .toEqual({ type: 'array', items: { type: 'string' } })
+    expect(widenJsonSchema({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'number' }] }))
+      .toEqual({ type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'number' }] } })
+    // `items` describes every position, so it wins over a prefix that refines only the first few.
+    expect(widenJsonSchema({ type: 'array', items: { type: 'boolean' }, prefixItems: [{ type: 'string' }] }))
+      .toEqual({ type: 'array', items: { type: 'boolean' } })
+    expect(widenJsonSchema({ type: 'array', prefixItems: [] })).toEqual({ type: 'array' })
+    expect(widenJsonSchema({ type: 'array', prefixItems: 'x' })).toEqual({ type: 'array' })
+  })
+
+  it('pools oneOf and anyOf into one union, inlining a single branch', () => {
+    expect(widenJsonSchema({ oneOf: [{ type: 'string' }], description: 'd' })).toEqual({ description: 'd', type: 'string' })
+    expect(widenJsonSchema({ oneOf: [{ type: 'string' }, { type: 'number' }] }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'number' }] })
+    expect(widenJsonSchema({ anyOf: [{ type: 'string' }, { type: 'null' }], description: 'd' }))
+      .toEqual({ description: 'd', oneOf: [{ type: 'string' }, { type: 'null' }] })
+    expect(widenJsonSchema({ oneOf: [{ type: 'string' }], anyOf: [{ type: 'number' }] }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'number' }] })
+    expect(widenJsonSchema({ oneOf: [] })).toEqual({})
+    expect(widenJsonSchema({ oneOf: 7 })).toEqual({})
+  })
+
+  it('folds an allOf composition into one object, and widens one it cannot absorb', () => {
+    expect(widenJsonSchema({
+      allOf: [
+        { type: 'object', properties: { a: { type: 'string' } }, required: ['a'], additionalProperties: false },
+        { type: 'object', properties: { a: { type: 'number' }, b: { type: 'boolean' } }, required: ['a', 'b'] },
+      ],
+    })).toEqual({
+      type: 'object',
+      properties: { a: { type: 'string' }, b: { type: 'boolean' } },
+      required: ['a', 'b'],
+      additionalProperties: false,
+    })
+    expect(widenJsonSchema({ allOf: [{ type: 'object', properties: { a: { type: 'string' } } }] }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } } })
+    expect(widenJsonSchema({ allOf: [{ type: 'object' }, { type: 'object', properties: { a: { type: 'string' } } }] }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } } })
+    // An intersection with something that is not an object, a union, or nothing
+    // typed at all has no single type to name, so the fold widens wholesale.
+    expect(widenJsonSchema({ allOf: [{ type: 'string' }] })).toEqual({})
+    expect(widenJsonSchema({ allOf: [{ oneOf: [{ type: 'string' }, { type: 'null' }] }] })).toEqual({})
+    expect(widenJsonSchema({ allOf: [{}, {}] })).toEqual({})
+    expect(widenJsonSchema({ allOf: [] })).toEqual({})
+    expect(widenJsonSchema({ allOf: [{ type: 'object' }], properties: { a: { type: 'string' } } })).toEqual({})
+  })
+
+  it('reads every type spelling a foreign dialect uses', () => {
+    expect(widenJsonSchema({ type: ['string', 'number'] }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'number' }] })
+    expect(widenJsonSchema({ type: ['string', 'number'], nullable: true }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }] })
+    expect(widenJsonSchema({ type: ['string', 'null', 'number'] }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'null' }, { type: 'number' }] })
+    expect(widenJsonSchema({ type: ['string', 'string'] })).toEqual({ type: 'string' })
+    expect(widenJsonSchema({ type: ['string', 'nope'] })).toEqual({ type: 'string' })
+    expect(widenJsonSchema({ type: 'string', nullable: true }))
+      .toEqual({ oneOf: [{ type: 'string' }, { type: 'null' }] })
+    expect(widenJsonSchema({ type: 'null' })).toEqual({ type: 'null' })
+    expect(widenJsonSchema({ type: ['null'] })).toEqual({ type: 'null' })
+    expect(widenJsonSchema({ type: 'json', description: 'd' })).toEqual({ description: 'd' })
+    expect(widenJsonSchema({ type: 42 })).toEqual({})
+    expect(widenJsonSchema({ nullable: true })).toEqual({})
+  })
+
+  it('keeps a literal constraint only where the declared type admits it', () => {
+    expect(widenJsonSchema({ type: 'string', enum: ['a', 'b'], const: 'a' }))
+      .toEqual({ type: 'string', enum: ['a', 'b'], const: 'a' })
+    expect(widenJsonSchema({ type: 'string', enum: [1, 2] })).toEqual({ type: 'string' })
+    expect(widenJsonSchema({ type: 'string', enum: [] })).toEqual({ type: 'string' })
+    expect(widenJsonSchema({ type: 'string', const: 7 })).toEqual({ type: 'string' })
+    expect(widenJsonSchema({ type: 'integer', enum: [1, 2] })).toEqual({ type: 'integer', enum: [1, 2] })
+    expect(widenJsonSchema({ type: 'integer', enum: [1.5] })).toEqual({ type: 'integer' })
+  })
+
+  it('infers a scalar type from a bare const or enum, and widens a set that mixes types', () => {
+    expect(widenJsonSchema({ const: 'fixed', description: 'd' })).toEqual({ description: 'd', type: 'string', const: 'fixed' })
+    expect(widenJsonSchema({ const: null })).toEqual({ type: 'null', const: null })
+    expect(widenJsonSchema({ const: true })).toEqual({ type: 'boolean', const: true })
+    expect(widenJsonSchema({ const: 2.5 })).toEqual({ type: 'number', const: 2.5 })
+    expect(widenJsonSchema({ const: { a: 1 } })).toEqual({})
+    expect(widenJsonSchema({ enum: ['open', 'closed'] })).toEqual({ type: 'string', enum: ['open', 'closed'] })
+    expect(widenJsonSchema({ enum: ['a', 1] })).toEqual({})
+    expect(widenJsonSchema({ enum: [{ a: 1 }] })).toEqual({})
+    expect(widenJsonSchema({ enum: [] })).toEqual({})
+    expect(widenJsonSchema({ enum: 7 })).toEqual({})
+  })
+
+  it('reads the shape a node declares outside its type keyword', () => {
+    expect(widenJsonSchema({ properties: { a: { type: 'string' } } }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } } })
+    expect(widenJsonSchema({ description: 'd' })).toEqual({ description: 'd' })
+    expect(widenJsonSchema({ type: 'object', properties: 7 })).toEqual({ type: 'object' })
+    expect(widenJsonSchema({ type: 'object', additionalProperties: false }))
+      .toEqual({ type: 'object', additionalProperties: false })
+    expect(widenJsonSchema({ type: 'object', additionalProperties: true })).toEqual({ type: 'object' })
+    // A tuple `items` has no single item schema, so the array keeps its element
+    // count and loses only what it cannot say.
+    expect(widenJsonSchema({ type: 'array', items: [{ type: 'string' }] })).toEqual({ type: 'array' })
+    expect(widenJsonSchema({ type: 'array', items: { type: 'string' } }))
+      .toEqual({ type: 'array', items: { type: 'string' } })
+  })
+
+  it('keeps an annotation on a node whose type schedules children', () => {
+    expect(widenJsonSchema({ type: 'object', description: 'd', properties: { a: { type: 'string' } } }))
+      .toEqual({ description: 'd', type: 'object', properties: { a: { type: 'string' } } })
+    expect(widenJsonSchema({ type: ['array', 'null'], items: { type: 'string' } }))
+      .toEqual({ oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }] })
+  })
+
+  it('keeps only the required names the property map actually declares', () => {
+    expect(widenJsonSchema({ type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'ghost', 7] }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } }, required: ['a'] })
+    expect(widenJsonSchema({ type: 'object', properties: { a: { type: 'string' } }, required: ['a', 'a'] }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } }, required: ['a'] })
+    expect(widenJsonSchema({ type: 'object', properties: { a: { type: 'string' } }, required: 'a' }))
+      .toEqual({ type: 'object', properties: { a: { type: 'string' } } })
   })
 })

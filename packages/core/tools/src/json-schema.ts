@@ -8,6 +8,11 @@
  * Unsupported or misplaced keywords reject rather than being accepted without
  * enforcement. Consumers that require an object root apply
  * {@link assertObjectJsonSchema} before accepting input.
+ *
+ * Enforcement and rendering want opposite things from a schema, so the module
+ * carries both. {@link widenJsonSchema} answers the rendering question — which
+ * type should the model be told to pass — for schemas that arrive from outside
+ * the repository and were never written against this subset.
  * @module dsh-tools/json-schema
  */
 
@@ -666,4 +671,500 @@ function checkValue(schema: JsonSchemaNode, value: unknown, path: string): strin
  */
 export function validateJsonSchemaValue(schema: JsonSchemaNode, value: unknown, path = 'value'): string[] {
   return checkValue(schema, value, path)
+}
+
+/* -------------------------------------------------------------------------
+ * Rendering-side widening
+ *
+ * {@link assertSupportedJsonSchema} is the enforcement boundary, and it rejects
+ * anything it cannot enforce: a schema that reaches a validator must mean what
+ * it says. Rendering asks a different question — which type should the model be
+ * told to pass — and there the cost of rejection is wildly asymmetric. One leaf
+ * keyword the subset does not enforce used to collapse a whole tool's argument
+ * list to one opaque token, and under PTC mode that generated text is the
+ * model's ONLY description of how to call a tool: a third-party MCP server's
+ * `inputSchema` routinely carries `format`, `pattern`, or a `$ref`, so the model
+ * was told which tools exist and nothing about how to call them, and declined.
+ *
+ * {@link widenJsonSchema} answers the rendering question instead. It reads every
+ * construct the subset can express, resolves a local `$ref` against the document
+ * it appears in, folds `anyOf`/`allOf`/type arrays/`nullable` into the shapes the
+ * renderers already know, ignores the keywords that only refine a value the type
+ * already describes, and widens anything left unreadable to the largest type
+ * that still says something. The result is a trusted {@link JsonSchemaNode}, so
+ * the renderers walk it exactly as they walked an asserted schema.
+ * ---------------------------------------------------------------------- */
+
+/** One raw node's rendering plan: a finished node, or the children still to walk. */
+type WidenPlan =
+  | { readonly kind: 'node'; readonly node: JsonSchemaNode }
+  | {
+    readonly kind: 'children'
+    readonly children: readonly unknown[]
+    readonly childChain: readonly string[]
+    readonly assemble: (children: readonly JsonSchemaNode[]) => JsonSchemaNode
+  }
+
+/** One explicit frame of the stack-safe widening walk. */
+interface WidenFrame {
+  readonly raw: unknown
+  /** `$ref` pointers already expanded above this frame; this is what terminates a recursive definition. */
+  readonly chain: readonly string[]
+  phase: 'start' | 'children'
+  children: readonly unknown[]
+  childChain: readonly string[]
+  childIndex: number
+  childResults: JsonSchemaNode[]
+  assemble: ((children: readonly JsonSchemaNode[]) => JsonSchemaNode) | undefined
+}
+
+/** A frame before it is planned; the `start` phase fills the remaining fields. */
+function widenFrame(raw: unknown, chain: readonly string[]): WidenFrame {
+  return {
+    raw,
+    chain,
+    phase: 'start',
+    children: [],
+    childChain: chain,
+    childIndex: 0,
+    childResults: [],
+    assemble: undefined,
+  }
+}
+
+/** A node's own documentation, which survives every widening decision. */
+function annotationNode(record: Record<string, unknown>): JsonSchemaNode {
+  const node: JsonSchemaNode = {}
+  if (typeof record.description === 'string') node.description = record.description
+  if (typeof record.title === 'string') node.title = record.title
+  return node
+}
+
+/** Attach a node's own annotations to whatever its body widened to. */
+function annotated(plan: WidenPlan, annotations: JsonSchemaNode): WidenPlan {
+  if (plan.kind === 'node') return { kind: 'node', node: { ...annotations, ...plan.node } }
+  return {
+    kind: 'children',
+    children: plan.children,
+    childChain: plan.childChain,
+    assemble: children => ({ ...annotations, ...plan.assemble(children) }),
+  }
+}
+
+/** Attach a node's annotations and add the `null` branch a nullable node declares. */
+function nullableShape(plan: WidenPlan, annotations: JsonSchemaNode): WidenPlan {
+  const wrap = (node: JsonSchemaNode): JsonSchemaNode => ({ ...annotations, oneOf: [node, { type: 'null' }] })
+  if (plan.kind === 'node') return { kind: 'node', node: wrap(plan.node) }
+  return {
+    kind: 'children',
+    children: plan.children,
+    childChain: plan.childChain,
+    assemble: children => wrap(plan.assemble(children)),
+  }
+}
+
+/** Assemble a plan that scheduled exactly one child. */
+function firstChild(children: readonly JsonSchemaNode[]): JsonSchemaNode {
+  /* v8 ignore next -- every caller narrows the list to one child first. */
+  return children[0] ?? {}
+}
+
+/**
+ * Resolve a `$ref` against the document root, or `undefined` when it names
+ * nothing reachable. Only a local JSON pointer is followed: the subset fetches
+ * no remote document, so a pointer that leaves the root is exactly as
+ * unresolvable as a missing one.
+ */
+function resolveLocalRef(root: unknown, ref: string): unknown {
+  if (ref === '#') return root
+  if (!ref.startsWith('#/')) return undefined
+  let current: unknown = root
+  for (const rawSegment of ref.slice(2).split('/')) {
+    const segment = rawSegment.replaceAll('~1', '/').replaceAll('~0', '~')
+    if (!isJsonSchemaRecord(current) || !Object.hasOwn(current, segment)) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+/** The union branches a node declares, with `oneOf` and `anyOf` pooled in one list. */
+function unionBranches(record: Record<string, unknown>): readonly unknown[] {
+  const branches: unknown[] = []
+  for (const candidate of [record.oneOf, record.anyOf]) {
+    if (!Array.isArray(candidate)) continue
+    for (const branch of candidate as unknown[]) branches.push(branch)
+  }
+  return branches
+}
+
+/** Whether a node carries the constraints an `allOf` fold — or a `$ref` sibling — would have to absorb. */
+function hasShapeKeywords(record: Record<string, unknown>): boolean {
+  return ['type', 'properties', 'required', 'additionalProperties', 'items', 'prefixItems', 'enum', 'const']
+    .some(key => Object.hasOwn(record, key))
+}
+
+/**
+ * The keywords a node declares beside its `$ref`. A pointer names another
+ * schema; everything written next to it addresses the same value, and a
+ * dialect that honours those siblings would otherwise lose them here.
+ */
+function withoutRef(record: Record<string, unknown>): Record<string, unknown> {
+  const own: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    if (key !== '$ref') own[key] = value
+  }
+  return own
+}
+
+/**
+ * Fold every `allOf` branch into one object shape. A branch that widens to an
+ * unconstrained node contributes nothing, which is the reading that keeps a
+ * `$ref` this subset cannot resolve from erasing the branches beside it. An
+ * intersection with a non-object branch is not expressible as a type, so the
+ * whole fold widens rather than claiming one of its halves.
+ */
+function mergeObjects(children: readonly JsonSchemaNode[]): JsonSchemaNode {
+  const properties: Record<string, JsonSchemaNode> = {}
+  const required: string[] = []
+  let closed = false
+  let typed = false
+  for (const child of children) {
+    if (child.oneOf !== undefined) return {}
+    if (child.type === undefined) continue
+    if (child.type !== 'object') return {}
+    typed = true
+    for (const [key, value] of Object.entries(child.properties ?? {})) {
+      if (!Object.hasOwn(properties, key)) properties[key] = value
+    }
+    for (const key of child.required ?? []) {
+      if (!required.includes(key)) required.push(key)
+    }
+    if (child.additionalProperties === false) closed = true
+  }
+  if (!typed) return {}
+  return {
+    type: 'object',
+    properties,
+    ...(required.length === 0 ? {} : { required }),
+    ...(closed ? { additionalProperties: false } : {}),
+  }
+}
+
+/**
+ * The element type a tuple declaration implies: `prefixItems` names the type of
+ * each position, so an array whose positions share one shape is homogeneous and
+ * one whose positions differ is expressible only as the union of them.
+ * Duplicate shapes collapse, because a union that lists the same type twice is
+ * noise the model has to read for nothing.
+ */
+function elementOf(children: readonly JsonSchemaNode[]): JsonSchemaNode {
+  const distinct: JsonSchemaNode[] = []
+  const seen = new Set<string>()
+  for (const child of children) {
+    const key = JSON.stringify(child)
+    if (seen.has(key)) continue
+    seen.add(key)
+    distinct.push(child)
+  }
+  if (distinct.length > 1) return { oneOf: distinct }
+  return firstChild(distinct)
+}
+
+/** The scalar schema type a JSON value implies, or `undefined` for objects and arrays. */
+function scalarTypeOf(value: unknown): JsonSchemaScalarType | undefined {
+  if (value === null) return 'null'
+  if (typeof value === 'string') return 'string'
+  if (typeof value === 'boolean') return 'boolean'
+  if (isJsonNumber(value)) return 'number'
+  return undefined
+}
+
+/** How a raw node declares its type: one shape, several, or nothing usable. */
+type DeclaredShape =
+  | { readonly kind: 'shape'; readonly type: JsonSchemaType; readonly nullable: boolean }
+  | { readonly kind: 'union'; readonly types: readonly JsonSchemaType[] }
+  | { readonly kind: 'none' }
+
+/**
+ * Read the `type` a raw node declares — one name, an array of them, or the
+ * draft-04-era `nullable` flag — ignoring names outside the subset. Several
+ * shapes widen to a union, but ONE shape plus `null` stays that shape with a
+ * `null` branch: that is what keeps an object's `properties` attached to the
+ * half of the union that owns them, and it is how the widely generated
+ * `{ type: ['object', 'null'], properties: … }` survives.
+ */
+function declaredShape(record: Record<string, unknown>): DeclaredShape {
+  const declared = record.type
+  const names: readonly unknown[] = typeof declared === 'string'
+    ? [declared]
+    : Array.isArray(declared) ? declared as unknown[] : []
+  if (names.length === 0) return { kind: 'none' }
+  const types: JsonSchemaType[] = []
+  for (const name of names) {
+    if (typeof name !== 'string' || !(SCHEMA_TYPES as readonly string[]).includes(name)) continue
+    const type = name as JsonSchemaType
+    if (!types.includes(type)) types.push(type)
+  }
+  if (types.length === 0) return { kind: 'none' }
+  let shape: JsonSchemaType | undefined
+  let shapes = 0
+  for (const type of types) {
+    if (type === 'null') continue
+    shape = type
+    shapes++
+  }
+  if (shapes === 1) {
+    return { kind: 'shape', type: shape as JsonSchemaType, nullable: record.nullable === true || types.includes('null') }
+  }
+  if (shapes === 0) return { kind: 'shape', type: 'null', nullable: true }
+  const nullable = record.nullable === true || types.includes('null')
+  return { kind: 'union', types: nullable && !types.includes('null') ? [...types, 'null'] : types }
+}
+
+/** The `enum`/`const` a scalar node declares, dropping any entry its own type contradicts. */
+function scalarConstraints(record: Record<string, unknown>, type: JsonSchemaScalarType): JsonSchemaNode {
+  const node: JsonSchemaNode = { type }
+  const declared = record.enum
+  if (Array.isArray(declared)) {
+    const allowed = declared as unknown[]
+    if (allowed.length > 0 && allowed.every(entry => scalarMatches(type, entry))) node.enum = allowed as JsonSchemaScalar[]
+  }
+  if (scalarMatches(type, record.const)) node.const = record.const as JsonSchemaScalar
+  return node
+}
+
+/**
+ * The scalar node a `type`-less node's `enum`/`const` implies. A set that mixes
+ * scalar types, or that holds an object or array, names no single scalar type
+ * the subset can express; widening says so rather than picking one member.
+ */
+function inferredScalar(record: Record<string, unknown>): JsonSchemaNode | undefined {
+  if (Object.hasOwn(record, 'const')) {
+    const type = scalarTypeOf(record.const)
+    if (type === undefined) return undefined
+    return { type, const: record.const as JsonSchemaScalar }
+  }
+  const declared = record.enum
+  if (!Array.isArray(declared)) return undefined
+  const allowed = declared as unknown[]
+  const type = scalarTypeOf(allowed[0])
+  if (type === undefined) return undefined
+  for (const entry of allowed) {
+    if (!scalarMatches(type, entry)) return undefined
+  }
+  return { type, enum: allowed as JsonSchemaScalar[] }
+}
+
+/** Read one node whose declared shape is known, scheduling the children it nests. */
+function planForType(record: Record<string, unknown>, type: JsonSchemaType, chain: readonly string[]): WidenPlan {
+  switch (type) {
+    case 'string':
+    case 'number':
+    case 'integer':
+    case 'boolean':
+    case 'null':
+      return { kind: 'node', node: scalarConstraints(record, type) }
+    case 'array': {
+      const items = record.items
+      if (isJsonSchemaRecord(items)) {
+        return {
+          kind: 'children',
+          children: [items],
+          childChain: chain,
+          assemble: children => ({ type: 'array', items: firstChild(children) }),
+        }
+      }
+      const prefix = record.prefixItems
+      if (Array.isArray(prefix) && prefix.length > 0) {
+        const tuple = prefix as unknown[]
+        return {
+          kind: 'children',
+          children: tuple,
+          childChain: chain,
+          assemble: children => ({ type: 'array', items: elementOf(children) }),
+        }
+      }
+      return { kind: 'node', node: { type: 'array' } }
+    }
+    case 'object': {
+      const declared = record.properties
+      const properties = isJsonSchemaRecord(declared) ? declared : {}
+      const entries = Object.entries(properties)
+      if (entries.length === 0) {
+        return { kind: 'node', node: record.additionalProperties === false
+          ? { type: 'object', additionalProperties: false }
+          : { type: 'object' } }
+      }
+      const required: string[] = []
+      if (Array.isArray(record.required)) {
+        for (const key of record.required as unknown[]) {
+          if (typeof key === 'string' && Object.hasOwn(properties, key) && !required.includes(key)) required.push(key)
+        }
+      }
+      return {
+        kind: 'children',
+        children: entries.map(entry => entry[1]),
+        childChain: chain,
+        assemble: children => {
+          const widened: Record<string, JsonSchemaNode> = {}
+          for (let index = 0; index < entries.length; index++) {
+            const entry = entries[index]
+            const child = children[index]
+            /* v8 ignore next -- entries and widened children correspond one-to-one. */
+            if (entry === undefined || child === undefined) throw new Error('missing widened property')
+            widened[entry[0]] = child
+          }
+          return {
+            type: 'object',
+            properties: widened,
+            ...(required.length === 0 ? {} : { required }),
+            ...(record.additionalProperties === false ? { additionalProperties: false } : {}),
+          }
+        },
+      }
+    }
+    /* v8 ignore next -- JsonSchemaType is closed and the cases above cover it. */
+    default: return assertNever(type, 'JsonSchemaType')
+  }
+}
+
+/** Decide how one raw node is read, given the root a `$ref` resolves against. */
+function planWidening(raw: unknown, root: unknown, chain: readonly string[]): WidenPlan {
+  if (!isJsonSchemaRecord(raw)) return { kind: 'node', node: {} }
+  const record = raw
+  const annotations = annotationNode(record)
+
+  const ref = record.$ref
+  if (typeof ref === 'string') {
+    const target = resolveLocalRef(root, ref)
+    if (isJsonSchemaRecord(target) && !chain.includes(ref)) {
+      const own = withoutRef(record)
+      if (!hasShapeKeywords(own)) {
+        return {
+          kind: 'children',
+          children: [target],
+          childChain: [...chain, ref],
+          assemble: children => ({ ...firstChild(children), ...annotations }),
+        }
+      }
+      /* The referencing node constrains the same value its pointer names, so the
+         two halves describe one shape: fold them rather than dropping whichever
+         one the walk happened to reach second. */
+      return {
+        kind: 'children',
+        children: [target, own],
+        childChain: [...chain, ref],
+        assemble: children => ({ ...annotations, ...mergeObjects(children) }),
+      }
+    }
+    /* A pointer that names nothing reachable, or one already being expanded above:
+       it expands to nothing, but this node's own keywords still describe the value
+       it accepts, so read them below instead of erasing the whole node. */
+  }
+
+  const branches = unionBranches(record)
+  if (branches.length === 1) {
+    return {
+      kind: 'children',
+      children: branches,
+      childChain: chain,
+      assemble: children => ({ ...firstChild(children), ...annotations }),
+    }
+  }
+  if (branches.length > 1) {
+    return {
+      kind: 'children',
+      children: branches,
+      childChain: chain,
+      assemble: children => ({ ...annotations, oneOf: [...children] }),
+    }
+  }
+
+  const declared = record.allOf
+  if (Array.isArray(declared)) {
+    const composed = declared as unknown[]
+    if (composed.length > 0 && !hasShapeKeywords(record)) {
+      return {
+        kind: 'children',
+        children: composed,
+        childChain: chain,
+        assemble: children => ({ ...annotations, ...mergeObjects(children) }),
+      }
+    }
+    return { kind: 'node', node: annotations }
+  }
+
+  const shape = declaredShape(record)
+  if (shape.kind === 'shape') {
+    const plan = planForType(record, shape.type, chain)
+    return shape.nullable && shape.type !== 'null' ? nullableShape(plan, annotations) : annotated(plan, annotations)
+  }
+  if (shape.kind === 'union') {
+    return { kind: 'node', node: { ...annotations, oneOf: shape.types.map(type => ({ type })) } }
+  }
+
+  const inferred = inferredScalar(record)
+  if (inferred !== undefined) return { kind: 'node', node: { ...annotations, ...inferred } }
+  if (isJsonSchemaRecord(record.properties)) return annotated(planForType(record, 'object', chain), annotations)
+  return { kind: 'node', node: annotations }
+}
+
+/**
+ * Read an arbitrary raw schema as the enforced subset, for rendering only.
+ *
+ * The walk is stack-safe and answers every construct the renderers know, so a
+ * tool description written against any dialect reaches the model with its
+ * argument names, required fields, and types intact instead of one opaque
+ * token. A `$ref` is expanded where it points and folded with the keywords
+ * written beside it; a tuple's `prefixItems` become the array's element type.
+ * Values that are not a schema at all widen to the annotation-only node — the
+ * subset's "any JSON" form — rather than being rejected.
+ *
+ * Total for every JSON value. A hostile object whose accessors throw is not
+ * JSON, and callers with an untrusted boundary keep their own containment.
+ * @param schema - untrusted raw JSON Schema from any producer.
+ * @returns The same schema read as the enforced subset.
+ */
+export function widenJsonSchema(schema: unknown): JsonSchemaNode {
+  const frames: WidenFrame[] = [widenFrame(schema, [])]
+  let result: JsonSchemaNode | undefined
+  const finish = (node: JsonSchemaNode): void => {
+    frames.pop()
+    const parent = frames.at(-1)
+    if (parent === undefined) result = node
+    else parent.childResults.push(node)
+  }
+
+  while (frames.length > 0) {
+    const frame = frames.at(-1)
+    /* v8 ignore next -- the loop condition guarantees a current frame. */
+    if (frame === undefined) break
+    if (frame.phase === 'children') {
+      if (frame.childIndex < frame.children.length) {
+        const child = frame.children[frame.childIndex]
+        /* v8 ignore next -- childIndex is bounded by children.length. */
+        if (child === undefined) throw new Error('missing widen child')
+        frame.childIndex++
+        frames.push(widenFrame(child, frame.childChain))
+        continue
+      }
+      const assemble = frame.assemble
+      /* v8 ignore next -- every child phase frame was planned at start. */
+      if (assemble === undefined) throw new Error('missing widen assembly')
+      finish(assemble(frame.childResults))
+      continue
+    }
+    const plan = planWidening(frame.raw, schema, frame.chain)
+    if (plan.kind === 'node') {
+      finish(plan.node)
+      continue
+    }
+    frame.phase = 'children'
+    frame.children = plan.children
+    frame.childChain = plan.childChain
+    frame.assemble = plan.assemble
+  }
+
+  /* v8 ignore next -- every root frame finishes. */
+  return result ?? {}
 }

@@ -8,7 +8,7 @@
 
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
-import { assertSupportedJsonSchema } from './json-schema.ts'
+import { widenJsonSchema } from './json-schema.ts'
 import type { JsonSchemaNode, JsonSchemaScalar } from './json-schema.ts'
 /** Internal PTC mode projection: the model-facing schema plus the canonical output schema. */
 export interface ToolSdkSchema extends ToolSchema {
@@ -109,7 +109,7 @@ function schemaRenderFrame(node: JsonSchemaNode, indent: number): SchemaRenderFr
   return { node, indent, phase: 'start', children: [], childIndex: 0, childDocuments: [], entries: [] }
 }
 
-/** Render an already asserted schema to a composable document. */
+/** Render a widened schema (see `widenJsonSchema`) to a composable document. */
 function renderSupportedSchema(schema: JsonSchemaNode, indent: number): TypeDocument {
   const frames: SchemaRenderFrame[] = [schemaRenderFrame(schema, indent)]
   let rootDocument: TypeDocument | undefined
@@ -220,7 +220,7 @@ function renderSupportedSchema(schema: JsonSchemaNode, indent: number): TypeDocu
         }
         break
       }
-      /* v8 ignore next -- assertSupportedJsonSchema narrowed this closed type union. */
+      /* v8 ignore next -- widenJsonSchema narrowed this closed type union. */
       default:
         finish(typeDocument('unknown'))
     }
@@ -231,17 +231,19 @@ function renderSupportedSchema(schema: JsonSchemaNode, indent: number): TypeDocu
 }
 
 /**
- * Map one enforced JSON-Schema node to a TypeScript type literal. Supports
- * every unified schema construct and returns `unknown` for malformed or
- * unsupported inputs without throwing.
- * @param schema - the JSON-Schema node (any shape; hostile inputs degrade).
+ * Map one raw JSON-Schema node to a TypeScript type literal. The node is first
+ * read by {@link widenJsonSchema}, so a schema from outside the repository —
+ * an MCP server's `inputSchema`, with its `format`, `pattern` and `$ref` — is
+ * projected onto whatever the subset can express instead of being rejected
+ * whole. Only a non-JSON value, or a hostile object whose accessors throw,
+ * degrades to `unknown`, and the call never throws.
+ * @param schema - the raw JSON-Schema node (any shape; hostile inputs degrade).
  * @param indent - the indentation level for nested object members.
  * @returns the TS type text (multi-line for objects with properties).
  */
 export function jsonSchemaToTs(schema: unknown, indent = 0): string {
   try {
-    assertSupportedJsonSchema(schema)
-    return flattenTypeDocument(renderSupportedSchema(schema, indent))
+    return flattenTypeDocument(renderSupportedSchema(widenJsonSchema(schema), indent))
   } catch {
     return 'unknown'
   }

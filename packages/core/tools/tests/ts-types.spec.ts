@@ -85,13 +85,142 @@ describe('jsonSchemaToTs', () => {
     ].join('\n'))
   })
 
-  it('is total: unsupported or hostile constructs degrade to unknown, never throw', () => {
+  it('types a real-world MCP argument list, whose refining keywords are inert here', () => {
+    // `$schema` was only the first keyword to cost an entire tool's arguments.
+    // `format`, `pattern`, `minimum` and `uniqueItems` refine a value the
+    // declared type already describes, so a subset that cannot enforce them has
+    // nothing to gain by rejecting the node that carries them — and under PTC
+    // mode it had everything to lose: the whole argument list became `unknown`,
+    // and a model with no parameter contract declines to make the call.
+    const listIssues = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      properties: {
+        owner: { type: 'string', description: 'Repository owner' },
+        repo: { type: 'string', description: 'Repository name' },
+        since: { type: 'string', format: 'date-time', description: 'Only issues updated at or after this time' },
+        page: { type: 'integer', minimum: 1, maximum: 100, default: 1 },
+        labels: { type: 'array', items: { type: 'string' }, minItems: 1, uniqueItems: true },
+        state: { type: 'string', pattern: '^(open|closed)$' },
+      },
+      required: ['owner', 'repo'],
+      additionalProperties: false,
+    }
+    expect(jsonSchemaToTs(listIssues)).toBe([
+      '{',
+      '  /** Repository owner */',
+      '  owner: string;',
+      '  /** Repository name */',
+      '  repo: string;',
+      '  /** Only issues updated at or after this time */',
+      '  since?: string;',
+      '  page?: number;',
+      '  labels?: string[];',
+      '  state?: string;',
+      '}',
+    ].join('\n'))
+  })
+
+  it('resolves a local $ref, and folds the union spellings into one type', () => {
+    expect(jsonSchemaToTs({
+      $defs: { Filter: { type: 'object', properties: { op: { enum: ['eq', 'ne'] } }, required: ['op'], additionalProperties: false } },
+      type: 'object',
+      properties: { filter: { $ref: '#/$defs/Filter' } },
+      additionalProperties: false,
+    })).toBe([
+      '{',
+      '  filter?: {',
+      '    op: "eq" | "ne";',
+      '  };',
+      '}',
+    ].join('\n'))
+
+    expect(jsonSchemaToTs({ anyOf: [{ type: 'string' }, { type: 'null' }] })).toBe('string | null')
+    expect(jsonSchemaToTs({ type: ['string', 'number'] })).toBe('string | number')
+    expect(jsonSchemaToTs({ enum: ['open', 'closed'] })).toBe('"open" | "closed"')
+    // One object shape plus `null` keeps `properties` attached to the half that
+    // owns them; only a genuine multi-shape union drops them.
+    expect(jsonSchemaToTs({ type: ['object', 'null'], properties: { name: { type: 'string' } }, additionalProperties: false }))
+      .toBe('{\n  name?: string;\n} | null')
+  })
+
+  it('keeps the keywords a node writes beside its $ref, reachable pointer or not', () => {
+    // A dialect that honours `$ref` siblings describes the value with both
+    // halves; a pointer that names nothing still leaves the node's own
+    // declaration standing. Either way the model sees the argument it must pass.
+    expect(jsonSchemaToTs({
+      $defs: { Base: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
+      type: 'object',
+      properties: {
+        page: { $ref: '#/$defs/Base', type: 'object', properties: { cursor: { type: 'string' } }, additionalProperties: false },
+        legacy: { $ref: '#/$defs/Missing', type: 'string' },
+      },
+      additionalProperties: false,
+    })).toBe([
+      '{',
+      '  page?: {',
+      '    id: string;',
+      '    cursor?: string;',
+      '  };',
+      '  legacy?: string;',
+      '}',
+    ].join('\n'))
+
+    expect(jsonSchemaToTs({ $ref: '#/$defs/Missing', type: 'string' })).toBe('string')
+  })
+
+  it('reads a tuple prefix as the array element type', () => {
+    expect(jsonSchemaToTs({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'integer' }] }))
+      .toBe('(string | number)[]')
+    expect(jsonSchemaToTs({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'string' }] }))
+      .toBe('string[]')
+    expect(jsonSchemaToTs({ type: 'array', prefixItems: [] })).toBe('JsonValue[]')
+  })
+
+  it('folds an allOf composition into the object it describes', () => {
+    expect(jsonSchemaToTs({
+      $defs: { Base: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false } },
+      allOf: [{ $ref: '#/$defs/Base' }, { type: 'object', properties: { extra: { type: 'boolean' } } }],
+    })).toBe([
+      '{',
+      '  id: string;',
+      '  extra?: boolean;',
+      '}',
+    ].join('\n'))
+  })
+
+  it('terminates on a recursive definition and on a reference it cannot reach', () => {
+    expect(jsonSchemaToTs({
+      $defs: {
+        Node: {
+          type: 'object',
+          properties: { name: { type: 'string' }, child: { $ref: '#/$defs/Node' } },
+          required: ['name'],
+          additionalProperties: false,
+        },
+      },
+      $ref: '#/$defs/Node',
+    })).toBe([
+      '{',
+      '  name: string;',
+      '  child?: JsonValue;',
+      '}',
+    ].join('\n'))
+
+    expect(jsonSchemaToTs({ $ref: '#/$defs/Missing' })).toBe('JsonValue')
+    expect(jsonSchemaToTs({ $ref: 'https://example.com/schema.json' })).toBe('JsonValue')
+  })
+
+  it('is total: a node it cannot read widens instead of throwing', () => {
     const cases: unknown[] = [
       undefined,
       null,
       42,
       'string-schema',
-      { oneOf: [{ type: 'string' }] },
+      [],
+      {},
+      { oneOf: 7 },
+      { oneOf: [] },
       { $ref: '#/defs/x' },
       { type: 'object', properties: 7 },
       { type: 'object', properties: { bad: { $ref: 'x' } } },
@@ -101,13 +230,27 @@ describe('jsonSchemaToTs', () => {
     for (const schema of cases) {
       expect(() => jsonSchemaToTs(schema), JSON.stringify(schema)).not.toThrow()
     }
-    expect(jsonSchemaToTs({ oneOf: [] })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'object', properties: 7 })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'object', properties: { bad: { $ref: 'x' } }, required: ['bad'] })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'string', enum: [1, 2] })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'string', enum: [] })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'object', properties: { a: { type: 'string' } }, required: [7] })).toBe('unknown')
-    expect(jsonSchemaToTs({ type: 'object', properties: { weird: 42 } })).toBe('unknown')
+    // Widening keeps whatever the node did say instead of discarding it: a
+    // declared type survives a constraint its own type contradicts, a required
+    // name survives a property the node never declared, and a property the node
+    // does declare survives a value that is not a schema at all.
+    expect(jsonSchemaToTs({ oneOf: [] })).toBe('JsonValue')
+    expect(jsonSchemaToTs({ type: 'object', properties: 7 })).toBe('Record<string, JsonValue>')
+    expect(jsonSchemaToTs({ type: 'object', properties: { bad: { $ref: 'x' } }, required: ['bad'] }))
+      .toBe('{\n  bad: JsonValue;\n} & Record<string, JsonValue>')
+    expect(jsonSchemaToTs({ type: 'string', enum: [1, 2] })).toBe('string')
+    expect(jsonSchemaToTs({ type: 'string', enum: [] })).toBe('string')
+    expect(jsonSchemaToTs({ type: 'object', properties: { a: { type: 'string' } }, required: [7] }))
+      .toBe('{\n  a?: string;\n} & Record<string, JsonValue>')
+    expect(jsonSchemaToTs({ type: 'object', properties: { weird: 42 } }))
+      .toBe('{\n  weird?: JsonValue;\n} & Record<string, JsonValue>')
+  })
+
+  it('contains a hostile accessor rather than letting it escape', () => {
+    // Not JSON, so the widening boundary makes no promise about it: reading the
+    // node throws, and the renderer's own containment answers `unknown`.
+    const hostile = Object.defineProperty({}, 'type', { enumerable: true, get() { throw new Error('boom') } })
+    expect(jsonSchemaToTs(hostile)).toBe('unknown')
   })
 
   it('escapes a comment-closer inside a description so the generated JSDoc cannot end early', () => {
@@ -192,6 +335,19 @@ describe('renderToolsSdk', () => {
     expect(text).toContain('`run_code({ code: "return await tools.bash({ command: \'pwd\', description: \'Show current directory\' })"')
     expect(text).toContain('Program-only SDK bindings:')
     expect(text).not.toContain('The available tools:')
+  })
+
+  it('localizes the prose but never the declarations it introduces', () => {
+    // Only the prose follows the assembly language: `declare const tools` is a
+    // type projection, and Chinese declaration syntax does not exist. The bash
+    // example is code too, so it stays literal while the sentence around it
+    // follows the locale.
+    const text = renderToolsSdk([bash], 'zh')
+    expect(text).toContain('## 为 run_code 写代码')
+    expect(text).toContain('仅程序内可用的 SDK 绑定：')
+    expect(text).toContain('本次请求没有单独提供 `bash` schema 时，就调用上面声明的 `bash` 绑定：')
+    expect(text).toContain('declare const tools: {')
+    expect(text).not.toContain('## Writing code for run_code')
   })
 
   it('only shows a bash example accepted by the declared binding', () => {

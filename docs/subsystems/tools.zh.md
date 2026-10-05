@@ -420,7 +420,7 @@ type PostToolDecision =
 
 ## 已强制执行的原始 JSON Schema 子集
 
-subagent、工作流、MCP 和动态注册提供的原始 schema 使用作者侧 DSL 在协议层的对应表示。`assertSupportedJsonSchema()` 接受任意 JSON 根，`validateJsonSchemaValue()` 强制执行该 schema，`JsonSchemaError` 则报告每条不受支持或格式错误的 schema 路径。仅含注解的空节点表示不受约束的无损 JSON。`oneOf` 至少要求两个分支，且一个值必须恰好匹配其中一个。仍要求对象根的消费方调用 `assertObjectJsonSchema()` 并携带 `ObjectJsonSchema`；这样，subagent/工作流中由调用方定义的结构化输出可以继续以对象为根，而不会限制共享词汇。
+subagent、工作流、MCP 和动态注册提供的原始 schema 使用作者侧 DSL 在协议层的对应表示。`assertSupportedJsonSchema()` 接受任意 JSON 根，`validateJsonSchemaValue()` 强制执行该 schema，`JsonSchemaError` 则报告每条不受支持或格式错误的 schema 路径。仅含注解的空节点表示不受约束的无损 JSON。`oneOf` 至少要求两个分支，且一个值必须恰好匹配其中一个。仍要求对象根的消费方调用 `assertObjectJsonSchema()` 并携带 `ObjectJsonSchema`；这样，subagent/工作流中由调用方定义的结构化输出可以继续以对象为根，而不会限制共享词汇。渲染要问的恰好是反过来的问题，所以 `widenJsonSchema()` 把外来 schema——比如 MCP 服务的 `inputSchema`，带着它的 `format`、`pattern`、`$ref`——读进这套词汇以生成 PTC 模式的 SDK，而不是整份拒绝：一个无法强制的关键字曾经会让一个工具丢掉整张参数表，而在 PTC 模式下那段生成文本是模型了解"怎么调它"的唯一来源。
 
 ```ts type-equiv
 /** Scalar JSON values supported by `enum` and `const`. */

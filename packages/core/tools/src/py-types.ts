@@ -15,7 +15,7 @@
  */
 
 import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
-import { assertSupportedJsonSchema } from './json-schema.ts'
+import { widenJsonSchema } from './json-schema.ts'
 import type { JsonSchemaNode, JsonSchemaScalar } from './json-schema.ts'
 import type { ToolSdkSchema } from './ts-types.ts'
 
@@ -473,17 +473,18 @@ function renderConstrainedScalar(node: JsonSchemaNode, broad: string, state: Ren
  * needs. `className` is the name to give an object node with properties (and
  * the prefix for its nested objects). Handles every unified schema construct —
  * `oneOf` (→ `X | Y`), `const`/`enum` (→ `Literal[...]`), `integer` (→ `int`),
- * `null` (→ `None`) — and degrades an unsupported or malformed schema to `Any`
- * without throwing, the same trusted-after-validation stance as the sibling
+ * `null` (→ `None`) — and widens a schema written against another dialect
+ * before walking it, so only a non-JSON value degrades to `Any`. The call never
+ * throws, the same trusted-after-widening stance as the sibling
  * {@link ./ts-types.ts | ts-types} renderer. {@link jsonSchemaToPy} is the
  * context-free entry point; this is the collecting core.
  */
 function renderType(schema: unknown, className: string, state: RenderState): string {
   interface Frame {
-    // A validated JSON-schema node past the root `assertSupportedJsonSchema`
-    // (the root frame's schema is asserted before any frame is built), so the
-    // walk reads its fields without casts — the same typed-frame shape as the
-    // sibling ts-types renderer.
+    // A widened JSON-schema node past the root `widenJsonSchema` (the root
+    // frame's schema is read before any frame is built), so the walk reads its
+    // fields without casts — the same typed-frame shape as the sibling
+    // ts-types renderer.
     schema: JsonSchemaNode
     className: string
     phase: 'start' | 'children'
@@ -500,14 +501,16 @@ function renderType(schema: unknown, className: string, state: RenderState): str
   const newFrame = (schema: JsonSchemaNode, className: string, listDepth: number): Frame =>
     ({ schema, className, phase: 'start', listDepth, children: [], childIndex: 0, childTypes: [], entries: [] })
   try {
-    // Validate the WHOLE tree once, then trust it — the same contract the
-    // sibling ts-types renderer follows at a typed same-process boundary. Every
-    // node past this point is a validated JSON-schema node, so the walk reads
-    // its fields without re-checking. An unsupported or malformed schema throws
-    // here (before anything is emitted) and degrades to `Any`, the Python
-    // counterpart of the TS flavor's `unknown`.
-    assertSupportedJsonSchema(schema)
-    const frames: Frame[] = [newFrame(schema, className, 0)]
+    // Read the WHOLE tree once, then trust it — the same contract the sibling
+    // ts-types renderer follows at a typed same-process boundary. Every node
+    // past this point is a widened JSON-schema node, so the walk reads its
+    // fields without re-checking. Widening answers the rendering question for
+    // schemas written against another dialect (an MCP server's `format`,
+    // `pattern`, `$ref`); only a non-JSON value or a hostile object whose
+    // accessors throw reaches the `Any` fallback below, the Python counterpart
+    // of the TS flavor's `unknown`.
+    const widened = widenJsonSchema(schema)
+    const frames: Frame[] = [newFrame(widened, className, 0)]
     let result: string | undefined
     /* jscpd:ignore-start -- the explicit-stack walk skeleton deliberately parallels
        ts-types.ts's renderSupportedSchema; the two sibling renderers keep symmetric shapes. */
@@ -568,8 +571,8 @@ function renderType(schema: unknown, className: string, state: RenderState): str
           /* v8 ignore next -- entries and childTypes correspond one-to-one. */
           if (entry === undefined || fieldType === undefined) throw new Error('missing typeddict field type')
           const [field, fieldSchema] = entry
-          // The parent node passed assertSupportedJsonSchema, so every property
-          // value is a validated schema node.
+          // The parent node passed widenJsonSchema, so every property value is
+          // a widened schema node.
           const description = describe(fieldSchema)
           if (description !== undefined) lines.push(`${pad(1)}# ${description}`)
           if (required.has(field)) {
@@ -693,7 +696,7 @@ function renderType(schema: unknown, className: string, state: RenderState): str
           frame.children = entries.map(([field, child]) => ({ schema: child, className: childClassName(frame.allocated ?? '', camelCase(field)), listDepth: 1 }))
           break
         }
-        /* v8 ignore next 4 -- assertSupportedJsonSchema narrowed this closed type union. */
+        /* v8 ignore next 4 -- widenJsonSchema narrowed this closed type union. */
         default: {
           state.typing.add('Any')
           finish('Any')
@@ -718,8 +721,8 @@ function renderType(schema: unknown, className: string, state: RenderState): str
  * to `dict[str, Any]`: naming a `TypedDict` requires the render context that
  * {@link renderToolsSdkPy} supplies), `const`/`enum` (→ `Literal[...]`),
  * `oneOf` (→ union), `string`/`number`/`integer`/`boolean`/`null`, `array`
- * (`items` → `list[T]`) — and returns `Any` for an unsupported or malformed
- * schema, matching the TS flavor's `unknown` fallback. Type annotations in the
+ * (`items` → `list[T]`) — and returns `Any` only for a non-JSON value,
+ * matching the TS flavor's `unknown` fallback. Type annotations in the
  * emitted SDK are advisory: Python does not enforce them at runtime.
  * @param schema - the JSON-Schema node.
  * @returns the Python type text.

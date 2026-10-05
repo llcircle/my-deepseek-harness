@@ -45,10 +45,33 @@ describe('jsonSchemaToPy', () => {
     expect(jsonSchemaToPy({ type: 'boolean', enum: [false] })).toBe('Literal[False]')
     expect(jsonSchemaToPy({ type: 'null' })).toBe('None')
     expect(jsonSchemaToPy({ oneOf: [{ type: 'string' }, { type: 'null' }] })).toBe('str | None')
+    // A node the subset cannot enforce widens instead of being discarded: the
+    // declared type survives a constraint that contradicts it, and only a node
+    // with nothing left to say reaches `Any`.
     expect(jsonSchemaToPy({ oneOf: [] })).toBe('Any')
-    expect(jsonSchemaToPy({ type: 'object', properties: 7 })).toBe('Any')
-    expect(jsonSchemaToPy({ type: 'string', enum: [1, 2] })).toBe('Any')
-    expect(jsonSchemaToPy({ type: 'string', enum: [] })).toBe('Any')
+    expect(jsonSchemaToPy({ type: 'object', properties: 7 })).toBe('dict[str, Any]')
+    expect(jsonSchemaToPy({ type: 'string', enum: [1, 2] })).toBe('str')
+    expect(jsonSchemaToPy({ type: 'string', enum: [] })).toBe('str')
+    // A hostile accessor is not JSON; the renderer's containment answers `Any`.
+    const hostile = Object.defineProperty({}, 'type', { enumerable: true, get() { throw new Error('boom') } })
+    expect(jsonSchemaToPy(hostile)).toBe('Any')
+  })
+
+  it('reads a $ref beside its siblings and a tuple prefix, the way the TypeScript flavor does', () => {
+    expect(jsonSchemaToPy({
+      $defs: { Base: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      type: 'object',
+      properties: {
+        page: { $ref: '#/$defs/Base', type: 'object', properties: { cursor: { type: 'string' } } },
+        legacy: { $ref: '#/$defs/Missing', type: 'string' },
+      },
+    })).toBe('dict[str, Any]') // a field name is a legal attribute only for the named-class path
+    expect(jsonSchemaToPy({ $ref: '#/$defs/Missing', type: 'string' })).toBe('str')
+    expect(jsonSchemaToPy({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'integer' }] }))
+      .toBe('list[str | int]')
+    expect(jsonSchemaToPy({ type: 'array', prefixItems: [{ type: 'string' }, { type: 'string' }] }))
+      .toBe('list[str]')
+    expect(jsonSchemaToPy({ type: 'array', prefixItems: [] })).toBe('list[Any]')
   })
 
   it('leans on JSON.stringify to keep a Literal parseable', () => {
@@ -197,18 +220,20 @@ describe('renderToolsSdkPy', () => {
     expect(text).toContain('from typing import NotRequired, Protocol, TypedDict')
   })
 
-  it('prefixes Tool when a name CamelCases to a non-letter head, and degrades a malformed schema to Any', () => {
+  it('prefixes Tool when a name CamelCases to a non-letter head, and widens a malformed schema', () => {
     const tool: ToolSdkSchema = {
       name: '1st-tool', // subscript path; CamelCases to "1stTool" → prefixed "Tool1stTool"
-      description: 'Hostile-shape probe.',
-      // Malformed node: the unified schema validator rejects it whole, so the
-      // args position degrades to Any (registration would refuse this schema;
-      // the renderer just must not throw on it).
+      description: 'Foreign-shape probe.',
+      // `description: 42` is not a string, so the unified validator rejects this
+      // node whole. The renderer must not throw on it, and must not lose the
+      // field either: the annotation is dropped, the declared type survives.
       parameters: { type: 'object', properties: { field: { type: 'string', description: 42 } } },
       output: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' } }, required: ['ok'] },
     }
     const text = renderToolsSdkPy([tool])
-    expect(text).toContain('# tools["1st-tool"](args: Any) -> Tool1stToolOutput')
+    expect(text).toContain('# tools["1st-tool"](args: Tool1stToolArgs) -> Tool1stToolOutput')
+    expect(text).toContain('class Tool1stToolArgs(TypedDict):')
+    expect(text).toContain('    field: NotRequired[str]')
     expect(text).toContain('class Tool1stToolOutput(TypedDict):')
     expect(text).toContain('    ok: bool')
   })
