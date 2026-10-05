@@ -196,7 +196,7 @@ describe('SubagentRuntime', () => {
     ['toolFilter', { toolFilter: { deny: ['bash'] } }],
     ['allowTools', { allowTools: ['read'] }],
     ['persona', { persona: 'reviewer' }],
-    ['omitSections', { omitSections: ['skills:catalog'] }],
+    ['omitSections', { omitSections: ['deployment:error-lessons'] }],
   ] as const)('rejects unsupported %s before provider startup', async (_capability, override) => {
     const { subagents } = await service()
     const provider = new StubProvider('weak', NO_CAPS)

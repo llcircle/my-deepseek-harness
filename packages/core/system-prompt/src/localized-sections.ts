@@ -52,9 +52,8 @@ export type LocalizedSections = Readonly<
  *
  * 收录标准：第一方、内容静态、且不属于用户可编辑的部署配置。`deployment:persona-prefix`
  * 与 `deployment:persona-suffix` 中只有 standard preset 写下的第一方模板在此列，
- * 部署自己写的人格不在此列——翻译它等于替部署改主意。`skills:catalog` 与
- * `deployment:error-lessons` 也不在此列——它们的文本是运行期现算的，由各自的
- * 提供者按装配语言自行选文案。
+ * 部署自己写的人格不在此列——翻译它等于替部署改主意。`deployment:error-lessons`
+ * 也不在此列——它的文本是运行期现算的，由它的提供者按装配语言自行选文案。
  *
  * 还要满足一条：**文案不随呈现形态变**。`computer:policy` 曾在此列，搬走的原因就是
  * 它违反了这一条（详见模块头）。按段名替换的表无法表达"同一段落两种形态各一份"，

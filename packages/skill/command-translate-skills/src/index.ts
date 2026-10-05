@@ -149,7 +149,7 @@ export function buildTranslationPrompt(
     'You are translating skill catalog summaries.',
     `Translate the \`description\` and \`whenToUse\` values below into locale \`${targetLocale}\` — natural, concise, technical terms kept recognizable.`,
     'Do NOT translate skill names; do NOT translate anything else; there are no skill bodies in this task.',
-    'For every skill also record `promptLine`: the translated catalog line as the system prompt renders it - `- \`name\`: <translated description>` with the UNTRANSLATED name in backticks. Together with the original line, this archives the skill-catalog part of the system prompt in both languages.',
+    'For every skill also record `promptLine`: the translated one-line catalog form the harness renders for a retrieved skill - `- \`name\`: <translated description>` with the UNTRANSLATED name in backticks. Together with the original line, this archives each skill summary in both languages.',
     `Then WRITE the translations as ONE JSON object to ${archivePath}.`,
     ...sharedArchivePath === undefined ? [] : [
       `ALSO write the byte-for-byte same JSON object to ${sharedArchivePath}. Skills live in a user-level registry, so this shared archive is what makes one translation pass cover every workspace — an archive written only into the workspace leaves every other project rendering English. Both files must be identical.`,

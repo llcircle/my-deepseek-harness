@@ -26,15 +26,18 @@ describe('dsh badge assembled snapshot', () => {
       tsconfigPath,
     })
     const disabledSnapshot = JSON.parse(disabled.stdout) as unknown
+    // The fixture writes JSON, so on Windows the assets path arrives with its
+    // separators escaped. Escape the needle the same way, or the substitution
+    // silently misses and the snapshot pins a machine-specific absolute path.
+    const badgeAssetsLiteral = JSON.stringify(badgeAssetsPath).slice(1, -1)
     const enabledSnapshot = JSON.parse(
-      enabled.stdout.replaceAll(badgeAssetsPath, '{{badgeAssetsPath}}'),
+      enabled.stdout.replaceAll(badgeAssetsLiteral, '{{badgeAssetsPath}}'),
     ) as unknown
 
     expect(disabled.stderr).toBe('')
     expect(enabled.stderr).toBe('')
     expect(disabledSnapshot).toMatchInlineSnapshot(`
       {
-        "catalog": null,
         "result": {
           "content": [
             {
@@ -47,26 +50,12 @@ describe('dsh badge assembled snapshot', () => {
           },
           "isError": true,
         },
+        "retrieval": null,
         "summary": null,
       }
     `)
     expect(enabledSnapshot).toMatchInlineSnapshot(`
       {
-        "catalog": [
-          {
-            "text": "<system-reminder>
-      A skill is a reusable set of task-specific instructions. The following skills are available in this session:
-
-      <available_skills>
-      - \`dsh-badge\`: Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with DeepSeek Harness. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.
-      </available_skills>
-
-      If the user names a skill, or the task clearly matches a skill's description, call the \`skill\` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
-      A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the \`skill\` tool again for that skill.
-      </system-reminder>",
-            "type": "text",
-          },
-        ],
         "result": {
           "content": [
             {
@@ -156,6 +145,21 @@ describe('dsh badge assembled snapshot', () => {
             },
           },
         },
+        "retrieval": [
+          {
+            "text": "<system-reminder>
+      A skill is a reusable set of task-specific instructions. These are the skills most relevant to the current request (this session holds 1 in total; 1 listed here). This list supersedes any earlier skill list:
+
+      <available_skills>
+      - \`dsh-badge\`: Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with DeepSeek Harness. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.
+      </available_skills>
+
+      If the user names a skill, or the task clearly matches a skill's description, call the \`skill\` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This list contains summaries only; do not infer or follow a skill's instructions until it has been loaded. The list is a selection, not the whole catalog — a skill it does not mention can still be loaded by name.
+      A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the \`skill\` tool again for that skill.
+      </system-reminder>",
+            "type": "text",
+          },
+        ],
         "summary": {
           "description": "Add the official “powered by dsh” badge to documents, pull requests, merge requests, and other content produced with DeepSeek Harness. Use whenever creating a pull request or merge request. Also use when the user asks for a dsh badge, powered-by-dsh attribution, or a reusable dsh badge asset or snippet.",
           "invocation": {

@@ -68,6 +68,24 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
+  /**
+   * Whether the shared `<tool>/agents` roots are scanned as well: the
+   * workspace's `<project>/.agents/skills` and the machine-wide
+   * `<agentsHome>/skills` (default `false`).
+   *
+   * Off by default because skill discovery now feeds a model that may REWRITE
+   * what it finds: a skill is a set of standing instructions, and the only
+   * directories whose contents this deployment can attribute to itself — and
+   * therefore vouch for and maintain — are the `.dsh` ones. A machine-wide
+   * `~/.agents/skills` is shared with every other tool that follows the same
+   * convention, so scanning it would silently import instructions this
+   * deployment neither writes nor owns, and reflection would then edit files
+   * belonging to another program.
+   *
+   * Turning it on restores the previous behaviour for a deployment that
+   * deliberately curates a shared corpus.
+   */
+  includeAgentsRoots?: boolean
   /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
@@ -106,6 +124,7 @@ export interface Config {
 export const Config: Schema<Config> = z.object({
   providerName: z.string().min(1).default('filesystem'),
   includeDefaultRoots: z.boolean().default(true),
+  includeAgentsRoots: z.boolean().default(false),
   dshHome: z.string(),
   agentsHome: z.string(),
   customSkillDirs: z.array(z.string()).default([]),
@@ -243,6 +262,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 export class FileSystemSkillProvider implements SkillProvider {
   readonly name: string
   private readonly includeDefaultRoots: boolean
+  private readonly includeAgentsRoots: boolean
   private readonly dshHome: string
   private readonly agentsHome: string
   private readonly customSkillDirs: string[]
@@ -263,6 +283,7 @@ export class FileSystemSkillProvider implements SkillProvider {
   ) {
     this.name = config.providerName ?? 'filesystem'
     this.includeDefaultRoots = config.includeDefaultRoots ?? true
+    this.includeAgentsRoots = config.includeAgentsRoots ?? false
     this.dshHome = resolveDshHome(config.dshHome)
     this.agentsHome = resolve(config.agentsHome ?? process.env.DSH_AGENTS_HOME ?? join(homedir(), '.agents'))
     this.customSkillDirs = (config.customSkillDirs ?? []).map(resolveCustomRoot)
@@ -373,15 +394,20 @@ export class FileSystemSkillProvider implements SkillProvider {
       const projectRoot = await findProjectRoot(resolve(cwd), optionalFileSystem(this.ctx))
       roots.push(
         { path: join(projectRoot, '.dsh/skills'), source: 'project-dsh', rank: PROJECT_DSH_RANK, projectRoot },
-        { path: join(projectRoot, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK, projectRoot },
       )
+      // 共享根默认不扫：技能正文会被模型改写（见 `Config.includeAgentsRoots`），
+      // 而 `<project>/.agents/skills` 与机器级的 `<agentsHome>/skills` 是别的工具
+      // 也在用的通用约定，改了就等于替别人的程序动文件。
+      if (this.includeAgentsRoots) {
+        roots.push({ path: join(projectRoot, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK, projectRoot })
+      }
     }
     roots.push(...this.customSkillDirs.map(path => ({ path, source: 'custom' as const, rank: CUSTOM_RANK })))
     if (this.includeDefaultRoots) {
-      roots.push(
-        { path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true },
-        { path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK },
-      )
+      roots.push({ path: join(this.dshHome, 'skills'), source: 'user-dsh', rank: USER_DSH_RANK, skipSystem: true })
+      if (this.includeAgentsRoots) {
+        roots.push({ path: join(this.agentsHome, 'skills'), source: 'user-agents', rank: USER_AGENTS_RANK })
+      }
     }
     if (this.bundledSkillDir !== undefined) {
       roots.push({ path: this.bundledSkillDir, source: 'bundled', rank: BUNDLED_SKILL_RANK, trustedHost: true })

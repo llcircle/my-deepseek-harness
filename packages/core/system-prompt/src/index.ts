@@ -246,8 +246,10 @@ const SECTION_ORDERS = {
   HARNESS_SOURCE: 10000,
   WEB_SURFACE: 10100,
   DEPLOYMENT_PERSONA_SUFFIX: 10200,
-  // 技能目录排在最后：它是"有哪些技能可用"的清单，与任何一节的用法说明都无耦合，
-  // 放在尾部既不打散工具用法，也方便整体替换成译文。
+  // 技能目录曾经占据收尾槽位。fork 已经把技能目录从系统提示词里挪走：它改成每轮
+  // 按当前请求做 BM25 检索、命中的几条追加在消息尾部（见 `@deepseek-ai/dsh-tool-skill`），
+  // 不再是一段"有哪些技能可用"的常驻清单。于是这个槽位**目前没有使用者**。
+  // 保留键名只是不动已发布的 `PromptSectionOrderName`（同 `TOOL_REPORT`、`MCP_SERVERS` 的空置槽）。
   SKILL_CATALOG: 10300,
 } as const
 
@@ -400,7 +402,6 @@ const DEFAULT_SECTION_CATALOG = [
   'tool:subagent_fork',
   'tool:jobs:merged',
   'ui:deliverable-file-references',
-  'skills:catalog',
 ]
 
 /**
@@ -414,7 +415,6 @@ const DEFAULT_SECTION_CATALOG = [
  */
 const NON_EDITABLE_SECTION_NAMES = new Set([
   'deployment:error-lessons',
-  'skills:catalog',
   'computer:policy',
 ])
 
@@ -519,7 +519,7 @@ export type PromptOverridesSettingsInstaller = {
 }
 
 /** Section names whose provider output stays live instead of using the translated archive. */
-const DYNAMIC_SECTION_NAMES = new Set(['skills:catalog', 'deployment:error-lessons'])
+const DYNAMIC_SECTION_NAMES = new Set(['deployment:error-lessons'])
 
 /**
  * Validate duplicate names and the required {@link TOOL_ORDER_REST} marker.
@@ -624,7 +624,7 @@ function mapTranslatedSections(
  * 按语言替换一个分段的文案。
  *
  * 三处刻意保守的决定：
- * 1. `complete` 分段与动态分段（`skills:catalog`、`deployment:error-lessons`）不碰——
+ * 1. `complete` 分段与动态分段（`deployment:error-lessons`）不碰——
  *    前者整段就是提示词本身，后者的文本是运行期现算的，替换会盖掉最新内容。
  * 2. 当前为空的分段保持为空。空是"这一节现在没有话要说"，不是"该说默认文案了"，
  *    把空段填上会让"未启用"的能力看起来像是启用了。

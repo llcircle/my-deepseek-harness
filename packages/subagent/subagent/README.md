@@ -52,7 +52,7 @@ A functional helper — a child whose whole job is to rewrite one document or tr
 
 `allowTools` is a keep-list: the child sees ONLY the named inherited tools, and an entry this deployment never registered is skipped rather than fatal. That last part is what separates it from `toolFilter: { allow: … }`, which demands that every listed name exist. Reach for `allowTools` when the caller knows what it needs but not what the deployment mounts, and for `toolFilter` when it needs exact control.
 
-`omitSections` names prompt sections the child does not get. Suppression is scoped to the child alone — the parent and its siblings keep rendering the section unchanged. Trimming tools already removes the `tool:<name>` guidance that belonged to them, and removing the `skill` tool empties `skills:catalog` on its own; `omitSections` is for the parts with no tool behind them, such as the deployment identity, the persona, and the error-lessons section.
+`omitSections` names prompt sections the child does not get. Suppression is scoped to the child alone — the parent and its siblings keep rendering the section unchanged. Trimming tools already removes the `tool:<name>` guidance that belonged to them; `omitSections` is for the parts with no tool behind them, such as the deployment identity, the persona, and the error-lessons section.
 
 Neither option can empty a child's catalog outright: the child's own registrations sit outside any restriction, and reserved presentation transports are never removable.
 

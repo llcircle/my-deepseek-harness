@@ -5,9 +5,7 @@ import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope } from '@deepseek-ai/dsh-scope'
-import {
-  SESSION_FORMAT_VERSION, Session, SessionId, type SessionEvent, type UserMessage,
-} from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { agentEvents, type Agent, type PreStepDecision } from '@deepseek-ai/dsh-agent'
@@ -52,10 +50,15 @@ async function setup(
   return ctx
 }
 
-function agentForCwd(cwd: string): Agent {
-  const id = SessionId(`tool-skill-${cwd}`)
+/** A session agent bound to `cwd`, or to no workspace at all. */
+function agentForCwd(cwd?: string): Agent {
+  const id = SessionId(`tool-skill-${cwd ?? 'no-cwd'}`)
   const session = Session.create(id, [], {
-    version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd, isSeeded: false,
+    version: SESSION_FORMAT_VERSION,
+    id,
+    createdAt: 0,
+    isSeeded: false,
+    ...cwd === undefined ? {} : { cwd },
   })
   return {
     ctx: new Context(),
@@ -67,56 +70,76 @@ function agentForCwd(cwd: string): Agent {
     send: () => {},
     followup: () => {},
     steer: () => {},
-    inject: () => { throw new Error('step-boundary catalog must not use agent.inject()') },
+    // 清单走 pre-step 的批消息，不是 agent.inject()：注入发生在 step 边界之前，
+    // 那条路径绕开批消息就会造出一个模型没被调用过的 step。
+    inject: () => { throw new Error('the step-boundary skill list must not use agent.inject()') },
     cancel() {},
     runMaintenance: task => task(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   }
 }
 
+/** A direct-user message, the only source the retrieval query is read from. */
+function userText(text: string): UserMessage {
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+}
+
 /**
- * 触发一次压缩边界。目录的换新只在那一刻放行——目录落在请求头部，会话中途换新
- * 会把此前整段缓存前缀作废。闸门按会话隔离，所以要给真实的会话对象。
- * @param ctx - 被测插件所在的上下文。
- * @param session - 收到这次压缩边界的会话。
+ * Whether a message is the injected retrieval list.
+ *
+ * The list is a generic plugin contribution carrying the `catalog` form rather
+ * than the retired `skill-catalog` kind: the durable `skill-catalog` source is
+ * what the client treats as a pre-migration catalog and hides, and this one is
+ * live per-turn context a reader must keep showing.
+ * @param message - one message of a decided batch.
+ * @returns True when the plugin injected this message.
  */
-function compact(ctx: Context, session: Session): void {
-  ctx.emit('session/event', session, {
-    type: 'compaction/end',
-    data: { compactionId: 'test', turn: null },
-  } as unknown as SessionEvent)
+function isRetrieval(message: UserMessage): boolean {
+  const source = message.source as { kind?: string; plugin?: string }
+  return source.kind === 'plugin' && source.plugin === 'dsh-tool-skill'
 }
 
 async function proposeStep(
   ctx: Context,
   agent: Agent,
   messages: UserMessage[],
+  step = 1,
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<PreStepDecision> {
-  const signal = new AbortController().signal
   return await agentEvents(ctx, agent).waterfall(
     'agent/pre-step',
-    { messages, turn: 1, step: 1, signal },
+    { messages, turn: 1, step, signal },
     () => Promise.resolve({ kind: 'enter' as const, messages }),
   )
 }
 
 /**
- * The catalog text the calling agent's own assembly carries.
+ * The retrieval list the plugin injects into a step, or `''` when it injects
+ * none. This is exactly "what the model is told about available skills" — the
+ * text rides the step's own batch, not the assembled system prompt.
  *
- * The plugin contributes the catalog as the ordered `skills:catalog`
- * system-prompt section and fills it from the `system-prompt/assemble`
- * listener, so "what the model is told about available skills" is one assembly
- * away — keyed by the calling agent, resolved fresh on every assembly, and
- * never a durable message the session has to carry, deduplicate, or replace.
+ * The default query deliberately shares no token with a skill description, so
+ * every score ties at zero and the winner list falls back to name order: an
+ * assertion on the rendered lines then reads as a set, not as a ranking.
+ * @param ctx - the context the plugin is registered on.
+ * @param agent - the calling agent whose scope and workspace answer the lookup.
+ * @param messages - the claimed batch; defaults to one neutral request.
+ * @param step - the step number the waterfall is told.
+ * @returns the injected list text, empty when nothing was injected.
  */
-async function catalogFor(ctx: Context, agent: Agent, signal?: AbortSignal): Promise<string> {
-  const assembly = await ctx.systemPrompt.assemble(signal === undefined ? { agent } : { agent, signal })
-  return assembly.sections.find(section => section.name === 'skills:catalog')?.text ?? ''
-}
-
-/** The same lookup for the agent a bare cwd identifies. */
-async function catalogForCwd(ctx: Context, cwd: string, signal?: AbortSignal): Promise<string> {
-  return await catalogFor(ctx, agentForCwd(cwd), signal)
+async function retrievalFor(
+  ctx: Context,
+  agent: Agent,
+  messages: UserMessage[] = [userText('please continue')],
+  step = 1,
+): Promise<string> {
+  const decision = await proposeStep(ctx, agent, messages, step)
+  if (decision.kind !== 'enter') throw new Error('expected enter')
+  const message = decision.messages.find(entry => isRetrieval(entry))
+  if (message === undefined) return ''
+  const block = message.content[0]
+  if (block?.type !== 'text') throw new Error('expected text retrieval list')
+  return block.text
 }
 
 async function mintAgentScope(ctx: Context, subject: string | Agent): Promise<{ agent: Agent; scope: Scope }> {
@@ -141,7 +164,7 @@ describe('dsh-tool-skill', () => {
 
     const fiber = await ctx.plugin(toolSkill)
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
-    expect(await catalogForCwd(ctx, '/workspace')).toContain('lifecycle-skill')
+    expect(await retrievalFor(ctx, agentForCwd('/workspace'))).toContain('lifecycle-skill')
     expect(ctx.tools.get('skill')?.presentCall?.({ name: 'project-skill' })).toEqual({
       card: 'generic',
       title: 'Load skill project-skill',
@@ -150,14 +173,15 @@ describe('dsh-tool-skill', () => {
     })
     await fiber.dispose()
     expect(ctx.tools.schemas()).toEqual([])
-    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
+    // 清单与工具同生共死：工具不在，清单就不再指向任何东西。
+    expect(await retrievalFor(ctx, agentForCwd('/workspace'))).toBe('')
 
     toolSkill.apply(ctx)
     expect(ctx.tools.schemas().map(tool => tool.name)).toEqual(['skill'])
   })
 
-  it('forwards the assembly signal to skill discovery', async () => {
-    const home = await tempDir('tool-prefix-signal')
+  it('forwards the step signal to skill discovery', async () => {
+    const home = await tempDir('tool-signal')
     const ctx = await setup(home)
     let seenSignal: AbortSignal | undefined
     ctx.skills.registerProvider(() => ({
@@ -172,14 +196,14 @@ describe('dsh-tool-skill', () => {
     }))
     const controller = new AbortController()
 
-    await catalogForCwd(ctx, '/workspace', controller.signal)
+    await proposeStep(ctx, agentForCwd('/workspace'), [userText('please continue')], 1, controller.signal)
 
     expect(seenSignal).toBe(controller.signal)
   })
 
-  it('renders a stable name-and-description catalog from the live snapshot', async () => {
+  it('renders a ranked name-and-description list, appended after every other injection', async () => {
     const home = await tempDir('tool-catalog')
-    const ctx = await setup(home, { catalogDescriptionMaxLength: 50 })
+    const ctx = await setup(home, { catalogDescriptionMaxLength: 50, retrievalMaxResults: 10 })
     ctx.skills.register({
       name: 'z-skill',
       description: 'Long   description '.repeat(5),
@@ -210,6 +234,7 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'User-only body.',
     })
+    // 注册在插件之后的监听器只影响它上游的 next()：它加的消息排在清单之前。
     ctx.on('agent/pre-step', async (_payload, next) => {
       const decision = await next()
       if (decision.kind === 'reject') return decision
@@ -225,13 +250,20 @@ describe('dsh-tool-skill', () => {
       }
     })
 
-    const catalog = await catalogForCwd(ctx, '/workspace')
+    const decision = await proposeStep(ctx, agentForCwd('/workspace'), [userText('please continue')])
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    // claimed 消息 → 别的插件的注入 → 清单。清单是追加，所以它落在批的最后：
+    // 模型最后读到的是这份挑选过的目录，而不是被别的注入隔开。
+    expect(decision.messages.map(message => (message.source as { kind: string }).kind))
+      .toEqual(['user', 'plugin', 'plugin'])
+    const last = decision.messages.at(-1)!
+    expect(isRetrieval(last)).toBe(true)
+    const block = last.content[0]
+    if (block?.type !== 'text') throw new Error('expected text retrieval list')
 
-    // 目录是系统提示词里的一段文本，不是会话消息：其它插件往 pre-step 里加多少
-    // 条注入都不影响它，反之亦然。
-    expect(catalog).toContain([
+    expect(block.text).toBe([
       '<system-reminder>',
-      'A skill is a reusable set of task-specific instructions. The following skills are available in this session:',
+      'A skill is a reusable set of task-specific instructions. These are the skills most relevant to the current request (this session holds 3 in total; 3 listed here). This list supersedes any earlier skill list:',
       '',
       '<available_skills>',
       '- `a-skill`: Use {{placeholder}} &lt;safely&gt; &amp; carefully.',
@@ -239,20 +271,38 @@ describe('dsh-tool-skill', () => {
       '- `z-skill`: Long description Long description Long descript...',
       '</available_skills>',
       '',
-      "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+      "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This list contains summaries only; do not infer or follow a skill's instructions until it has been loaded. The list is a selection, not the whole catalog — a skill it does not mention can still be loaded by name.",
       'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
       '</system-reminder>',
     ].join('\n'))
-    expect(catalog).not.toContain('whenToUse')
-    expect(catalog).not.toContain('secret-source')
-    expect(catalog).not.toContain('/secret/path')
-    expect(catalog).not.toContain('Secret body')
-    expect(catalog).not.toContain('user-only-skill')
+    expect(block.text).not.toContain('Never render this routing hint.')
+    expect(block.text).not.toContain('secret-source')
+    expect(block.text).not.toContain('/secret/path')
+    expect(block.text).not.toContain('Secret body')
+    expect(block.text).not.toContain('user-only-skill')
+    // 清单不再是提示词分段：装配出来的系统提示词里没有它。
     expect(renderPrompt(await ctx.systemPrompt.assemble({ agent: agentForCwd('/workspace') })))
-      .toContain('<available_skills>')
+      .not.toContain('<available_skills>')
   })
 
-  it('renders no catalog when no model-invocable skills are available', async () => {
+  it('names only the skills relevant to the request instead of the whole catalog', async () => {
+    const home = await tempDir('tool-ranked')
+    const ctx = await setup(home, { retrievalMaxResults: 2 })
+    ctx.skills.register({ name: 'pdf-report', description: 'Render a PDF report.', source: 'runtime', content: 'a' })
+    ctx.skills.register({ name: 'pdf-merge', description: 'Merge two PDF files.', source: 'runtime', content: 'b' })
+    ctx.skills.register({ name: 'image-crop', description: 'Crop an image.', source: 'runtime', content: 'c' })
+    ctx.skills.register({ name: 'spreadsheet-helper', description: 'Build a spreadsheet.', source: 'runtime', content: 'd' })
+
+    const list = await retrievalFor(ctx, agentForCwd('/workspace'), [userText('please render the pdf report')])
+
+    expect(list).toContain('These are the skills most relevant to the current request (this session holds 4 in total; 2 listed here)')
+    expect(list).toContain('- `pdf-report`: Render a PDF report.')
+    expect(list).toContain('- `pdf-merge`: Merge two PDF files.')
+    expect(list).not.toContain('image-crop')
+    expect(list).not.toContain('spreadsheet-helper')
+  })
+
+  it('renders no list when no model-invocable skills are available', async () => {
     const home = await tempDir('tool-empty-catalog')
     const ctx = await setup(home)
     ctx.skills.register({
@@ -263,23 +313,51 @@ describe('dsh-tool-skill', () => {
       content: 'User-only body.',
     })
 
-    // 段仍然注册着（它总是存在），但文本为空，所以渲染里连 system-reminder 都没有。
-    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
-    expect(await catalogForCwd(ctx, '/workspace')).toBe('')
+    // 没有可加载的技能就没有清单：注入一条空目录只会让模型去调一个必然失败的
+    // 工具，而"技能就这些"的暗示也与事实不符。
+    expect(await retrievalFor(ctx, agentForCwd('/workspace'))).toBe('')
   })
 
-  it('leaves the catalog empty for an assembly that carries no calling agent', async () => {
-    const home = await tempDir('tool-no-agent')
+  it('injects nothing for a step whose batch carries no direct user text', async () => {
+    const home = await tempDir('tool-no-query')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
+    const toolResult = createUserMessage({
+      content: [{ type: 'text', text: 'the pdf report was written' }],
+      source: { kind: 'tool', callId: ToolCallId('t1') },
+    })
+
+    // 只有人写的话参与检索：工具结果与别的插件注入的正文会把清单拉向没人问过
+    // 的方向（运行期快照尤其引长段策略文字），所以它们一律不参与。
+    expect(await retrievalFor(ctx, agentForCwd('/workspace'), [toolResult])).toBe('')
+  })
+
+  it('injects the list once per turn, on its first step', async () => {
+    const home = await tempDir('tool-once-per-turn')
+    const ctx = await setup(home)
+    ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
+    const agent = agentForCwd('/workspace')
+    const batch = [userText('please continue')]
+
+    expect(await retrievalFor(ctx, agent, batch, 1)).toContain('listed-skill')
+    // 一轮里每多走一步就再插一份，二十次工具调用会带二十份同样的清单；
+    // 第一份本来就会留在上下文里。
+    expect(await retrievalFor(ctx, agent, batch, 2)).toBe('')
+  })
+
+  it('leaves an empty batch alone', async () => {
+    const home = await tempDir('tool-empty-batch')
     const ctx = await setup(home)
     ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
 
-    // 没有调用方的装配解析不了作用域——不知道"这一批技能对谁可见"，就什么都不说。
-    // 段本身照旧存在，只是停在注册时的空文本。
-    const assembly = await ctx.systemPrompt.assemble()
-    expect(assembly.sections.find(section => section.name === 'skills:catalog')?.text).toBe('')
+    // 空批意味着这一步不会发生模型调用；往里注入等于凭空造出一个没人要求的轮次。
+    const decision = await proposeStep(ctx, agentForCwd('/workspace'), [])
+    expect(decision.kind).toBe('enter')
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages).toEqual([])
   })
 
-  it('renders the whole catalog in Chinese when the assembly language is Chinese', async () => {
+  it('renders the list in Chinese when the prompt language is Chinese', async () => {
     const home = await tempDir('tool-zh-catalog')
     const ctx = await setup(home, {}, 'zh')
     ctx.skills.register({
@@ -303,18 +381,35 @@ describe('dsh-tool-skill', () => {
       JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
     )
 
-    const agent = agentForCwd(cwd)
-    const catalog = await catalogFor(ctx, agent)
+    const list = await retrievalFor(ctx, agentForCwd(cwd))
 
-    expect(catalog).toContain('技能是一组可复用的任务专用指令。')
-    expect(catalog).toContain('中文描述。')
-    // 档案没覆盖的技能保留英文描述：目录宁可半译，也不编造。
-    expect(catalog).toContain('Untranslated description.')
-    expect(catalog).not.toContain('English description.')
-    expect(catalog).not.toContain('A skill is a reusable set')
+    expect(list).toContain('技能是一组可复用的任务专用指令。')
+    expect(list).toContain('中文描述。')
+    // 档案没覆盖的技能保留英文描述：清单宁可半译，也不编造。
+    expect(list).toContain('Untranslated description.')
+    expect(list).not.toContain('English description.')
+    expect(list).not.toContain('A skill is a reusable set')
   })
 
-  it('lets an explicit catalogLocale of en outrank a Chinese assembly language', async () => {
+  it('injects the Chinese list for a session with no workspace, without an archive to read', async () => {
+    const home = await tempDir('tool-no-cwd')
+    const ctx = await setup(home, {}, 'zh')
+    ctx.skills.register({
+      name: 'listed-skill',
+      description: 'English description.',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'runtime',
+      content: 'Body.',
+    })
+
+    // 没有工作区就解析不了相对档案路径：框架照旧渲染，简介照原样带出。
+    const list = await retrievalFor(ctx, agentForCwd())
+
+    expect(list).toContain('技能是一组可复用的任务专用指令。')
+    expect(list).toContain('English description.')
+  })
+
+  it('lets an explicit catalogLocale of en outrank a Chinese prompt language', async () => {
     const home = await tempDir('tool-en-catalog')
     const ctx = await setup(home, { catalogLocale: 'en' }, 'zh')
     ctx.skills.register({
@@ -331,48 +426,13 @@ describe('dsh-tool-skill', () => {
       JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
     )
 
-    const catalog = await catalogFor(ctx, agentForCwd(cwd))
+    const list = await retrievalFor(ctx, agentForCwd(cwd))
 
-    expect(catalog).toContain('A skill is a reusable set')
-    expect(catalog).not.toContain('中文描述。')
+    expect(list).toContain('A skill is a reusable set')
+    expect(list).not.toContain('中文描述。')
   })
 
-  it('holds a changed archive until a compaction boundary admits it', async () => {
-    // 目录落在请求头部：译文档案出现后不能立刻换新（那会把该会话此前的整段缓存
-    // 前缀作废），要等压缩——前缀本来就要重建的那一刻。
-    const home = await tempDir('tool-zh-replace')
-    const ctx = await setup(home, {}, 'zh')
-    ctx.skills.register({
-      name: 'a-skill',
-      description: 'English description.',
-      invocation: { modelInvocable: true, userInvocable: true },
-      source: 'runtime',
-      content: 'Body.',
-    })
-    const cwd = await tempDir('tool-zh-replace-cwd')
-    const agent = agentForCwd(cwd)
-    expect(await catalogFor(ctx, agent)).toContain('English description.')
-
-    await mkdir(join(cwd, '.dsh'), { recursive: true })
-    await writeFile(
-      join(cwd, '.dsh', 'skill-translations.zh.json'),
-      JSON.stringify({ 'a-skill': { description: '中文描述。' } }),
-    )
-
-    // 归档已经落盘，但压缩边界之前这一节照旧——两次装配都给同一份旧目录。
-    expect(await catalogFor(ctx, agent)).toContain('English description.')
-    expect(await catalogFor(ctx, agent)).not.toContain('中文描述。')
-
-    compact(ctx, agent.session)
-
-    const switched = await catalogFor(ctx, agent)
-    expect(switched).toContain('技能是一组可复用的任务专用指令。以下技能在当前会话中可用：')
-    expect(switched).toContain('中文描述。')
-    expect(switched).not.toContain('English description.')
-    expect(switched).not.toContain('A skill is a reusable set')
-  })
-
-  it('omits the catalog while any provider discovery is incomplete', async () => {
+  it('omits the list while any provider discovery is incomplete', async () => {
     const home = await tempDir('tool-incomplete-prefix')
     const ctx = await setup(home)
     ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
@@ -395,27 +455,27 @@ describe('dsh-tool-skill', () => {
     const agent = agentForCwd('/workspace')
 
     // 一次不完整的发现不能把「可能还有别的技能」安静地说成「技能就这些」：
-    // 宁可这一节空着，也不要给模型一份它无法信任的清单。
-    expect(await catalogFor(ctx, agent)).toBe('')
+    // 宁可这次什么都不说，也不要给模型一份它无法信任的清单。
+    expect(await retrievalFor(ctx, agent)).toBe('')
 
     failing = false
     invalidate()
 
-    expect(await catalogFor(ctx, agent)).toContain('listed-skill')
+    expect(await retrievalFor(ctx, agent)).toContain('listed-skill')
   })
 
-  it('holds registry changes until a compaction boundary admits them', async () => {
-    const home = await tempDir('tool-dynamic-catalog')
+  it('recomputes the list from the live registry on every turn', async () => {
+    const home = await tempDir('tool-live-list')
     const ctx = await setup(home)
+    const agent = agentForCwd('/workspace')
     const disposeFirst = ctx.skills.register({
       name: 'first-skill',
       description: 'First skill',
       source: 'runtime',
       content: 'First body.',
     })
-    const agent = agentForCwd('/workspace')
 
-    const initial = await catalogFor(ctx, agent)
+    const initial = await retrievalFor(ctx, agent)
     expect(initial).toContain('first-skill')
     expect(initial).not.toContain('second-skill')
 
@@ -425,63 +485,35 @@ describe('dsh-tool-skill', () => {
       source: 'runtime',
       content: 'Second body.',
     })
-    // 新技能要等一次压缩边界才进目录——目录是请求头部，中途换新会作废缓存前缀。
-    const held = await catalogFor(ctx, agent)
-    expect(held).toContain('first-skill')
-    expect(held).not.toContain('second-skill')
-
-    compact(ctx, agent.session)
-
-    const widened = await catalogFor(ctx, agent)
+    // 清单落在消息尾部，不是请求头部：新注册的技能下一轮就可见，不需要等任何
+    // 边界。旧实现的压缩闸门随锚点一起删除——尾部追加本来就不作废前缀。
+    const widened = await retrievalFor(ctx, agent)
     expect(widened).toContain('first-skill')
     expect(widened).toContain('second-skill')
 
     disposeSecond()
     disposeFirst()
 
-    // 全部注销后这一节不再有内容——空目录不是"一份目录"，没有可沿用的旧清单，
-    // 也不需要墓碑消息去撤销它：下一次装配就是事实。
-    expect(await catalogFor(ctx, agent)).toBe('')
+    // 全部注销后不再有清单——空目录不是"一份目录"，也没有墓碑要撤销它：
+    // 下一次检索就是事实。
+    expect(await retrievalFor(ctx, agent)).toBe('')
   })
 
-  it('withholds the catalog refresh when the compaction boundary itself failed', async () => {
-    const home = await tempDir('tool-failed-compaction')
-    const ctx = await setup(home)
-    const agent = agentForCwd('/workspace')
-    ctx.skills.register({ name: 'first-skill', description: 'First skill', source: 'runtime', content: 'First body.' })
-    expect(await catalogFor(ctx, agent)).toContain('first-skill')
-
-    ctx.skills.register({ name: 'second-skill', description: 'Second skill', source: 'runtime', content: 'Second body.' })
-    ctx.emit('session/event', agent.session, {
-      type: 'compaction/end',
-      data: { compactionId: 'failed', turn: null, error: new Error('summarizer unavailable') },
-    } as unknown as SessionEvent)
-
-    // 压缩失败意味着没有发生"前缀本来就要重建"的那一刻：放行只会白白作废缓存，
-    // 所以这一次边界不换新，目录照旧。
-    const held = await catalogFor(ctx, agent)
-    expect(held).toContain('first-skill')
-    expect(held).not.toContain('second-skill')
-
-    compact(ctx, agent.session)
-    expect(await catalogFor(ctx, agent)).toContain('second-skill')
-  })
-
-  it('keeps body-only edits out of the catalog and loads the latest body on demand', async () => {
+  it('keeps body-only edits out of the list and loads the latest body on demand', async () => {
     const home = await tempDir('tool-body-refresh')
     const root = join(home, '.dsh/skills')
     await writeSkill(root, 'body-skill', 'Stable description', 'First body.')
     const ctx = await setup(home)
     const agent = agentForCwd('/workspace')
 
-    const before = await catalogFor(ctx, agent)
+    const before = await retrievalFor(ctx, agent)
     expect(before).toContain('Stable description')
 
     await writeSkill(root, 'body-skill', 'Stable description', 'Second body.')
 
-    // 正文改动不该让目录变化：目录每次都重新装配，一旦它带上正文，
-    // 每次编辑技能都会把整段系统提示词的缓存打掉。
-    expect(await catalogFor(ctx, agent)).toBe(before)
+    // 正文改动不该让清单变化：清单每一轮都重算，一旦它带上正文，每次编辑技能
+    // 都会在历史里留下一条没有信息量的注入。
+    expect(await retrievalFor(ctx, agent)).toBe(before)
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -508,9 +540,9 @@ describe('dsh-tool-skill', () => {
       content: 'Preset-only body.',
     })
 
-    // 目录按调用方作用域解析：同一个 ctx，两个 agent 看到两份不同的清单。
-    expect(await catalogFor(ctx, agent)).toContain('preset-only-skill')
-    expect(await catalogForCwd(ctx, '/workspace/other')).not.toContain('preset-only-skill')
+    // 清单按调用方作用域解析：同一个 ctx，两个 agent 看到两份不同的选择。
+    expect(await retrievalFor(ctx, agent)).toContain('preset-only-skill')
+    expect(await retrievalFor(ctx, agentForCwd('/workspace/other'))).toBe('')
 
     const scoped = await ctx.tools.execute({
       signal: testToolSignal,
@@ -533,7 +565,7 @@ describe('dsh-tool-skill', () => {
     await scope.dispose()
   })
 
-  it('keeps the catalog empty rather than stale when a provider disappears mid-flight', async () => {
+  it('injects nothing rather than a stale list when a provider disappears mid-flight', async () => {
     const home = await tempDir('tool-incomplete-catalog')
     const ctx = await setup(home)
     const disposeStable = ctx.skills.register({
@@ -543,7 +575,7 @@ describe('dsh-tool-skill', () => {
       content: 'Stable body.',
     })
     const agent = agentForCwd('/workspace')
-    expect(await catalogFor(ctx, agent)).toContain('stable-skill')
+    expect(await retrievalFor(ctx, agent)).toContain('stable-skill')
 
     ctx.skills.registerProvider(() => ({
       name: 'failing',
@@ -556,12 +588,12 @@ describe('dsh-tool-skill', () => {
     }))
     disposeStable()
 
-    // 目录没有「上一版」可言：它每次装配都从当前快照重建，所以发现不完整时
-    // 只会空着，不会端出一份已经过期的清单。
-    expect(await catalogFor(ctx, agent)).toBe('')
+    // 清单没有「上一版」可言：它每一轮都从当前快照重建，所以发现不完整时
+    // 只会什么都不说，不会端出一份已经过期的选择。
+    expect(await retrievalFor(ctx, agent)).toBe('')
   })
 
-  it('omits catalog guidance when the calling agent restricts away the shipped skill tool', async () => {
+  it('omits the list when the calling agent restricts away the shipped skill tool', async () => {
     const home = await tempDir('tool-restricted-catalog')
     const ctx = await setup(home)
     ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
@@ -573,13 +605,13 @@ describe('dsh-tool-skill', () => {
 
     // 看不到 `skill` 工具的会话不该被告诉「这些技能可用」：它没有任何办法
     // 加载其中任何一个。
-    expect(await catalogFor(ctx, agent)).toBe('')
+    expect(await retrievalFor(ctx, agent)).toBe('')
     await scope.dispose()
 
-    expect(await catalogForCwd(ctx, '/workspace')).toContain('listed-skill')
+    expect(await retrievalFor(ctx, agentForCwd('/workspace'))).toContain('listed-skill')
   })
 
-  it('does not attach shipped catalog guidance to a scoped same-name tool shadow', async () => {
+  it('does not attach the list to a scoped same-name tool shadow', async () => {
     const home = await tempDir('tool-shadowed-catalog')
     const ctx = await setup(home)
     ctx.skills.register({ name: 'listed-skill', description: 'Listed', source: 'runtime', content: 'body' })
@@ -595,16 +627,16 @@ describe('dsh-tool-skill', () => {
 
     expect(ctx.tools.get('skill', agent)).not.toBe(ctx.tools.get('skill'))
 
-    // 同名工具被替换成语义无关的东西时，目录指引必须跟着消失：它描述的
-    // 是「用那份工具去加载」，而那份工具已经不在了。
-    expect(await catalogFor(ctx, agent)).toBe('')
+    // 同名工具被替换成语义无关的东西时，清单必须跟着消失：它指引的是「用那份
+    // 工具去加载」，而那份工具已经不在了。
+    expect(await retrievalFor(ctx, agent)).toBe('')
     await scope.dispose()
 
-    expect(await catalogFor(ctx, agent)).toContain('listed-skill')
+    expect(await retrievalFor(ctx, agent)).toContain('listed-skill')
   })
 
-  it('validates the catalog description cap', async () => {
-    const home = await tempDir('tool-invalid-catalog-cap')
+  it('validates the description cap and the retrieval cap', async () => {
+    const home = await tempDir('tool-invalid-caps')
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -613,6 +645,7 @@ describe('dsh-tool-skill', () => {
     await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
 
     await expect(ctx.plugin(toolSkill, { catalogDescriptionMaxLength: 2 })).rejects.toThrow('greater than or equal to 3')
+    await expect(ctx.plugin(toolSkill, { retrievalMaxResults: 0 })).rejects.toThrow('greater than or equal to 1')
   })
 
   it('loads a skill for the calling agent cwd', async () => {
@@ -825,7 +858,8 @@ describe('user-explicit invocation injection', () => {
 
   async function invokeHarness(): Promise<{ ctx: Context; agent: Agent }> {
     const home = await tempDir('invoke')
-    const skillsRoot = join(home, '.agents', 'skills')
+    // 只写 dsh 自己的根：技能的来源已经收窄到本部署拥有的目录。
+    const skillsRoot = join(home, '.dsh', 'skills')
     await writePolicySkill(skillsRoot, 'hidden-demo', 'User-only demo', 'disable-model-invocation: true', 'Say the magic word: PINEAPPLE.')
     await writePolicySkill(skillsRoot, 'shared-skill', 'Ordinary skill', '', 'Shared instructions.')
     await writePolicySkill(skillsRoot, 'model-only-skill', 'Model only', 'user-invocable: false', 'Model-only instructions.')
@@ -840,11 +874,12 @@ describe('user-explicit invocation injection', () => {
     const decision = await proposeStep(ctx, agent, [first, second])
     if (decision.kind !== 'enter') throw new Error('expected enter')
     const kinds = decision.messages.map(message => (message.source as { kind: string }).kind)
-    // Background injections (the catalog here) sit between the claimed batch
-    // and the invoked body: the material the model must act on comes last.
+    // 背景注入（这里是检索清单）落在 claimed 批与技能正文之间：模型必须照做的
+    // 材料排在最后，离它的回答最近。
     expect(kinds.slice(0, 2)).toEqual(['user', 'user'])
     expect(kinds.at(-1)).toBe('skill-invocation')
-    expect(kinds.indexOf('skill-catalog')).toBeLessThan(kinds.indexOf('skill-invocation'))
+    expect(decision.messages.findIndex(entry => isRetrieval(entry)))
+      .toBeLessThan(kinds.indexOf('skill-invocation'))
     const injection = decision.messages.at(-1)!
     expect(injection.source).toMatchObject({ kind: 'skill-invocation', name: 'hidden-demo', form: 'instructions' })
     const block = injection.content[0]
@@ -890,8 +925,8 @@ describe('user-explicit invocation injection', () => {
       gesture('/model-only-skill run'),
     ])
     if (decision.kind !== 'enter') throw new Error('expected enter')
-    // No injection joins the step (the catalog listener may still add its
-    // own skill-catalog message; only skill-invocation sources matter here).
+    // 没有正文注入（检索监听器仍可能加上它自己那份清单；这里只关心
+    // skill-invocation 源）。
     expect(decision.messages.some(message =>
       (message.source as { kind?: string }).kind === 'skill-invocation')).toBe(false)
   })
@@ -943,12 +978,12 @@ describe('user-explicit invocation injection', () => {
 })
 
 describe('catalogUsesChinese', () => {
-  it('follows the assembly language when the locale is auto', () => {
+  it('follows the prompt language when the locale is auto', () => {
     expect(catalogUsesChinese('auto', 'zh', false)).toBe(true)
     expect(catalogUsesChinese('auto', 'en', true)).toBe(false)
   })
 
-  it('lets an explicit catalogLocale outrank the assembly language', () => {
+  it('lets an explicit catalogLocale outrank the prompt language', () => {
     expect(catalogUsesChinese('zh', 'en', false)).toBe(true)
     expect(catalogUsesChinese('en', 'zh', true)).toBe(false)
   })
@@ -1032,7 +1067,7 @@ describe('loadCatalogTranslations', () => {
 
     const translations = await loadCatalogTranslations(workspace, '.dsh/skill-translations.zh.json', home)
 
-    // 目录只发布简介：只译了路由提示的条目对目录没有任何可用的译文，不能拿空串顶替。
+    // 清单只发布简介：只译了路由提示的条目对清单没有任何可用的译文，不能拿空串顶替。
     expect(translations.has('routing-only')).toBe(false)
     expect(translations.get('tdd')).toBe('测试驱动开发')
   })

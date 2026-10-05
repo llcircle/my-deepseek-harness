@@ -37425,7 +37425,7 @@
         "packages/skill/skill/src/index.ts#SkillInvocationSource"
       ],
       "sources": [
-        "packages/skill/skill/src/index.ts:168"
+        "packages/skill/skill/src/index.ts:346"
       ]
     },
     {
@@ -41294,7 +41294,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:55"
+        "packages/skill/tool-skill/src/index.ts:97"
       ]
     },
     {
@@ -60989,7 +60989,7 @@
         "packages/skill/tool-skill/src/index.ts#SkillCatalogSource"
       ],
       "sources": [
-        "packages/skill/tool-skill/src/index.ts:49"
+        "packages/skill/tool-skill/src/index.ts:91"
       ]
     },
     {

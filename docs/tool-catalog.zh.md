@@ -1735,7 +1735,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `skill`
 
-加载可用 skill（技能）的完整说明。在执行点名某项 skill 或与其明确匹配的任务前，请使用会话 skill 目录中的确切名称调用此工具。
+加载某个 skill（技能）的完整说明。Harness 会把与当前请求相关的 skill 清单注入进来；在执行点名某项 skill 或与其明确匹配的任务前，请使用该清单中的确切名称调用此工具。注册表中持有的任何 skill 名称在此都可用，包括清单没有提到的那一个。
 
 ```json
 {
@@ -1743,7 +1743,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
   "properties": {
     "name": {
       "type": "string",
-      "description": "The exact skill name from the available skills list."
+      "description": "The exact skill name, as written in the injected skill list."
     }
   },
   "required": [

@@ -177,6 +177,7 @@ describe('skill-filesystem watcher failures', () => {
     const fiber = await ctx.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       watch: true,
       watchPollIntervalMs: 10,
     })

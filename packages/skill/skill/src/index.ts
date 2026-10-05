@@ -158,6 +158,184 @@ export function isUserInvocable(skill: Pick<SkillSummary, 'invocation'>): boolea
   return skill.invocation.userInvocable
 }
 
+/** One skill offered to {@link rankSkills}: a name plus every word a query may match it by. */
+export interface SkillRankDocument {
+  /** Skill name. */
+  readonly name: string
+  /** Searchable text — normally {@link skillRankText} of the skill's summary. */
+  readonly text: string
+}
+
+/**
+ * BM25 term-frequency saturation. 1.2 is the value the original paper's
+ * experiments settled on and every widely used implementation ships; the exact
+ * number only matters relative to `B`, so changing one without the other is
+ * not a tuning knob.
+ */
+const BM25_K1 = 1.2
+
+/**
+ * BM25 length-normalization weight: 0 means "ignore document length", 1 means
+ * "normalize fully by it". 0.75 is the conventional default.
+ */
+const BM25_B = 0.75
+
+/**
+ * Runs of Latin letters and digits. An underscore or dash is deliberately a
+ * separator, so `web_fetch` and `easyeda-api` are reachable from `web fetch`
+ * and `easyeda api` — the spellings a model actually types.
+ */
+const WORD_RUN = /[a-z0-9]+/g
+
+/**
+ * Runs of CJK ideographs and kana, which are written without spaces.
+ *
+ * Listed by block rather than as `\p{Script=Han}` so the set is readable and
+ * does not silently gain scripts when the Unicode tables move under us.
+ */
+const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/g
+
+/**
+ * Split text into the terms skill ranking scores over.
+ *
+ * Two tokenizers share the job because the two writing systems need opposite
+ * treatment. A space-separated language yields whole words, which is what BM25
+ * assumes. A Chinese description has no spaces at all, so whole-run tokens
+ * would never match a query that does not happen to repeat the entire phrase —
+ * overlapping character bigrams are the standard fix and make a query term
+ * match wherever it occurs in the text.
+ *
+ * @param text - the query or the document text to tokenize.
+ * @returns the lowercased terms — every space-separated word first, then the
+ * CJK runs cut into overlapping bigrams (a one-character run stays a single
+ * term). Only the term multiset matters, so the two passes need no common order.
+ */
+export function tokenizeForRanking(text: string): string[] {
+  const lower = text.toLowerCase()
+  const tokens: string[] = []
+  for (const match of lower.matchAll(WORD_RUN)) tokens.push(match[0])
+  for (const match of lower.matchAll(CJK_RUN)) {
+    const run = match[0]
+    if (run.length === 1) {
+      tokens.push(run)
+      continue
+    }
+    for (let start = 0; start + 2 <= run.length; start += 1) tokens.push(run.slice(start, start + 2))
+  }
+  return tokens
+}
+
+/**
+ * The searchable text one skill contributes to ranking: its name in both
+ * spellings, its description, and its routing hint.
+ *
+ * The name is repeated with its dashes spaced because a model describes what it
+ * wants in words — `easyeda api` — while the skill is named `easyeda-api`, and
+ * a document that cannot be reached by a query written that way would only ever
+ * be found by exact recall.
+ *
+ * @param skill - the routing fields of a skill summary.
+ * @returns the text to hand {@link rankSkills} as that skill's document.
+ */
+export function skillRankText(skill: Pick<SkillSummary, 'name' | 'description' | 'whenToUse'>): string {
+  return [
+    skill.name,
+    skill.name.split('-').join(' '),
+    skill.description,
+    skill.whenToUse ?? '',
+  ].filter(part => part.length > 0).join(' ')
+}
+
+/**
+ * Rank documents against a query with BM25, best first.
+ *
+ * The whole point of this function is that it is *total*: it always returns an
+ * order. Score-zero documents are ranked too, because "no term matched" is not
+ * the same as "no document may be shown" — a caller that wants a cut-off can
+ * apply one itself, and a caller that always shows a short list gets a stable
+ * one instead of an empty answer.
+ *
+ * Ties break by name so the same query against the same catalog ranks the same
+ * way on every machine: an unstable ranking would make the model-visible list,
+ * and every test asserting on it, depend on iteration order.
+ *
+ * @param documents - the candidates, untouched; duplicates are the caller's problem.
+ * @param query - the raw query text; an empty or term-less query scores every
+ *   document zero, which leaves the name order.
+ * @param limit - maximum hits to return; `0` and negatives return none.
+ * @returns up to `limit` documents, highest score first.
+ */
+export function rankSkills<D extends SkillRankDocument>(
+  documents: readonly D[],
+  query: string,
+  limit: number,
+): D[] {
+  if (documents.length === 0 || limit <= 0) return []
+  const terms = [...new Set(tokenizeForRanking(query))]
+  const corpus = documents.map(document => ({
+    document,
+    tokens: tokenizeForRanking(document.text),
+  }))
+  let totalLength = 0
+  for (const entry of corpus) totalLength += entry.tokens.length
+  const averageLength = totalLength / corpus.length
+  const documentFrequency = new Map<string, number>()
+  for (const entry of corpus) {
+    for (const term of new Set(entry.tokens)) {
+      documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1)
+    }
+  }
+  return corpus
+    .map((entry) => {
+      const frequencies = new Map<string, number>()
+      for (const token of entry.tokens) frequencies.set(token, (frequencies.get(token) ?? 0) + 1)
+      let score = 0
+      for (const term of terms) {
+        // The term loop reaches the arithmetic only for a term this document
+        // holds, so a document of length zero never divides by the average.
+        const frequency = frequencies.get(term) ?? 0
+        if (frequency === 0) continue
+        /* v8 ignore next -- the seeding loop above inserted every term of every document */
+        const occurring = documentFrequency.get(term) ?? 0
+        const idf = Math.log(1 + (corpus.length - occurring + 0.5) / (occurring + 0.5))
+        const saturation = BM25_K1 * (1 - BM25_B + BM25_B * (entry.tokens.length / averageLength))
+        score += idf * (frequency * (BM25_K1 + 1)) / (frequency + saturation)
+      }
+      return { document: entry.document, score }
+    })
+    .sort((left, right) => right.score - left.score
+      || compareCodePoints(left.document.name, right.document.name))
+    .slice(0, limit)
+    .map(entry => entry.document)
+}
+
+/**
+ * Rank skill summaries against a query and return the summaries themselves.
+ *
+ * The convenience the two model-facing callers share: both start from
+ * `ctx.skills.snapshot()` and both need the winning summaries, not the scores.
+ * Ranking through {@link skillRankText} inside means a catalog cannot be ranked
+ * by one field in one place and a different field in another.
+ *
+ * @param skills - the candidate summaries.
+ * @param query - the raw query text.
+ * @param limit - maximum hits to return.
+ * @returns the winning summaries in ranked order, carrying the caller's own
+ * element type so a narrowed input (one whose `path` is known present, say)
+ * stays narrow.
+ */
+export function rankSkillSummaries<S extends SkillSummary>(
+  skills: readonly S[],
+  query: string,
+  limit: number,
+): S[] {
+  return rankSkills(
+    skills.map(skill => ({ skill, name: skill.name, text: skillRankText(skill) })),
+    query,
+    limit,
+  ).map(entry => entry.skill)
+}
+
 /**
  * Durable source for the context message a user-explicit skill invocation
  * injects: the user's own words ride a plain user message, and the rendered

@@ -1,5 +1,36 @@
 /**
- * Durable session skill catalog and model-facing `skill` loader tool.
+ * Model-facing `skill` loader tool plus the retrieval list that names the
+ * skills relevant to the turn.
+ *
+ * ## Why the list is a message and not a prompt section
+ *
+ * The catalog used to be a system-prompt section: every skill's name and
+ * description sat in the *head* of every request, ahead of all history. Two
+ * things are wrong with that once a session can WRITE skills.
+ *
+ * The first is cost. The head is the stable cache prefix, so any change to the
+ * catalog — a skill added, a description reworded, a `.system` entry the user
+ * disabled — rewrote the prefix and re-charged the whole conversation for it.
+ * A catalog that the agent itself maintains changes exactly when the work
+ * happens, which is the worst possible moment.
+ *
+ * The second is attention. A hundred skills listed every turn is a hundred
+ * lines of furniture the model must read past before reaching the request. Most
+ * of them are irrelevant to what was just asked.
+ *
+ * So the list is now *retrieved*: at the first step of each turn the claimed
+ * user text is scored against every skill's name and description with BM25
+ * ({@link rankSkillSummaries}), and the winners are appended to the step's
+ * messages as one more user-role message. The prefix is untouched — the message
+ * is an append — and the model reads a short, relevant list.
+ *
+ * ## Why retrieval can be trusted to be total
+ *
+ * A short list is only safe because the loader is not limited by it. The `skill`
+ * tool takes an exact name and knows every skill the registry holds, so a
+ * retrieval miss costs one guess by name rather than losing the skill; the
+ * rendered list says so out loud. That is what makes it acceptable to name five
+ * skills instead of a hundred.
  *
  * @module @deepseek-ai/dsh-tool-skill
  */
@@ -7,19 +38,18 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
-// Type-only: pulls the `compaction/end` session-event declaration the catalog gate listens on.
-import type {} from '@deepseek-ai/dsh-compaction/types'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { PromptLocale } from '@deepseek-ai/dsh-system-prompt'
 import '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
+import type { UserMessage } from '@deepseek-ai/dsh-session'
 import {
   escapeText,
   isModelInvocable,
   isSkillName,
   isUserInvocable,
+  rankSkillSummaries,
   renderSkillContent,
   type SkillInvocationSource,
   type SkillSummary,
@@ -30,21 +60,33 @@ export const name = 'tool-skill'
 export const inject = ['agents', 'tools', 'skills', 'systemPrompt']
 
 const DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH = 500
+/**
+ * How many skills one turn's retrieval list may name.
+ *
+ * Five is the width the on-demand tool index settled on for the same reason:
+ * a list is read as "these are the candidates", and a list long enough to
+ * contain the answer whatever the question is has stopped being a selection.
+ * A deployment with a deliberately small catalog can raise it; the cap exists
+ * so an unattended corpus cannot refill the prompt.
+ */
+const DEFAULT_RETRIEVAL_MAX_RESULTS = 5
 /** Locales with catalog translation support; anything else renders the raw catalog. */
 const CATALOG_LOCALES = ['auto', 'en', 'zh'] as const
 /**
- * Locale the published skill catalog renders in. `auto` follows the assembly
- * locale so a Chinese deployment gets a Chinese catalog, while `en` and `zh`
- * pin it regardless of the surrounding prompt language.
+ * Locale the published skill list renders in. `auto` follows the active prompt
+ * language so a Chinese deployment gets a Chinese list, while `en` and `zh` pin
+ * it regardless of the surrounding language.
  */
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
-/** Default per-project translation archive consumed by the Chinese catalog. */
+/** Default per-project translation archive consumed by the Chinese list. */
 const DEFAULT_CATALOG_TRANSLATIONS_FILE = '.dsh/skill-translations.zh.json'
 /**
- * Durable provider and item records for one published session skill catalog. The catalog is a
- * `catalog`-form context, so it records the entries it published beside the
- * model-facing prose: a consumer presenting the list must not re-parse the
- * `<available_skills>` block, whose framing exists for the model.
+ * Durable entry list mirroring a rendered skill catalog.
+ *
+ * The catalog is no longer a prompt section, so nothing publishes this message
+ * today. The shape stays declared because it is a committed durable format:
+ * sessions already on disk carry `skill-catalog` sources, and readers must keep
+ * resolving them (`docs/persistence-schema.json` is generated from here).
  */
 export interface SkillCatalogSource {
   readonly kind: 'skill-catalog'
@@ -62,16 +104,16 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 
 /**
- * 决定本次目录是否用中文。
+ * 决定本次清单是否用中文。
  *
- * 抽成纯函数是因为它是"配置 + 装配语言 + 归档是否存在"三者的一次判定，
+ * 抽成纯函数是因为它是"配置 + 当前语言 + 归档是否存在"三者的一次判定，
  * 而它原本埋在装配监听器里、拿不到也断言不了。判定顺序即优先级：
- * 显式配置 > 本次装配的语言（界面语言设置）> 归档启发式。
+ * 显式配置 > 当前提示词语言（界面语言设置）> 归档启发式。
  *
  * @param configured - 插件配置的语言。
- * @param assemblyLocale - 本次装配解析出的语言；离线渲染时可能没有。
+ * @param assemblyLocale - 当前生效的提示词语言；离线渲染时可能没有。
  * @param hasTranslations - 项目是否存在可用的简介译文归档。
- * @returns 是否以中文渲染目录框架与简介。
+ * @returns 是否以中文渲染清单框架与简介。
  */
 export function catalogUsesChinese(
   configured: CatalogLocale,
@@ -81,11 +123,11 @@ export function catalogUsesChinese(
   if (configured === 'zh') return true
   if (configured === 'en') return false
   if (assemblyLocale !== undefined) return assemblyLocale === 'zh'
-  // 没有装配语言（离线渲染、手工构造）时才退回"项目里有译文就用中文"的启发式。
+  // 没有提示词语言（离线渲染、手工构造）时才退回"项目里有译文就用中文"的启发式。
   return hasTranslations
 }
 
-/** Durable entry list mirroring the rendered catalog lines, for non-model consumers. */
+/** Durable description list mirroring the rendered list lines. */
 function catalogSourceEntries(
   skills: SkillSummary[],
   descriptionMaxLength: number,
@@ -100,18 +142,18 @@ function catalogSourceEntries(
   }))
 }
 
-/** Model-facing skill catalog configuration. */
+/** Model-facing skill list configuration. */
 export interface Config {
-  /** Maximum normalized description length rendered in the session catalog; minimum 3. */
+  /** Maximum normalized description length rendered in the retrieval list; minimum 3. */
   catalogDescriptionMaxLength?: number
   /**
-   * Locale for the session catalog (default `auto`). `auto` follows the
-   * language the assembly resolved — which, unless a deployment pins
+   * Locale for the retrieval list (default `auto`). `auto` follows the active
+   * prompt language — which, unless a deployment pins
    * `system-prompt.promptLocale`, is the interface language the user picked in
    * settings — and falls back to the archive heuristic (Chinese when the
-   * per-project translation archive carries at least one description) for
-   * assemblies that carry no locale. `zh` selects Chinese unconditionally;
-   * `en` never translates.
+   * per-project translation archive carries at least one description) when no
+   * language is active. `zh` selects Chinese unconditionally; `en` never
+   * translates.
    */
   catalogLocale?: CatalogLocale
   /**
@@ -120,32 +162,40 @@ export interface Config {
    * `/translate-skills` archive).
    */
   catalogTranslationsFile?: string
+  /**
+   * How many skills one turn's retrieval list may name (default 5, minimum 1).
+   * The list is a selection, not a catalog: see `DEFAULT_RETRIEVAL_MAX_RESULTS`.
+   */
+  retrievalMaxResults?: number
 }
 
-/** Validate and default the model-facing skill catalog configuration. */
+/** Validate and default the model-facing skill list configuration. */
 export const Config: z<Config> = z.object({
   catalogDescriptionMaxLength: z.number().default(DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH),
   catalogLocale: z.union(CATALOG_LOCALES).default('auto'),
   catalogTranslationsFile: z.string().default(DEFAULT_CATALOG_TRANSLATIONS_FILE),
+  retrievalMaxResults: z.number().default(DEFAULT_RETRIEVAL_MAX_RESULTS),
 })
 
 /**
- * Register the model-facing skill loader and its visibility-matched
- * durable session catalog. The catalog is emitted only when the calling agent
- * resolves this plugin's exact tool registration; a restriction or scoped
- * same-name shadow therefore removes both the schema and its call guidance.
+ * Register the model-facing skill loader and the per-turn retrieval list that
+ * names the skills worth loading. Both are bound to the same tool
+ * registration: a restriction or scoped same-name shadow removes the schema,
+ * and the list then has nothing to point at, so it disappears with it.
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const catalogDescriptionMaxLength = config.catalogDescriptionMaxLength ?? DEFAULT_CATALOG_DESCRIPTION_MAX_LENGTH
   assertPositiveInteger('catalogDescriptionMaxLength', catalogDescriptionMaxLength, 3)
   const catalogLocale = config.catalogLocale ?? 'auto'
   const catalogTranslationsFile = config.catalogTranslationsFile ?? DEFAULT_CATALOG_TRANSLATIONS_FILE
+  const retrievalMaxResults = config.retrievalMaxResults ?? DEFAULT_RETRIEVAL_MAX_RESULTS
+  assertPositiveInteger('retrievalMaxResults', retrievalMaxResults, 1)
 
   const skillTool = defineTool({
     name: 'skill',
-    description: 'Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill.',
+    description: 'Load the full instructions for a skill. The harness injects a list of skills relevant to the current request; call this with the exact skill name from that list before acting on a task that names or clearly matches that skill. Any skill name the registry holds works here, including one the list did not mention.',
     parameters: {
-      name: { type: 'string', required: true, description: 'The exact skill name from the available skills list.' },
+      name: { type: 'string', required: true, description: 'The exact skill name, as written in the injected skill list.' },
     },
     output: {
       schema: {
@@ -227,16 +277,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   // starts with `/<name>` naming a user-invocable skill is a deterministic
   // load gesture. The rendered body enters this step as injected
   // instructions context appended after every other injection — background
-  // first (workspace rules, runtime policy, the catalog), the material the
-  // model must act on last, closest to its answer. Registration order makes
-  // that placement deterministic: this listener registers before the catalog
-  // listener, so the waterfall hands it the catalog-bearing list to extend.
-  // Only `source.kind === 'user'` messages are scanned — external text
-  // cannot forge the gesture — and a token naming no user-invocable skill
+  // first (workspace rules, runtime policy, the retrieval list), the material
+  // the model must act on last, closest to its answer. Registration order
+  // makes that placement deterministic: this listener registers before the
+  // retrieval listener, so the waterfall hands it the retrieval-bearing list
+  // to extend. Only `source.kind === 'user'` messages are scanned — external
+  // text cannot forge the gesture — and a token naming no user-invocable skill
   // stays ordinary prose (the command registry is a different closed
   // namespace, resolved client-side before a line ever becomes a prompt).
   // This is the only entry point for `disable-model-invocation` skills; the
-  // catalog and the `skill` tool below never see them.
+  // retrieval list and the `skill` tool below never see them.
   ctx.on('agent/pre-step', async (
     { agent, messages, signal },
     next,
@@ -266,57 +316,54 @@ export function apply(ctx: Context, config: Config = {}): void {
     return { ...decision, messages: [...decision.messages, ...injections] }
   })
 
-  // The catalog belongs to the system prompt, not to the first user-message batch.
-  // Register an empty ordered section now; the assembly listener fills its text after
-  // resolving the current agent's scoped skills and project translation archive.
-  // `interpolate: false` is load-bearing: skill descriptions are data written by
-  // whoever authored the skill, and a description containing `{{name}}` must not be
-  // read as a prompt variable — that would fail the whole assembly, not just this
-  // section, the moment any skill mentions a template placeholder.
-  // 压缩边界是目录唯一的放行点（见 {@link CatalogRefreshGate}）——目录住在请求头部，
-  // 中途换新会把整个会话的缓存前缀一次作废。
-  const catalogGate = new CatalogRefreshGate()
-  ctx.on('session/event', (session, event) => {
-    if (event.type === 'compaction/end' && event.data.error === undefined) {
-      catalogGate.markBoundary(session)
-    }
-  })
-  ctx.systemPrompt.section({
-    name: 'skills:catalog',
-    order: ctx.systemPrompt.getSectionOrder('SKILL_CATALOG'),
-    text: '',
-    interpolate: false,
-  })
-  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-    const transformed = await next()
-    const agent = context.agent
-    if (agent === undefined) return transformed
-    const toolVisible = ctx.tools.get(skillTool.name, agent) === skillTool
-    const snapshot = toolVisible
-      ? await ctx.skills.snapshot({ cwd: agent.session.header.cwd, signal: context.signal, scope: agent })
-      : { skills: [], complete: true }
-    context.signal?.throwIfAborted()
-    if (!snapshot.complete) return transformed
+  // The retrieval list rides the STEP, not the system prompt. See the module
+  // header for why; the short version is that the list changes exactly when the
+  // work happens, and the system prompt is the one place a change is expensive.
+  ctx.on('agent/pre-step', async (
+    { agent, step, signal },
+    next,
+  ): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind === 'reject') return decision
+    // One list per turn, injected on its first step. Every step would append a
+    // fresh copy, so a turn that made twenty tool calls would carry twenty
+    // identical lists; the first one stays in context for the rest of the turn
+    // either way.
+    if (step !== 1) return decision
+    // An empty batch means no model call happens for this step. Injecting into
+    // it would conjure a turn out of a list nobody asked for.
+    if (decision.messages.length === 0) return decision
+    const query = rankingQuery(decision.messages)
+    if (query === '') return decision
+    // The list points at the loader, so it lives and dies with it: a
+    // composition that restricts or shadows the tool must not keep advertising
+    // skills the model cannot open.
+    if (ctx.tools.get(skillTool.name, agent) !== skillTool) return decision
+    const snapshot = await ctx.skills.snapshot({ cwd: agent.session.header.cwd, signal, scope: agent })
+    signal.throwIfAborted()
+    // An incomplete catalog is not a catalog: rendering a partial list would
+    // present "the skills that happen to be discoverable right now" as the
+    // answer, which is worse than saying nothing.
+    if (!snapshot.complete) return decision
     const skills = snapshot.skills.filter(isModelInvocable)
+    if (skills.length === 0) return decision
+    const ranked = rankSkillSummaries(skills, query, retrievalMaxResults)
     const translations = catalogLocale !== 'en' && agent.session.header.cwd !== undefined
       ? await loadCatalogTranslations(agent.session.header.cwd, catalogTranslationsFile)
       : new Map<string, string>()
-    const catalogInChinese = catalogUsesChinese(catalogLocale, context.locale, translations.size > 0)
-    const entries = catalogSourceEntries(
-      skills,
-      catalogDescriptionMaxLength,
-      catalogInChinese ? translations : undefined,
-    )
-    const text = catalogGate.admit(
-      agent.session,
-      catalogFingerprint(entries),
-      entries.length === 0 ? '' : renderCatalogText(entries, catalogInChinese),
+    signal.throwIfAborted()
+    const inChinese = catalogUsesChinese(catalogLocale, ctx.systemPrompt.activeLocale(), translations.size > 0)
+    const text = renderRetrievalText(
+      catalogSourceEntries(ranked, catalogDescriptionMaxLength, inChinese ? translations : undefined),
+      inChinese,
+      skills.length,
     )
     return {
-      ...transformed,
-      sections: transformed.sections.map(section => section.name === 'skills:catalog'
-        ? { ...section, text }
-        : section),
+      ...decision,
+      messages: [...decision.messages, createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'plugin', plugin: 'dsh-tool-skill', form: 'catalog' },
+      })],
     }
   })
 }
@@ -326,10 +373,10 @@ export function apply(ctx: Context, config: Config = {}): void {
  * first, then the harness-home archive of the same file name.
  *
  * The workspace archive alone cannot cover the common case: skills live in a
- * shared (user-level) registry, so a catalog translated once for one project
- * reads as untranslated in every other one. Falling back to the harness home
- * makes a single translation pass cover every workspace, while a workspace
- * entry still wins so a project can pin its own wording.
+ * shared (user-level) registry, so a list translated once for one project reads
+ * as untranslated in every other one. Falling back to the harness home makes a
+ * single translation pass cover every workspace, while a workspace entry still
+ * wins so a project can pin its own wording.
  *
  * Thin alias over the shared resolver — see
  * `@deepseek-ai/dsh-skill/translations` for the rule itself.
@@ -370,39 +417,56 @@ export async function loadCatalogTranslations(
   return descriptions
 }
 
-function renderCatalogText(
+/**
+ * Render the retrieval list: a header naming the selection and its size, the
+ * `<available_skills>` block, and the instructions that make the list safe.
+ *
+ * Two sentences carry the weight. "This list contains summaries only" is what
+ * stops the model inferring a skill's behaviour from a one-line description.
+ * "The list is a selection" is what stops a retrieval miss being read as "no
+ * such skill" — and {@link Config.retrievalMaxResults} means there is always a
+ * miss whenever the catalog is wider than the cap, so the model has to know the
+ * loader accepts names the list never mentioned.
+ *
+ * @param entries - the ranked entries to name.
+ * @param inChinese - render the framing in Chinese.
+ * @param total - how many skills the session holds in total.
+ * @returns the complete model-facing `<system-reminder>` block.
+ */
+function renderRetrievalText(
   entries: SkillCatalogSource['entries'],
   inChinese: boolean,
+  total: number,
 ): string {
   const framing = inChinese
     ? [
-      '技能是一组可复用的任务专用指令。以下技能在当前会话中可用：',
+      `技能是一组可复用的任务专用指令。下面是与当前请求最相关的技能（本会话共 ${total} 个可用技能，此处只列出其中 ${entries.length} 个）。此清单取代更早的技能清单：`,
       '',
       '<available_skills>',
       ...renderCatalogEntries(entries),
       '</available_skills>',
       '',
-      '如果用户指名某个技能，或任务明显匹配某个技能的描述，请先使用 `skill` 工具加载该技能的精确名称，再执行任务动作。加载所有适用技能，然后遵循其完整指令。此目录只包含摘要；在加载之前，不要推断或遵循技能的指令。',
+      '如果用户指名某个技能，或任务明显匹配某个技能的描述，请先使用 `skill` 工具加载该技能的精确名称，再执行任务动作。加载所有适用技能，然后遵循其完整指令。此清单只包含摘要；在加载之前，不要推断或遵循技能的指令。清单是挑出来的，不是全部——这里没列出的技能同样可以用精确名称加载。',
       '用户也可以直接调用技能；其 <skill_content> 块随后会出现在本对话中。请遵循该块，并且不要再次为该技能调用 `skill` 工具。',
     ]
     : [
-      'A skill is a reusable set of task-specific instructions. The following skills are available in this session:',
+      `A skill is a reusable set of task-specific instructions. These are the skills most relevant to the current request (this session holds ${total} in total; ${entries.length} listed here). This list supersedes any earlier skill list:`,
       '',
       '<available_skills>',
       ...renderCatalogEntries(entries),
       '</available_skills>',
       '',
-      "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.",
+      "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This list contains summaries only; do not infer or follow a skill's instructions until it has been loaded. The list is a selection, not the whole catalog — a skill it does not mention can still be loaded by name.",
       'A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.',
     ]
   return ['<system-reminder>', ...framing, '</system-reminder>'].join('\n')
 }
 
 /**
- * Model-facing catalog lines, projected from the same entries the source records.
- * The pseudo-XML escaping belongs to this frame, not to the published fact, so it
- * is applied here and never stored. Names are `isSkillName`-validated and carry
- * no escapable character.
+ * Model-facing list lines, projected from the same entries the durable source
+ * records. The pseudo-XML escaping belongs to this frame, not to the published
+ * fact, so it is applied here and never stored. Names are `isSkillName`-validated
+ * and carry no escapable character.
  */
 function renderCatalogEntries(entries: SkillCatalogSource['entries']): string[] {
   return entries.map(entry => `- \`${entry.name}\`: ${escapeText(entry.description)}`)
@@ -420,66 +484,25 @@ function assertPositiveInteger(name: string, value: number, minimum = 1): void {
 }
 
 /**
- * 技能目录的换新闸门：目录只在压缩边界之后才允许换新。
+ * The text one step is ranked against: exactly what the human wrote.
  *
- * 目录是请求头部的一个分段（`skills:catalog`，order 10300）。会话中途改一个
- * SKILL.md（增删技能、改简介）会让下一次装配渲染出不同的目录文本，而头部一换，
- * 这个会话此前的整段缓存前缀就作废了。压缩是前缀本来就要重建的唯一时刻，所以
- * 新目录在那里放行，别处一律沿用上一次发布的那一份。
+ * Only direct user input participates. Tool results, injected context, and
+ * another agent's relay would all rank the skills against text nobody asked
+ * for — and the injected runtime-context snapshot in particular quotes long
+ * policy prose that would swamp the request.
  *
- * 闸门按**会话**隔离：不同 cwd / scope 的 agent 各有一份目录，一个会话的压缩
- * 边界不该替另一个会话换新。
- *
- * 首次装配没有可比的一份，必须照常发布——闸门拦的是"换新"，不是"首次"。发现
- * 不完整时调用方不进这里（它直接跳过本节），所以"宁可空着也不给不可信的清单"
- * 这条既有规则不受影响：那时端出来的是空，而不是这份快照。
+ * @param messages - the step's claimed batch.
+ * @returns the joined direct-user text, or `''` when the step carries none.
  */
-export class CatalogRefreshGate {
-  private readonly published = new WeakMap<Session, { fingerprint: string; text: string }>()
-  private readonly due = new WeakSet<Session>()
-
-  /**
-   * 记一次压缩边界；该会话下一次目录变化据此放行。
-   * @param session - 刚刚越过压缩边界、因而可以接受新目录的会话。
-   */
-  markBoundary(session: Session): void {
-    this.due.add(session)
-  }
-
-  /**
-   * 取本次装配该渲染的目录文本。
-   * @param session - 正在装配的会话。
-   * @param fingerprint - 本次目录条目的稳定指纹。
-   * @param rendered - 本次算出的目录文本。
-   * @returns 放行时是 `rendered`；否则是上一次发布的那一份。
-   */
-  admit(session: Session, fingerprint: string, rendered: string): string {
-    // 空目录不是"一份目录"，而是"这一节现在不存在"：它不贡献任何 token，也没有
-    // 内容可供沿用，沿用一份已经作废的清单才是真正的陈旧。所以撤销与重新出现都
-    // 照常发布——闸门管的是"两份有内容的目录之间"的换新，那才是击穿前缀的那种。
-    if (rendered === '') {
-      this.published.delete(session)
-      return rendered
+function rankingQuery(messages: readonly UserMessage[]): string {
+  const parts: string[] = []
+  for (const message of messages) {
+    if (message.source.kind !== 'user') continue
+    for (const block of message.content) {
+      if (block.type === 'text') parts.push(block.text)
     }
-    const previous = this.published.get(session)
-    if (previous !== undefined && previous.fingerprint !== fingerprint && !this.due.delete(session)) {
-      return previous.text
-    }
-    this.published.set(session, { fingerprint, text: rendered })
-    return rendered
   }
-}
-
-/**
- * 目录条目的稳定指纹：技能名与简介都参与，正文不参与。
- *
- * 正文本来就进不了目录（它由 `skill` 工具按需加载），所以改正文不该让目录换新；
- * 名字与简介是目录的全部内容，任一个变了才算"目录变了"。
- * @param entries - 本次发布的条目。
- * @returns 可比较的指纹串。
- */
-function catalogFingerprint(entries: SkillCatalogSource['entries']): string {
-  return entries.map(entry => `${entry.name}\u0000${entry.description}`).join('\u0001')
+  return parts.join('\n')
 }
 
 /**

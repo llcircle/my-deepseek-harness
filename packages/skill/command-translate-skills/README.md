@@ -63,7 +63,7 @@ Type `/translate-skills` with the session opened in the project whose skills you
 { "deploy-docs": { "description": "<translated>", "whenToUse": "<translated or omitted>", "promptLine": "- \`deploy-docs\`: <translated description>" } }
 ```
 
-Every key is the untranslated skill name; `whenToUse` is omitted when the source summary carries none, and `promptLine` archives the translated system-prompt catalog line. `dsh-tool-skill` reads `description` from this archive automatically and renders the whole catalog in Chinese once at least one translation exists.
+Every key is the untranslated skill name; `whenToUse` is omitted when the source summary carries none, and `promptLine` archives the translated one-line catalog form. `dsh-tool-skill` reads `description` from this archive automatically and renders the retrieved entries in Chinese once at least one translation exists.
 
 -----
 

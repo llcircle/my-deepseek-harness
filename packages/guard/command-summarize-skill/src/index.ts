@@ -1,13 +1,40 @@
 /**
- * The `/summarize-skill` command: a user-invoked capture pass over the recent
- * conversation. The handler extracts the user/assistant text turns — the full
- * main-line conversation by default — from the receiving agent's session and
- * starts ONE background one-shot subagent
- * whose prompt carries the excerpt and orders it to write a reusable workflow
- * as a project skill file (`<skillsDir>/<kebab-name>/SKILL.md`). The command
- * runs no model work itself; the child runs independently of the main
- * conversation, and the skill filesystem provider watches the directory, so
- * the new skill appears in the catalog without any manual invalidation.
+ * Learning from a session's own work: the `/summarize-skill` command and the
+ * curation pass that runs at every compaction boundary. Both start ONE
+ * background one-shot subagent; neither runs model work on the session's own
+ * turn, and the child's files land in a skill root the filesystem provider
+ * already watches, so a skill written here is discoverable on the next lookup
+ * with no manual invalidation.
+ *
+ * ## Two triggers, one job
+ *
+ * `/summarize-skill` is the explicit form: the human points at a stretch of the
+ * conversation and asks for a skill, optionally saying what to capture.
+ *
+ * The automatic form needs no gesture. Compaction has just produced a summary
+ * of the work this session did — that summary IS the experience worth keeping —
+ * so it is handed to the same kind of child together with the skills this
+ * deployment owns. The child then either CREATES a skill for a procedure the
+ * work established, or REFLECTS: it rewrites an existing skill the summary
+ * shows to be wrong, incomplete, or ambiguous. Self-modification is why the
+ * corpus is narrowed to the roots this deployment can attribute to itself (see
+ * {@link CURATABLE_SOURCES}) — a machine-wide `<agentsHome>/skills` belongs to
+ * whatever else follows that convention, and rewriting it would be editing
+ * another program's files.
+ *
+ * ## Why compaction is the only moment, and why that keeps the cache stable
+ *
+ * The curation child is a SEPARATE session. It never appends to the parent's
+ * history and never touches the parent's assembled system prompt, so the
+ * parent's stable cache prefix is untouched whether the child writes one skill
+ * or ten. What a session cannot change for free is a system-prompt SECTION —
+ * and skills no longer live in one: the model-facing list is retrieved per turn
+ * and appended to the step's own messages (see `@deepseek-ai/dsh-tool-skill`).
+ *
+ * Compaction is therefore only the TRIGGER, chosen because it is the moment the
+ * session itself declares "this stretch of work is over and has been
+ * summarised": no extra prompt section, no extra turn, and the one boundary at
+ * which the parent was going to rebuild its prefix anyway.
  *
  * @module @deepseek-ai/dsh-command-summarize-skill
  */
@@ -17,10 +44,14 @@ import { isAbsolute, join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-// Type-only: pulls the ctx.commands and ctx.subagents service merges.
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: pulls the `compaction/summary` / `compaction/end` event declarations this file gates on.
+import type {} from '@deepseek-ai/dsh-compaction/types'
+import { rankSkillSummaries, type SkillSummary } from '@deepseek-ai/dsh-skill'
+// Type-only: pulls the ctx.commands, ctx.subagents, ctx.agents, and ctx.skills service merges.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-agent'
 
 export const name = 'command-summarize-skill'
 
@@ -43,6 +74,23 @@ export interface Config {
    * nothing.
    */
   childOmitSections?: string[]
+  /**
+   * Whether every successful compaction also curates the corpus (default
+   * `true`). Off, only the explicit command captures anything.
+   */
+  autoCurate?: boolean
+  /**
+   * How many existing skills one curation child receives IN FULL for
+   * rewriting (default 3). The rest are still listed by name, description, and
+   * file path, so the child can read any of them before changing it.
+   */
+  curateMaxTargets?: number
+  /**
+   * How many owned skills the curation child is told about (default 30). The
+   * listing is the duplicate guard: a skill whose content restates one that
+   * already exists is worse than no new skill.
+   */
+  curateMaxListedSkills?: number
 }
 
 /**
@@ -58,9 +106,26 @@ const DEFAULT_CHILD_TOOLS = ['read', 'write']
  * Prompt sections the summarization child does not get.
  *
  * 写技能文档不需要部署身份、人格（那是给编码 agent 的措辞）或工具失败反思——
- * 后两者只会把提示词撑长，而子 agent 的判断依据应当只有它收到的这段会话。
+ * 后两者只会把提示词撑长，而子 agent 的判断依据应当只有它收到的那段材料。
  */
 const DEFAULT_CHILD_OMIT_SECTIONS = ['harness:identity', 'deployment:persona-prefix', 'deployment:error-lessons']
+
+const DEFAULT_AUTO_CURATE = true
+const DEFAULT_CURATE_MAX_TARGETS = 3
+const DEFAULT_CURATE_MAX_LISTED_SKILLS = 30
+/** Character cap on one listed description; the full text is in the file. */
+const LISTED_DESCRIPTION_MAX = 200
+
+/**
+ * Skill sources this deployment owns, and may therefore rewrite.
+ *
+ * 这两个根由本部署自己创建和维护 —— 项目里的是 `<project>/.dsh/skills`，机器级的
+ * 是 `<dshHome>/skills`。别的来源都不在名单里：`bundled` 是随包发布的只读内容，
+ * `custom` 由部署显式配置、归配置者所有，`runtime` 根本没有文件，而
+ * `project-agents` / `user-agents` 用的是别的工具也在用的通用约定。让模型改写
+ * 那些目录，等于替别人的程序动文件。
+ */
+const CURATABLE_SOURCES: ReadonlySet<string> = new Set(['project-dsh', 'user-dsh'])
 
 /** Runtime schema for {@link Config}. */
 export const Config: Schema<Config> = z.object({
@@ -69,25 +134,50 @@ export const Config: Schema<Config> = z.object({
   provider: z.string().min(1).default('spawn'),
   childTools: z.array(z.string()).default([...DEFAULT_CHILD_TOOLS]),
   childOmitSections: z.array(z.string()).default([...DEFAULT_CHILD_OMIT_SECTIONS]),
+  autoCurate: z.boolean().default(DEFAULT_AUTO_CURATE),
+  curateMaxTargets: z.number().step(1).min(1).default(DEFAULT_CURATE_MAX_TARGETS),
+  curateMaxListedSkills: z.number().step(1).min(1).default(DEFAULT_CURATE_MAX_LISTED_SKILLS),
 })
 
+/** Configuration resolved once at load, with every default applied and validated. */
+export interface ResolvedConfig {
+  /** Skill root new skills are written under; relative to the child's workspace. */
+  skillsDir: string
+  /** Optional cap on turns handed to the explicit command's child. */
+  maxTurns: number | undefined
+  /** Subagent provider that runs either child. */
+  provider: string
+  /** Tools both children keep. */
+  childTools: readonly string[]
+  /** Prompt sections neither child gets. */
+  childOmitSections: readonly string[]
+  /** Whether the compaction pass is armed. */
+  autoCurate: boolean
+  /** How many existing skills a curation child receives in full. */
+  curateMaxTargets: number
+  /** How many owned skills a curation child is told about. */
+  curateMaxListedSkills: number
+}
 
 /**
  * Resolve and validate configuration; misconfiguration fails at load.
  * @param config - plugin configuration; every field is optional.
- * @returns the skills directory, the optional turn cap, the provider, and the
- * child composition the command propagates.
+ * @returns the skills directory, the optional turn cap, the provider, the two
+ * curation widths, whether the automatic pass is armed, and the child
+ * composition both triggers propagate.
  */
-export function resolveConfig(config: Config): {
-  skillsDir: string
-  maxTurns: number | undefined
-  provider: string
-  childTools: readonly string[]
-  childOmitSections: readonly string[]
-} {
+export function resolveConfig(config: Config): ResolvedConfig {
   const maxTurns = config.maxTurns
   if (maxTurns !== undefined && (!Number.isInteger(maxTurns) || maxTurns < 1)) {
     throw new Error('command-summarize-skill: maxTurns must be a positive integer')
+  }
+  const curateMaxTargets = config.curateMaxTargets ?? DEFAULT_CURATE_MAX_TARGETS
+  if (!Number.isInteger(curateMaxTargets) || curateMaxTargets < 1) {
+    throw new Error('command-summarize-skill: curateMaxTargets must be a positive integer')
+  }
+  const curateMaxListedSkills = config.curateMaxListedSkills ?? DEFAULT_CURATE_MAX_LISTED_SKILLS
+  if (!Number.isInteger(curateMaxListedSkills) || curateMaxListedSkills < 1) {
+    throw new Error('command-summarize-skill: curateMaxListedSkills must be a positive integer')
   }
   return {
     skillsDir: config.skillsDir ?? '.dsh/skills',
@@ -95,6 +185,9 @@ export function resolveConfig(config: Config): {
     provider: config.provider ?? 'spawn',
     childTools: config.childTools ?? DEFAULT_CHILD_TOOLS,
     childOmitSections: config.childOmitSections ?? DEFAULT_CHILD_OMIT_SECTIONS,
+    autoCurate: config.autoCurate ?? DEFAULT_AUTO_CURATE,
+    curateMaxTargets,
+    curateMaxListedSkills,
   }
 }
 
@@ -137,11 +230,11 @@ export function parseSummaryInput(rawInput: string): SummaryInput {
   }
   const last = /^(\d+)(?![\p{L}\p{N}_-])/u.exec(trimmed)
   if (last !== null) {
-    const countText = last[1]
-    if (countText === undefined) throw new Error('summarize-skill: malformed turn count')
-    const count = Number(countText)
-    if (count < 1) throw new Error(`summarize-skill: turn count must be >= 1 (got ${count})`)
-    const guidance = trimmed.slice(countText.length).trim()
+    const count = Number(last[1])
+    if (!Number.isInteger(count) || count < 1) {
+      throw new Error(`summarize-skill: turn count must be >= 1 (got ${String(count)})`)
+    }
+    const guidance = trimmed.slice(last[0].length).trim()
     return guidance === '' ? { last: count } : { last: count, guidance }
   }
   return { guidance: trimmed }
@@ -194,6 +287,20 @@ function textOf(content: readonly ContentBlock[]): string {
 }
 
 /**
+ * Render one caught value as the command's error line.
+ *
+ * An `Error`'s `String()` carries an `Error: ` prefix that reads as noise in a
+ * one-line result, so its message is preferred. Anything else — a string
+ * thrown by a hook, a hostile `toString` — keeps `String`, which is what makes
+ * this a helper rather than an inline ternary at each catch site.
+ * @param error - the caught value.
+ * @returns the one-line account of the failure.
+ */
+export function failureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
  * Build the child's prompt: capture instructions, optional guidance, plus the conversation excerpt.
  * @param turns - conversation excerpt the child distills the workflow from.
  * @param skillsDir - directory the skill bundle is written under.
@@ -221,9 +328,192 @@ export function buildSummaryPrompt(turns: readonly ConversationTurn[], skillsDir
   return [{ type: 'text', text }]
 }
 
+/** One skill this deployment owns, as the curation child sees it. */
+export interface OwnedSkill {
+  /** Skill name, as addressed by the `skill` tool. */
+  readonly name: string
+  /** One-line routing description, normalized and length-capped. */
+  readonly description: string
+  /** Absolute path of the instruction file, so the child can read or rewrite it. */
+  readonly path: string
+}
+
+/** One owned skill handed to the curation child with its complete current text. */
+export interface ReflectionTarget extends OwnedSkill {
+  /** Current instruction body, exactly as loaded. */
+  readonly content: string
+}
+
+/**
+ * Whether one skill is both owned by this deployment and rewritable on disk.
+ *
+ * A skill with no `path` has no file to rewrite — a runtime or remote
+ * contribution — and a source outside {@link CURATABLE_SOURCES} belongs to
+ * someone else. Both are simply not reflection targets.
+ * @param skill - one summary from the resolved catalog.
+ * @returns whether the skill's file may be read and rewritten by the child.
+ */
+function isCuratable(skill: SkillSummary): skill is SkillSummary & { readonly path: string } {
+  return CURATABLE_SOURCES.has(skill.source) && typeof skill.path === 'string' && skill.path !== ''
+}
+
+/**
+ * Narrow a resolved catalog to the skills this deployment may reflect on.
+ * @param skills - every winning summary in the calling agent's catalog.
+ * @returns the owned, file-backed subset, in catalog order.
+ */
+export function curatableSkills(skills: readonly SkillSummary[]): (SkillSummary & { readonly path: string })[] {
+  return skills.filter(isCuratable)
+}
+
+/**
+ * Normalize one description to a single capped line for the listing.
+ * @param value - the raw description, possibly multiline.
+ * @param maxLength - maximum rendered length before the ellipsis.
+ * @returns the normalized line.
+ */
+function oneLine(value: string, maxLength: number): string {
+  const normalized = value.replaceAll(/\s+/g, ' ').trim()
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`
+}
+
+/**
+ * Whether a session's compaction may curate the corpus.
+ *
+ * A subagent's own compaction must not start a grandchild: the child was given
+ * the parent's corpus to maintain, and a curation tree growing one level per
+ * compaction is a runaway that nobody asked for. `origin` is the product-level
+ * classification and `delegationDepth` the authoritative one, so either
+ * signal is enough to stand down.
+ * @param session - the session whose compaction just ended.
+ * @returns whether curation may run for it.
+ */
+export function isCuratableSession(session: Session): boolean {
+  if (session.header.origin === 'subagent') return false
+  const depth = session.header.delegationDepth
+  return depth === undefined || depth === 0
+}
+
+/**
+ * Build the curation child's prompt: the compaction summary, the deployable
+ * corpus, and the two changes worth making to it.
+ *
+ * The listing is deliberately complete (up to its cap) while only the ranked
+ * targets carry their full text. Reflection into a DUPLICATE is the failure
+ * mode this shape exists to prevent: the child must be able to see that a
+ * procedure is already covered before writing a second skill for it, and it can
+ * always read a listed file when the summary suggests a skill the ranking did
+ * not surface.
+ * @param input - the summary, the skills root, the listed corpus, the omitted count, and the full-text targets.
+ * @returns the child's prompt blocks.
+ */
+export function buildCurationPrompt(input: {
+  /** The compaction summary: what this session just did. */
+  summary: string
+  /** Skill root a NEW skill is written under; relative to the child's workspace. */
+  skillsDir: string
+  /** The owned skills the child is told about, already capped. */
+  owned: readonly OwnedSkill[]
+  /** How many owned skills the cap left out; `0` renders no overflow line. */
+  omitted: number
+  /** The ranked subset printed in full for rewriting. */
+  targets: readonly ReflectionTarget[]
+}): ContentBlock[] {
+  const listing = input.owned.map(skill => `- \`${skill.name}\`: ${skill.description}\n  file: ${skill.path}`)
+  if (input.omitted > 0) listing.push(`- …and ${input.omitted} more this deployment owns.`)
+  const printed: string[] = []
+  for (const target of input.targets) {
+    printed.push(
+      `<existing_skill name="${target.name}" path="${target.path}">`,
+      target.content.trim(),
+      '</existing_skill>',
+    )
+  }
+  const text = [
+    "You are maintaining this agent's skill corpus: the reusable procedures it loads before acting on a task.",
+    '',
+    'A session has just compacted. Its summary is below, together with the skills this deployment owns.',
+    'Decide, from the summary alone, whether the corpus should change. Only two changes are worth making:',
+    '',
+    `1. CREATE — the work established a repeatable procedure the corpus does not cover. Write it as \`${input.skillsDir}/<kebab-name>/SKILL.md\` (choose a descriptive kebab-case name; the write tool creates missing parent directories).`,
+    "2. REFLECT — one of the skills printed in full below is wrong, incomplete, or ambiguous about something the summary settles. Rewrite that skill's file completely, at the absolute path it was printed with. Keep its name.",
+    '',
+    'Every SKILL.md opens with frontmatter holding `name:` (matching the directory name) and `description:`',
+    '(one sentence saying WHEN to use it — the sentence a request is matched against), followed by the body.',
+    'The body is a procedure for a future session: the concrete steps, the exact commands and arguments, and the',
+    'pitfalls that actually cost time. Do not write a report of what happened, and never mention this session,',
+    'its user, or a date.',
+    '',
+    'Rules:',
+    '- Write a file only when the summary earns it. A skill whose content restates one that already exists is',
+    '  worse than no new skill: improve that skill instead, at its own path.',
+    '- Rewrite whole files with `write`. Never append, and never leave a placeholder or a TODO.',
+    '- Prefer the specific truth over a general rule: if the procedure only works in this project, say so.',
+    '- If the summary teaches nothing reusable and no existing skill needs correcting, write nothing at all and',
+    '  reply exactly `nothing to save`.',
+    '',
+    ...input.owned.length === 0 && input.omitted === 0
+      ? ['This deployment owns no skills yet; the corpus starts with whatever you create.']
+      : ['Skills this deployment owns (read any of them before changing it):', ...listing],
+    '',
+    ...printed.length === 0
+      ? ['No existing skill ranked high enough for this work to be printed in full.']
+      : ['Most relevant to this work, in full:', ...printed],
+    '',
+    'Work just summarised:',
+    input.summary.trim(),
+  ].join('\n')
+  return [{ type: 'text', text }]
+}
+
+/**
+ * Assemble the two prompt halves a curation run needs from one resolved catalog:
+ * the owned listing the child sees, and the ranked targets printed in full.
+ *
+ * Bodies are loaded through the same scoped lookup that produced the summaries,
+ * so a skill that vanished between the two calls is dropped rather than handed
+ * over as a stale body.
+ * @param skills - every winning summary in the calling agent's catalog.
+ * @param summary - the compaction summary the targets are ranked against.
+ * @param maxTargets - how many skills to load in full.
+ * @param load - scoped loader for one skill's complete definition.
+ * @returns the owned listing in catalog order, and the full-text targets ranked against the summary.
+ */
+export async function selectCurationTargets(
+  skills: readonly SkillSummary[],
+  summary: string,
+  maxTargets: number,
+  load: (name: string) => Promise<{ readonly name: string; readonly content: string } | undefined>,
+): Promise<{ owned: OwnedSkill[]; targets: ReflectionTarget[] }> {
+  const owned = curatableSkills(skills)
+  const listed: OwnedSkill[] = owned.map(skill => ({
+    name: skill.name,
+    description: oneLine(skill.description, LISTED_DESCRIPTION_MAX),
+    path: skill.path,
+  }))
+  const targets: ReflectionTarget[] = []
+  for (const candidate of rankSkillSummaries(owned, summary, maxTargets)) {
+    const definition = await load(candidate.name)
+    if (definition === undefined) continue
+    targets.push({
+      name: definition.name,
+      description: oneLine(candidate.description, LISTED_DESCRIPTION_MAX),
+      path: candidate.path,
+      content: definition.content,
+    })
+  }
+  return { owned: listed, targets }
+}
+
 /** Register the command when the command registry is composed. */
 export function apply(ctx: Context, config: Config = {}): void {
   const resolved = resolveConfig(config)
+  registerSummaryCommand(ctx, resolved)
+  if (resolved.autoCurate) registerCurationPass(ctx, resolved)
+}
+
+/** Register the `/summarize-skill` command. */
+function registerSummaryCommand(ctx: Context, resolved: ResolvedConfig): void {
   ctx.inject(['commands'], (commandsCtx) => {
     commandsCtx.commands.register({
       name: 'summarize-skill',
@@ -233,7 +523,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         try {
           input = parseSummaryInput(rawInput)
         } catch (error) {
-          return { kind: 'error', text: String(error instanceof Error ? error.message : error) }
+          return { kind: 'error', text: failureText(error) }
         }
         const session: Session = agent.session
         const allTurns = recentTurns(session.snapshotEvents())
@@ -241,7 +531,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         try {
           turns = selectTurns(allTurns, input)
         } catch (error) {
-          return { kind: 'error', text: String(error instanceof Error ? error.message : error) }
+          return { kind: 'error', text: failureText(error) }
         }
         if (resolved.maxTurns !== undefined) turns = turns.slice(-resolved.maxTurns)
         if (turns.length === 0) {
@@ -277,4 +567,129 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
     })
   })
+}
+
+/**
+ * Arm the automatic pass.
+ *
+ * The pass is driven by two session events: `compaction/summary` hands over the
+ * text to learn from, and `compaction/end` is the boundary that acts on it.
+ * Pairing them through a per-session slot rather than re-reading the log keeps
+ * "which summary belongs to this end" exact — compactions are serialized per
+ * session, so the newest summary is always the one the boundary closes.
+ * @param ctx - owning plugin context.
+ * @param resolved - validated configuration.
+ */
+function registerCurationPass(ctx: Context, resolved: ResolvedConfig): void {
+  /** The newest compaction summary per session, waiting for its boundary. */
+  const pending = new Map<SessionId, string>()
+  /** Sessions whose curation child has not settled yet: one child at a time. */
+  const inFlight = new Set<SessionId>()
+  const controllers = new Set<AbortController>()
+  ctx.effect(() => () => {
+    for (const controller of controllers) controller.abort()
+    controllers.clear()
+    inFlight.clear()
+    pending.clear()
+  })
+  ctx.on('session/event', (session, event) => {
+    if (event.type === 'compaction/summary') {
+      pending.set(session.header.id, textOf(event.data.summary))
+      return
+    }
+    if (event.type !== 'compaction/end') return
+    const summary = pending.get(session.header.id)
+    pending.delete(session.header.id)
+    // 压缩失败意味着没有可依据的摘要，而且那一刻会话本身最不可信：放开手让它
+    // 改技能语料是双重坏事，所以这一次边界什么都不做。
+    if (event.data.error !== undefined) return
+    if (summary === undefined || summary.trim() === '') return
+    if (!isCuratableSession(session)) return
+    const id = session.header.id
+    // 前一个策展子 agent 还没落地就不再起新的：它们会读到同一份语料，同时写
+    // 会互相覆盖，而第二次压缩离第一次往往只有几步。
+    if (inFlight.has(id)) return
+    const controller = new AbortController()
+    controllers.add(controller)
+    inFlight.add(id)
+    void runCuration(ctx, resolved, session, summary, controller.signal)
+      .catch((error: unknown) => {
+        ctx.logger.warn(`skill-curation: session ${String(id)} could not be curated: ${String(error)}`)
+      })
+      .finally(() => {
+        controllers.delete(controller)
+        inFlight.delete(id)
+      })
+  })
+}
+
+/**
+ * Run one curation pass: rank the owned corpus against the summary, hand the
+ * winner set to a background child, and settle only once that child has.
+ *
+ * Every early return here is a decision to leave the corpus alone, not a
+ * failure: the pass is opportunistic and the session's own turn never waits on
+ * it. The settlement wait is what makes the caller's in-flight mark span the
+ * child's WHOLE life — publishing is not finishing, and two children editing
+ * one corpus at once would overwrite each other.
+ * @param ctx - owning plugin context.
+ * @param resolved - validated configuration.
+ * @param session - the session whose compaction just ended.
+ * @param summary - the compaction summary text.
+ * @param signal - aborts the pass when the plugin is disposed.
+ * @returns a promise that resolves once the child has settled and been released.
+ */
+async function runCuration(
+  ctx: Context,
+  resolved: ResolvedConfig,
+  session: Session,
+  summary: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const subagents = ctx.get('subagents')
+  const skills = ctx.get('skills')
+  // 调用方 agent 同时是子 agent 的父会话与技能查询的作用域；它没了（会话已
+  // 卸载）就没有可挂的父子关系，也没有"这份语料对谁可见"的答案。
+  const agent = ctx.get('agents')?.get(session.header.id)
+  if (subagents === undefined || skills === undefined || agent === undefined) return
+  const cwd = session.header.cwd
+  const lookup = { ...cwd === undefined ? {} : { cwd }, signal, scope: agent }
+  const snapshot = await skills.snapshot(lookup)
+  signal.throwIfAborted()
+  // 不完整的目录不能当依据：没看到的那部分正是"已经有人写过了"的证据，而重复
+  // 造一个技能比不写更糟。
+  if (!snapshot.complete) return
+  const { owned, targets } = await selectCurationTargets(
+    snapshot.skills,
+    summary,
+    resolved.curateMaxTargets,
+    async (skillName) => {
+      const definition = await skills.get(skillName, lookup)
+      signal.throwIfAborted()
+      return definition === undefined ? undefined : { name: definition.name, content: definition.content }
+    },
+  )
+  signal.throwIfAborted()
+  const listed = owned.slice(0, resolved.curateMaxListedSkills)
+  const prompt = buildCurationPrompt({
+    summary,
+    skillsDir: resolved.skillsDir,
+    owned: listed,
+    omitted: owned.length - listed.length,
+    targets,
+  })
+  const run = await subagents.start(resolved.provider, {
+    label: 'skill-curation',
+    prompt,
+    parent: agent,
+    signal,
+    ...resolved.childTools.length > 0 ? { allowTools: resolved.childTools } : {},
+    ...resolved.childOmitSections.length > 0 ? { omitSections: resolved.childOmitSections } : {},
+  })
+  // 后台子 agent 也需要一个消费者，而且要一直持有到它落地：`dispose()` 是取消
+  // 未完成的工作，所以绝不能在这里直接调用 —— 这个子 agent 还一步都没跑。
+  // 子 agent 自己失败（模型或传输）属于它自己的结果，不是这次边界的事；发布之后
+  // 释放失败才是这里的基础设施故障，得让调用方看见。
+  await run.result.catch(() => undefined)
+  await run.dispose()
 }

@@ -1729,7 +1729,7 @@ A fixed foreground workflow starts one fresh structured child per round; the mod
 
 ### `skill`
 
-Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill.
+Load the full instructions for a skill. The harness injects a list of skills relevant to the current request; call this with the exact skill name from that list before acting on a task that names or clearly matches that skill. Any skill name the registry holds works here, including one the list did not mention.
 
 ```json
 {
@@ -1737,7 +1737,7 @@ Load the full instructions for an available skill. Call this with the exact skil
   "properties": {
     "name": {
       "type": "string",
-      "description": "The exact skill name from the available skills list."
+      "description": "The exact skill name, as written in the injected skill list."
     }
   },
   "required": [

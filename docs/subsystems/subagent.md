@@ -130,9 +130,8 @@ interface SubagentStartRequest {
      * own `tool:<name>` guidance.
      *
      * 这是"极简功能性子 agent"缺的那一半：工具靠 {@link allowTools} 裁，提示词靠这里
-     * 裁。裁掉 `skill` 工具会连带让 `skills:catalog` 整段变空（目录只在 `skill` 工具
-     * 可见时才注入），但 `harness:identity`、预设人格、`deployment:error-lessons`
-     * 这类分段与工具无关，只能点名抑制。
+     * 裁。裁掉一个工具只能带走它自己的 `tool:<名字>` 用法说明，而 `harness:identity`、
+     * 预设人格、`deployment:error-lessons` 这类分段背后没有工具，只能点名抑制。
      */
   readonly omitSections?: readonly string[]
 }

@@ -517,10 +517,27 @@ export interface Config {
    * nothing.
    */
   childOmitSections?: string[]
+  /**
+   * Whether every successful compaction also curates the corpus (default
+   * `true`). Off, only the explicit command captures anything.
+   */
+  autoCurate?: boolean
+  /**
+   * How many existing skills one curation child receives IN FULL for
+   * rewriting (default 3). The rest are still listed by name, description, and
+   * file path, so the child can read any of them before changing it.
+   */
+  curateMaxTargets?: number
+  /**
+   * How many owned skills the curation child is told about (default 30). The
+   * listing is the duplicate guard: a skill whose content restates one that
+   * already exists is worse than no new skill.
+   */
+  curateMaxListedSkills?: number
 }
 ```
 
-来源：[`packages/guard/command-summarize-skill/src/index.ts:28`](../packages/guard/command-summarize-skill/src/index.ts)
+来源：[`packages/guard/command-summarize-skill/src/index.ts:59`](../packages/guard/command-summarize-skill/src/index.ts)
 
 <a id="deepseek-aidsh-command-translate-skills"></a>
 
@@ -2535,7 +2552,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/skill/src/index.ts:300`](../packages/skill/skill/src/index.ts)
+来源：[`packages/skill/skill/src/index.ts:478`](../packages/skill/skill/src/index.ts)
 
 <a id="deepseek-aidsh-skill-filesystem"></a>
 
@@ -2550,6 +2567,24 @@ export interface Config {
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
+  /**
+   * Whether the shared `<tool>/agents` roots are scanned as well: the
+   * workspace's `<project>/.agents/skills` and the machine-wide
+   * `<agentsHome>/skills` (default `false`).
+   *
+   * Off by default because skill discovery now feeds a model that may REWRITE
+   * what it finds: a skill is a set of standing instructions, and the only
+   * directories whose contents this deployment can attribute to itself — and
+   * therefore vouch for and maintain — are the `.dsh` ones. A machine-wide
+   * `~/.agents/skills` is shared with every other tool that follows the same
+   * convention, so scanning it would silently import instructions this
+   * deployment neither writes nor owns, and reflection would then edit files
+   * belonging to another program.
+   *
+   * Turning it on restores the previous behaviour for a deployment that
+   * deliberately curates a shared corpus.
+   */
+  includeAgentsRoots?: boolean
   /** DeepSeek Harness config root. Defaults to `$DSH_HOME` or `~/.dsh`. */
   dshHome?: string
   /** Shared agent config root. Defaults to `$DSH_AGENTS_HOME` or `~/.agents`. */
@@ -3475,18 +3510,18 @@ export interface Config {
 需要：`agents` · `tools` · `skills`
 
 ```ts config-catalog
-/** Model-facing skill catalog configuration. */
+/** Model-facing skill list configuration. */
 export interface Config {
-  /** Maximum normalized description length rendered in the session catalog; minimum 3. */
+  /** Maximum normalized description length rendered in the retrieval list; minimum 3. */
   catalogDescriptionMaxLength?: number
   /**
-   * Locale for the session catalog (default `auto`). `auto` follows the
-   * language the assembly resolved — which, unless a deployment pins
+   * Locale for the retrieval list (default `auto`). `auto` follows the active
+   * prompt language — which, unless a deployment pins
    * `system-prompt.promptLocale`, is the interface language the user picked in
    * settings — and falls back to the archive heuristic (Chinese when the
-   * per-project translation archive carries at least one description) for
-   * assemblies that carry no locale. `zh` selects Chinese unconditionally;
-   * `en` never translates.
+   * per-project translation archive carries at least one description) when no
+   * language is active. `zh` selects Chinese unconditionally; `en` never
+   * translates.
    */
   catalogLocale?: CatalogLocale
   /**
@@ -3495,17 +3530,22 @@ export interface Config {
    * `/translate-skills` archive).
    */
   catalogTranslationsFile?: string
+  /**
+   * How many skills one turn's retrieval list may name (default 5, minimum 1).
+   * The list is a selection, not a catalog: see `DEFAULT_RETRIEVAL_MAX_RESULTS`.
+   */
+  retrievalMaxResults?: number
 }
 
 /**
- * Locale the published skill catalog renders in. `auto` follows the assembly
- * locale so a Chinese deployment gets a Chinese catalog, while `en` and `zh`
- * pin it regardless of the surrounding prompt language.
+ * Locale the published skill list renders in. `auto` follows the active prompt
+ * language so a Chinese deployment gets a Chinese list, while `en` and `zh` pin
+ * it regardless of the surrounding language.
  */
 export type CatalogLocale = (typeof CATALOG_LOCALES)[number]
 ```
 
-来源：[`packages/skill/tool-skill/src/index.ts:104`](../packages/skill/tool-skill/src/index.ts)
+来源：[`packages/skill/tool-skill/src/index.ts:146`](../packages/skill/tool-skill/src/index.ts)
 
 <a id="deepseek-aidsh-tool-str-replace-editor"></a>
 

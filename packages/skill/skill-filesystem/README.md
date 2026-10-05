@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Agents can use local skills from the repository, a custom directory, or the user's agent configuration: author a skill as a directory bundle with a `SKILL.md` or a flat `<name>.md` file under any scanned root, and it appears in the session catalog. The provider discovers the project, custom, and user roots, parses each skill's YAML frontmatter, and watches the directories, so new, renamed, or deleted skills reach agents without a restart. Choose it when skills live on disk — the registry (`dsh-skill`) accepts any provider, and another provider can supply skills from elsewhere.
+Agents can use local skills from the repository or a custom directory: author a skill as a directory bundle with a `SKILL.md` or a flat `<name>.md` file under any scanned root, and the skill registry picks it up. The provider discovers the project, custom, and user roots, parses each skill's YAML frontmatter, and watches the directories, so new, renamed, or deleted skills reach agents without a restart. Choose it when skills live on disk — the registry (`dsh-skill`) accepts any provider, and another provider can supply skills from elsewhere.
 
 ## Table of Contents
 
@@ -25,17 +25,17 @@ Agents can use local skills from the repository, a custom directory, or the user
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin to make local skills available to agents. It scans the project, custom, and user skill roots below, parses each skill's frontmatter into a catalog entry, and loads the body on demand; it also watches the roots so new, renamed, or deleted skills reach the next catalog without a restart.
+Mount the plugin to make local skills available to agents. It scans the project, custom, and user skill roots below, parses each skill's frontmatter into a registry entry, and loads the body on demand; it also watches the roots so new, renamed, or deleted skills reach the next discovery pass without a restart.
 
 ### When to choose it
 
-Use this provider when skills live on disk — in the repository, a custom directory, or the user's agent configuration. Avoid it when skills come from a remote registry or embedded plugin data: the registry accepts any provider, and this package is one implementation.
+Use this provider when skills live on disk — in the repository, a custom directory, or a harness-owned user root. Avoid it when skills come from a remote registry or embedded plugin data: the registry accepts any provider, and this package is one implementation.
 
 ### Skill format
 
 A skill is either a directory bundle `<name>/SKILL.md` or a flat file `<name>.md` at the top level of a scanned root; nested `**/SKILL.md` files are deliberately not discovered. The file starts with YAML frontmatter: required `name` and `description`, plus optional `whenToUse`, `metadata`, `disable-model-invocation`, and `user-invocable`.
 
-`disable-model-invocation: true` keeps the skill out of model-facing catalogs and loaders; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
+`disable-model-invocation: true` keeps the skill out of the model-facing list and the loader; `user-invocable: false` keeps it out of human-facing commands, and omitted fields default to permitting their surface. The two keys accept YAML booleans plus the case-insensitive `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0` forms; a rejected spelling or a non-boolean value drops the whole skill with a warning rather than silently permitting a surface.
 
 The plugin also accepts a runtime `invocationOverrides` map from skill name to a trigger state: `passive` keeps both surfaces, `active-only` restricts the skill to explicit user invocation, and `ignored` hides it from every catalog. A configured state overrides the frontmatter policy for that skill; keys must be valid skill names and fail plugin load otherwise. The runtime settings section adds a `projects` record keyed by workspace path, so a project map can override the global map per session cwd.
 
@@ -55,7 +55,7 @@ Default roots are scanned in this provider's rank order:
 | 400 | `user-dsh` | `<dshHome>/skills` |
 | 500 | `user-agents` | `<agentsHome>/skills` |
 
-The project root is the nearest ancestor containing `.git`; without one, the current cwd is used. The user DSH root skips its `.system` child. `includeDefaultRoots: false` omits the project and user rows plus the `$DSH_BUNDLED_SKILL_DIR` default so an isolated provider sees only its own configured roots; `bundledSkillDir` adds a bundled root at rank 600.
+The project root is the nearest ancestor containing `.git`; without one, the current cwd is used. The user DSH root skips its `.system` child. The two `*-agents` rows are opt-in: `includeAgentsRoots` (default off) is what adds them, because the model rewrites skill bodies during reflection and `.agents` is a shared convention other tools also read and write. `includeDefaultRoots: false` omits the project and user rows plus the `$DSH_BUNDLED_SKILL_DIR` default so an isolated provider sees only its own configured roots; `bundledSkillDir` adds a bundled root at rank 600.
 
 ### Mount and configure
 
@@ -70,6 +70,7 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 |---|---|---|
 | `providerName` | `filesystem` | Unique provider name registered on `ctx.skills` |
 | `includeDefaultRoots` | `true` | Include project and user roots around `customSkillDirs` |
+| `includeAgentsRoots` | `false` | Also scan the shared agent roots (`<projectRoot>/.agents/skills` at rank 200, `<agentsHome>/skills` at rank 500) |
 | `dshHome` | `$DSH_HOME` or `~/.dsh` | Harness config root; its `skills` subdirectory is scanned |
 | `agentsHome` | `$DSH_AGENTS_HOME` or `~/.agents` | Shared agent config root scanned for compatible skills |
 | `customSkillDirs` | `[]` | Additional local skill roots, after project roots and before user roots |
@@ -86,7 +87,7 @@ Existing roots are watched, so adding, renaming, or deleting a skill (or editing
 
 ### Observable success and failures
 
-A valid skill under any scanned root appears in the session catalog sorted by name, and loading it returns the current file body. A file without valid frontmatter, an invalid name, or an invalid invocation value is skipped with a warning, so the model catalog receives no per-skill diagnostic and cannot distinguish an absent skill from an invalid one. Unexpected discovery or read failures leave the catalog observation incomplete rather than replacing the last-good view with a misleading deletion.
+A valid skill under any scanned root enters the registry's catalog sorted by name, and loading it returns the current file body. A file without valid frontmatter, an invalid name, or an invalid invocation value is skipped with a warning, so the model-facing list receives no per-skill diagnostic and the model cannot distinguish an absent skill from an invalid one. Unexpected discovery or read failures leave the catalog observation incomplete rather than replacing the last-good view with a misleading deletion.
 
 -----
 
@@ -136,11 +137,11 @@ Read these pages when the package-level contract is not enough. They move from t
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through `dsh-tool-skill`, which renders this provider's invocable names and capped descriptions into the initial or replacement catalog and a selected current instruction body plus resource-base guidance into retained tool history while paths, provider ranks, and disabled skills remain hidden.
+Indirectly, through `dsh-tool-skill`, which ranks this provider's invocable names and capped descriptions into the per-turn retrieval list and renders a selected current instruction body plus resource-base guidance into retained tool history while paths, provider ranks, and disabled skills remain hidden.
 
 #### KV Cache effect
 
-Watcher invalidation can cause the named consumer to append a replacement catalog to the existing request history. Body-only edits leave the catalog digest unchanged.
+Watcher invalidation changes the inputs of the next turn's list, which `dsh-tool-skill` appends inside that step's message batch rather than in the reusable prefix; body-only edits change neither the ranking inputs nor the list.
 
 ## Known Limitations and Deferred Work
 

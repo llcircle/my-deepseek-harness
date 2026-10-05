@@ -157,6 +157,11 @@ async function setupLocal(home: string, config: Partial<SkillFileSystem.Config> 
   await ctx.plugin(SkillFileSystem, {
     dshHome: join(home, '.dsh'),
     agentsHome: join(home, '.agents'),
+    // Shared `<tool>/agents` roots are OFF by default (see `Config.includeAgentsRoots`),
+    // and most tests below were written against a machine that still scanned them.
+    // Turning them back on here keeps their subject — discovery, precedence,
+    // invalidation — under test; the default itself has its own test.
+    includeAgentsRoots: true,
     watch: false,
     ...config,
   })
@@ -216,6 +221,29 @@ describe('FileSystemSkillProvider', () => {
     const noGit = await tempDir('skill-no-git')
     await writeSkill(join(noGit, '.dsh/skills'), 'fallback-root', 'Fallback root')
     expect((await ctx.skills.list({ cwd: noGit })).map(skill => skill.name)).toContain('fallback-root')
+  })
+
+  it('scans only the harness-owned roots unless the shared agent roots are opted in', async () => {
+    const home = await tempDir('skill-roots-default')
+    const project = await tempDir('skill-roots-default-project')
+    await mkdir(join(project, '.git'), { recursive: true })
+    await writeSkill(join(project, '.dsh/skills'), 'project-owned', 'Project owned')
+    await writeSkill(join(project, '.agents/skills'), 'shared-project', 'Shared project')
+    await writeSkill(join(home, '.dsh/skills'), 'user-owned', 'User owned')
+    await writeSkill(join(home, '.agents/skills'), 'shared-user', 'Shared user')
+    const roots = { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false }
+
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    await ctx.plugin(SkillFileSystem, roots)
+    expect((await ctx.skills.list({ cwd: project })).map(skill => skill.name))
+      .toEqual(['project-owned', 'user-owned'])
+
+    const opted = new Context()
+    await opted.plugin(SkillRegistry)
+    await opted.plugin(SkillFileSystem, { ...roots, includeAgentsRoots: true })
+    expect((await opted.skills.list({ cwd: project })).map(skill => skill.name))
+      .toEqual(['project-owned', 'shared-project', 'shared-user', 'user-owned'])
   })
 
   it('resolves a `file:` custom root, the shape a composition uses for its own directory', async () => {
@@ -581,7 +609,12 @@ describe('FileSystemSkillProvider', () => {
       size: 0,
     })
     await ctx.plugin(SkillRegistry)
-    await ctx.plugin(SkillFileSystem, { dshHome: join(home, '.dsh'), agentsHome: join(home, '.agents'), watch: false })
+    await ctx.plugin(SkillFileSystem, {
+      dshHome: join(home, '.dsh'),
+      agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
+      watch: false,
+    })
 
     expect((await ctx.skills.list({ cwd: nestedCwd })).map(skill => [skill.name, skill.source])).toEqual([
       ['backend-root', 'project-agents'],
@@ -616,6 +649,7 @@ describe('FileSystemSkillProvider', () => {
     await ctx.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       watch: false,
     })
 
@@ -652,6 +686,7 @@ describe('FileSystemSkillProvider', () => {
     await ctx.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       watch: false,
     })
     const invalidate = (): void => {
@@ -734,6 +769,7 @@ describe('FileSystemSkillProvider', () => {
     const fiber = await ctx.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       watch: true,
       watchStabilityThresholdMs: 20,
       watchPollIntervalMs: 10,
@@ -842,6 +878,7 @@ describe('FileSystemSkillProvider', () => {
     const fiber = await ctx.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       customSkillDirs: [join(first, '.agents/skills')],
       watch: true,
       watchMaxProjects: 1,
@@ -864,6 +901,7 @@ describe('FileSystemSkillProvider', () => {
     await noWatch.plugin(SkillFileSystem, {
       dshHome: join(home, '.dsh'),
       agentsHome: join(home, '.agents'),
+      includeAgentsRoots: true,
       watch: false,
       watchMaxProjects: 1,
     })
@@ -883,6 +921,7 @@ describe('FileSystemSkillProvider', () => {
       provider = new SkillFileSystem.FileSystemSkillProvider(ctx, control, {
         dshHome: join(home, '.dsh'),
         agentsHome: join(home, '.agents'),
+        includeAgentsRoots: true,
         customSkillDirs: [nonDirectoryRoot],
         watch: true,
         watchStabilityThresholdMs: 20,

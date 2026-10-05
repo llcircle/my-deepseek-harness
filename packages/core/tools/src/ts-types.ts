@@ -255,7 +255,7 @@ export function jsonSchemaToTs(schema: unknown, indent = 0): string {
  *
  * 这份散文**不**进 `system-prompt` 的双语资产表：那张表的收录标准是"第一方、
  * 内容静态"，而这一段是按调用方作用域的可见工具集现算的（同族的 `mcp:<server>`
- * 与 `skills:catalog` 也由各自的提供方自行选文案）。所以这里按装配语言选一份，
+ * 也由各自的提供方自行选文案）。所以这里按装配语言选一份，
  * 和 `mcpServerIntro(..., locale)` 同一个做法。
  *
  * 只有散文分语言：下面的 `declare const tools` 是类型投影，中文声明语法上就不成立。

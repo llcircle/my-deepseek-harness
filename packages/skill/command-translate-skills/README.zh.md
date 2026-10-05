@@ -63,7 +63,7 @@ Skill 简介由作者用什么语言写就是什么语言，目录里因此混�
 { "deploy-docs": { "description": "<translated>", "whenToUse": "<translated or omitted>", "promptLine": "- \`deploy-docs\`: <translated description>" } }
 ```
 
-键一律是未翻译的 skill 名；源摘要没有 `whenToUse` 时省略该字段；`promptLine` 把系统提示词渲染的目录行翻译存档。`dsh-tool-skill` 会自动读取本存档中的 `description`，只要存在至少一条翻译，就把整个目录渲染为中文。
+键一律是未翻译的 skill 名；源摘要没有 `whenToUse` 时省略该字段；`promptLine` 把翻译后的单行目录形态存档。`dsh-tool-skill` 会自动读取本存档中的 `description`，只要存在至少一条翻译，检索到的条目就渲染为中文。
 
 -----
 

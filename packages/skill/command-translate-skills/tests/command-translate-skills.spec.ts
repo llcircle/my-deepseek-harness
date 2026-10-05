@@ -148,7 +148,7 @@ describe('the /translate-skills command', () => {
     expect(subagents.runs[0]?.prompt).toContain('.dsh/skill-translations.zh.json')
     expect(subagents.runs[0]?.prompt).toContain('Do NOT translate skill names')
     expect(subagents.runs[0]?.prompt).toContain('promptLine')
-    expect(subagents.runs[0]?.prompt).toContain('system prompt in both languages')
+    expect(subagents.runs[0]?.prompt).toContain('archives each skill summary in both languages')
     // The skill body never enters the prompt: descriptions only.
     expect(subagents.runs[0]?.prompt).not.toContain('SECRET BODY')
   })

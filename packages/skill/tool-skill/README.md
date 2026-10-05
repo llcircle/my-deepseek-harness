@@ -1,5 +1,5 @@
 ---
-description: "The model-facing skill catalog and loader tool for users and maintainers understanding what agents see, or configuring the session skill catalog."
+description: "The model-facing skill loader and its per-turn BM25 retrieval list for users and maintainers understanding what agents see, or configuring which skills one request is scored against."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Agents can discover and load skills mid-session. Before the first request, when model-invocable skills exist and the `skill` tool is visible, they receive a durable catalog of skill names and capped descriptions, and use the `skill` tool to load full instructions. Users can invoke a user-invocable skill with `/name`, which injects the same instructions into that step. Catalog changes append a complete replacement, including an empty catalog that retires old names; configure `catalogDescriptionMaxLength` to limit each description. A replacement also follows a localized-description change, and a per-workspace trigger-state override (`passive`, `active-only`, or `ignored`) counts as a membership change.
+Agents can discover and load skills mid-session. At each turn's first step the plugin scores the user's own text against every model-invocable skill with BM25 and appends the winners to that step's messages; the `skill` tool then loads any skill by exact name, including one the list did not name. Users can invoke a user-invocable skill with `/name`, which injects the same instructions into that step. `retrievalMaxResults` caps the list, `catalogDescriptionMaxLength` caps each description, and `catalogLocale` selects the framing language.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ Agents can discover and load skills mid-session. Before the first request, when 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin alongside the skill registry to give agents a session skill catalog and the `skill` loader tool. It requires `ctx.agents`, `ctx.tools`, and `ctx.skills`.
+Mount the plugin alongside the skill registry to give agents a per-turn skill list and the `skill` loader tool. It requires `ctx.agents`, `ctx.tools`, `ctx.skills`, and `ctx.systemPrompt`.
 
 ### When to choose it
 
-Use it when agents should discover and load skills during a session. Skip it when skill loading is handled by another consumer or not needed at all — without it, providers and the registry still work, but nothing renders a catalog or a tool for the model.
+Use it when agents should discover and load skills during a session. Skip it when skill loading is handled by another consumer or not needed at all — without it, providers and the registry still work, but nothing names skills to the model and no tool loads them.
 
 ### Mount and configure
 
-Load the plugin together with the skill registry and at least one provider. The configuration caps the normalized description length and selects the catalog locale.
+Load the plugin together with the skill registry and at least one provider. The configuration caps how wide the list may be and how long each description may read, and selects the list locale.
 
 ```yaml
 - name: '@deepseek-ai/dsh-skill'
@@ -43,22 +43,23 @@ Load the plugin together with the skill registry and at least one provider. The 
 
 | Field | Default | Meaning |
 |---|---|---|
-| `catalogDescriptionMaxLength` | `500` | Maximum normalized description length rendered in the session catalog; minimum 3 |
-| `catalogLocale` | `auto` | `auto` uses Chinese when the translation archive carries at least one description; `zh` always uses Chinese framing; `en` never translates |
+| `retrievalMaxResults` | `5` | Maximum skills one turn's list may name; minimum 1 |
+| `catalogDescriptionMaxLength` | `500` | Maximum normalized description length rendered in the list; minimum 3 |
+| `catalogLocale` | `auto` | `auto` follows the active prompt language; `zh` always uses Chinese framing; `en` never translates |
 | `catalogTranslationsFile` | `.dsh/skill-translations.zh.json` | Per-project translation archive; relative paths resolve against the session workspace |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-skill) is the exhaustive source for every accepted field.
 
 ### What the model gets
 
-- **A session catalog.** When model-invocable skills exist and the `skill` tool is visible, the agent receives a durable user-role message before its first request, listing each skill's name and a capped description; the message tells the model to load a skill with the tool before acting on it, and never to infer instructions from the summary alone. In the default `auto` locale, one translated description makes the whole catalog framing Chinese; untranslated entries fall back to their original description.
-- **A loader tool.** The model calls `skill` with the exact skill name and receives the full instruction body plus resource guidance in a canonical `<skill_content>` block; the result is retained as ordinary tool history.
+- **A per-turn retrieval list.** On a turn's first step, when model-invocable skills exist and this exact `skill` tool is visible, the direct user text of that step is scored against every skill's name and description with BM25, and the top `retrievalMaxResults` are appended to the step's messages as one `<available_skills>` reminder that also states how many skills the session holds in total. In the default `auto` locale one translated description makes the framing Chinese; untranslated entries fall back to their original description.
+- **A loader tool.** The model calls `skill` with the exact skill name and receives the full instruction body plus resource guidance in a canonical `<skill_content>` block; the result is retained as ordinary tool history. The tool resolves any name the registry holds, so a name the list never mentioned still loads — and the list says so.
 - **Explicit user invocation.** A `/name` token in direct user input that names a user-invocable skill injects that skill's instructions into the step, without the model having to load it.
-- **Live catalog updates.** Later membership, description, visibility, or translation changes append a complete replacement catalog; removing every skill appends an empty catalog that retires older names.
+- **One list per turn.** Later steps of the same turn reuse the list already in context; the next turn's list says it supersedes the earlier one, so a name that dropped out of the selection is retired without an empty replacement.
 
 ### Observable success and failures
 
-Loading a listed skill returns its full instructions; the model sees one canonical shape whether the load came from the tool or from a user's explicit invocation. An invalid name reports `Error: invalid skill name "<name>"`, an unknown name reports the skill is unknown or no longer available, and a skill disabled for model invocation reports it is not available for model invocation. The catalog is omitted entirely when no catalog was ever published and either no model-invocable skills exist or the `skill` tool is hidden or shadowed; after a catalog has been published, either visibility loss — the `skill` tool hidden or shadowed by a same-name scoped tool — or removal of every skill instead appends an empty catalog that retires older names.
+Loading a listed or unlisted skill returns its full instructions; the model sees one canonical shape whether the load came from the tool or from a user's explicit invocation. An invalid name reports `Error: invalid skill name "<name>"`, an unknown name reports the skill is unknown or no longer available, and a skill disabled for model invocation reports it is not available for model invocation. Nothing is appended when the step carries no direct user text, when the step's batch is empty, when the registry returns an incomplete snapshot, when no model-invocable skill exists, or when the `skill` tool is hidden or shadowed by a same-name scoped tool.
 
 -----
 
@@ -68,26 +69,26 @@ Loading a listed skill returns its full instructions; the model sees one canonic
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-This section explains how the catalog and the invocation boundary are built; the observable behavior is fully covered in [Use this package](#use-this-package) and the Model Experience section below.
+This section explains how the retrieval list and the invocation boundary are built; the observable behavior is fully covered in [Use this package](#use-this-package) and the Model Experience section below.
 
 ### Design concept
 
-The package is built on two ideas. First, the catalog is a durable projection, diffed by a digest over the published entries rather than the rendered prose, so the `<system-reminder>` framing can never force a republish and consumers never re-parse the `<available_skills>` block. Second, one canonical rendering serves both load paths — the tool result and the user-explicit injection — through `renderSkillContent` shared from `dsh-skill`, so the model sees the same `<skill_content>` shape regardless of who initiated the load.
+Two ideas carry the package. First, the list is *re-derived from the request on every turn* rather than maintained as a durable document: scoring is a pure function of the user's text and the live registry, so there is no digest to compare, no replacement to publish, and no stale name to retire explicitly. Second, one canonical rendering serves both load paths — the tool result and the user-explicit injection — through `renderSkillContent` shared from `dsh-skill`, so the model sees the same `<skill_content>` shape regardless of who initiated the load.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, catalog and gesture pre-step listeners, rendering and digest |
+| [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, retrieval and gesture pre-step listeners, BM25 ranking call, rendering |
 | — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls. |
 
-### Catalog lifecycle
+### Retrieval lifecycle
 
-At each eligible `agent/pre-step`, the plugin snapshots the calling session's skill catalog, applies exact `skill` tool visibility, filters to model-invocable skills, and compares a digest of the entries against the newest visible `skill-catalog` message in the session log. When the digest changed, it hands the `enter` decision a durable user-role message containing the complete replacement catalog; an empty replacement explicitly retires earlier names. An incomplete provider snapshot emits nothing and preserves the last-good view for the next pre-step. The visibility check compares against the exact tool definition this plugin registered, so a scoped same-name shadow removes both the schema and its guidance; the plugin works mounted globally or inside one agent's composition.
+At the first step of every turn the plugin returns the batch untouched unless it carries direct user text, confirms that the exact `skill` tool it registered is still visible, snapshots the calling session's skill catalog, and — only on a complete snapshot — ranks every model-invocable skill against the joined user text. The winners are rendered into one `<system-reminder>` message, sourced `{ kind: 'plugin', plugin: 'dsh-tool-skill', form: 'catalog' }`, and appended to the step's messages after every other injection of that step. Later steps of the turn inject nothing: the first list is still in context. The visibility check compares against the exact tool definition this plugin registered, so a scoped same-name shadow removes both the schema and the list; the plugin works mounted globally or inside one agent's composition.
 
 ### Invocation boundary
 
-The `/name` gesture listener scans only claimed user messages: a whitespace-bounded token naming a user-invocable skill in the workspace catalog injects the same `<skill_content>` rendering as a `user`-role instructions context appended after every other injection. Unknown names and user-disabled skills stay ordinary prose. This is the only entry point for `disable-model-invocation` skills, which the catalog and the `skill` tool never expose.
+The `/name` gesture listener scans only claimed user messages: a whitespace-bounded token naming a user-invocable skill in the workspace catalog injects the same `<skill_content>` rendering as a `user`-role instructions context. It registers before the retrieval listener, so a step that both names a skill and retrieves a list ends with the injected body last — background first, the material to act on closest to the answer. Unknown names and user-disabled skills stay ordinary prose. This is the only entry point for `disable-model-invocation` skills, which the retrieval list and the `skill` tool never expose.
 
 </details>
 
@@ -96,10 +97,10 @@ The `/name` gesture listener scans only claimed user messages: a whitespace-boun
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Read these pages when the package-level contract is not enough. They move from the registry vocabulary behind the catalog to the exact tool schema and the design rationale.
+Read these pages when the package-level contract is not enough. They move from the registry vocabulary behind the ranking inputs to the exact tool schema and the design rationale.
 
-- [Skill subsystem reference](../../../docs/subsystems/skills.md) — the registry and provider vocabulary behind the catalog.
-- [skill package](../skill/README.md) — the registry and the shared `renderSkillContent` rendering.
+- [Skill subsystem reference](../../../docs/subsystems/skills.md) — the registry and provider vocabulary the list is ranked over.
+- [skill package](../skill/README.md) — the registry, the BM25 ranking primitive, and the shared `renderSkillContent` rendering.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-skill) — the exact `skill` schema the model receives.
 - [User-explicit skill invocation Agent Note](../../../.agents/notes/archived/feature/2026-08-08-user-explicit-skill-invocation.md) — the `/name` gesture design.
 
@@ -108,34 +109,34 @@ Read these pages when the package-level contract is not enough. They move from t
 <a id="model-experience"></a>
 ## Model Experience
 
-### Session catalog
+### Retrieval list
 
 #### What the model sees
 
-If model-invocable skills exist and this exact `skill` tool is visible, the agent receives the catalog template below as a durable user-role message before the first request, with one data-dependent entry per sorted skill. Later membership, description, visibility, or translation changes append a complete replacement using the same `<available_skills>` envelope; deleting every skill appends an empty envelope with an explicit instruction not to use older names. The template's closing sentence is the rule against double-loading: the user-explicit gesture boundary (the pre-step listener below) injects the same `renderSkillContent` output (shared from `@deepseek-ai/dsh-skill`) inline, and the catalog tells the model to follow that block instead of re-loading the skill through the tool; the replacement-catalog template carries the same anti-double-loading rule in both arms, including the emptied catalog. The Chinese locale translates this framing and every archived description while retaining the XML tags, skill names, and tool name.
+On a turn's first step, if model-invocable skills exist and this exact `skill` tool is visible, the step's batch gains the reminder below as its last message, with one data-dependent entry per ranked skill and a header stating how many skills the session holds in total. The block is not durable state: the next turn appends a fresh list that declares itself the successor, so a name that dropped out of the selection is retired by that successor rather than by an explicit empty replacement. Two closing sentences carry the safety rules — the list holds summaries only, and it is a selection rather than the whole catalog, so an unlisted skill is still loadable by name. The Chinese locale translates this framing and every archived description while retaining the XML tags, skill names, and tool name.
 
-##### Skill catalog template
+##### Retrieval list template
 
 ```markdown
 <system-reminder>
-A skill is a reusable set of task-specific instructions. The following skills are available in this session:
+A skill is a reusable set of task-specific instructions. These are the skills most relevant to the current request (this session holds <total> in total; <listed> listed here). This list supersedes any earlier skill list:
 
 <available_skills>
 - `<name>`: <normalized-and-capped-description>
 </available_skills>
 
-If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.
+If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This list contains summaries only; do not infer or follow a skill's instructions until it has been loaded. The list is a selection, not the whole catalog — a skill it does not mention can still be loaded by name.
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
 </system-reminder>
 ```
 
 #### Token effect
 
-Repeated input cost scales with skill count and `catalogDescriptionMaxLength`; no initial catalog tokens are sent when the list is empty or the tool is hidden or shadowed. Each actual catalog change adds one retained complete replacement message.
+Repeated input cost is bounded by `retrievalMaxResults` and `catalogDescriptionMaxLength` rather than by the size of the registry: one list per turn, however many steps that turn takes. No tokens are added when the step carries no direct user text, when the selection is empty, or when the tool is hidden or shadowed.
 
 #### KV Cache effect
 
-The initial durable catalog is appended after the existing reusable prefix. Dynamic changes are append-only history after that catalog, so earlier reusable tokens stay intact while each newly appended catalog and later turns form a new suffix. A new or resumed instance with a changed digest may affect cache reuse from the newly appended catalog position.
+The list is appended inside the step's message batch, after the reusable request prefix, so a changed selection never rewrites earlier tokens. Because one turn appends one list, the retained cost is one message per turn rather than one per step.
 
 ### Tool schema
 
@@ -225,7 +226,7 @@ Append-only; newly visible content follows the reusable request prefix and does 
 
 #### What the model sees
 
-A whitespace-bounded `/name` token anywhere in a claimed user message, naming a user-invocable skill in the workspace catalog, injects that skill's full `<skill_content>` rendering (the exact result-template shape above) as a `user`-role instructions context appended after every other injection of that step — background first, the material to act on last. Only direct user input is scanned, the check runs on the loaded definition, and unknown or user-disabled names stay ordinary prose. This is the sole entry point for `disable-model-invocation` skills, which the catalog and the `skill` tool never expose; the catalog's closing sentence tells the model to follow the injected block instead of re-loading it.
+A whitespace-bounded `/name` token anywhere in a claimed user message, naming a user-invocable skill in the workspace catalog, injects that skill's full `<skill_content>` rendering (the exact result-template shape above) as a `user`-role instructions context appended after every other injection of that step — background first, the material to act on last, after the retrieval list the same step may have appended. Only direct user input is scanned, the check runs on the loaded definition, and unknown or user-disabled names stay ordinary prose. This is the sole entry point for `disable-model-invocation` skills, which the retrieval list and the `skill` tool never expose; the list's closing sentence tells the model to follow the injected block instead of re-loading it.
 
 #### Token effect
 
@@ -240,14 +241,15 @@ Append-only; the injection lands after the reusable request prefix inside the st
 <a id="known-limitations-and-deferred-work"></a>
 
 
-These limits define when the catalog or the loader is a poor fit. They are current package constraints, not a task backlog.
+These limits define when the retrieval list or the loader is a poor fit. They are current package constraints, not a task backlog.
 
-- **The catalog omits `whenToUse`, source, and provider metadata** — routing is based only on name and a capped description; `whenToUse` remains provider metadata and is not rendered by the loaded wrapper either.
-- **Loaded instruction bodies have no size cap** — a provider can return a skill large enough to consume substantial next-step context; only catalog descriptions are truncated.
+- **Retrieval can miss** — the list names at most `retrievalMaxResults` skills chosen by lexical BM25 over names and descriptions, so a skill whose wording does not match the request is absent from the list and has to be loaded by exact name.
+- **Scoring reads only direct user text** — tool results, injected context, and relayed messages never participate, so a task described entirely in a tool result produces no list at all.
+- **The list omits `whenToUse`, source, and provider metadata** — routing is based only on name and a capped description; `whenToUse` remains provider metadata and is not rendered by the loaded wrapper either.
+- **Loaded instruction bodies have no size cap** — a provider can return a skill large enough to consume substantial next-step context; only listed descriptions are truncated.
 - **Resources are guidance, not attachments** — the tool reports a base directory/URL/opaque hint but neither enumerates nor fetches referenced files for the model.
 - **Loading is one-shot text** — there is no partial, streaming, or cached-content handle when a remote provider is slow or a skill body is large.
-- **Catalog replacement is whole-list** — one changed name, description, or translation appends every visible summary; this keeps stale-name retirement explicit but costs tokens proportional to the catalog.
-- **Bodies are not versioned** — body-only edits do not change the catalog digest or notify the model; a later tool call reads the current provider content while earlier tool results remain historical facts.
+- **Bodies are not versioned** — a body-only edit changes neither the ranking inputs nor the list, so nothing announces it; a later tool call reads the current provider content while earlier tool results remain historical facts.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -812,7 +812,7 @@ describe('SystemPrompt', () => {
       const ctx = new Context()
       // The archive is Chinese, so it is only consulted under the Chinese locale.
       await ctx.plugin(SystemPrompt, { personaPrefix: 'English persona.', promptLocale: 'zh' })
-      ctx.systemPrompt.section({ name: 'skills:catalog', order: 100, text: '<available_skills>...</available_skills>' })
+      ctx.systemPrompt.section({ name: 'plugin:catalog', order: 100, text: 'Plugin catalog.' })
       ctx.systemPrompt.section({ name: 'deployment:error-lessons', order: 150, text: 'Live lessons.' })
       ctx.systemPrompt.section({ name: 'plugin:extra', order: 200, text: 'Extra guidance.' })
       try {
@@ -820,12 +820,16 @@ describe('SystemPrompt', () => {
         expect(assembly.sections.map(section => section.name)).toEqual([
           'harness:identity',
           'deployment:persona-prefix',
-          'skills:catalog',
+          'plugin:catalog',
           'deployment:error-lessons',
           'plugin:extra',
           'deployment:persona-suffix',
         ])
-        expect(renderPrompt(assembly)).toBe('翻译后的身份。\n\n翻译后的人设。\n\n<available_skills>...</available_skills>\n\nLive lessons.\n\n翻译后的额外指引。')
+        // The three archive paragraphs cover the first three replaceable static
+        // sections in render order. The dynamic `deployment:error-lessons` keeps
+        // its own text and consumes no paragraph — were it replaceable it would
+        // have taken the third, and `plugin:extra` would have gone without.
+        expect(renderPrompt(assembly)).toBe('翻译后的身份。\n\n翻译后的人设。\n\n翻译后的额外指引。\n\nLive lessons.\n\nExtra guidance.')
       } finally {
         await rm(dir, { recursive: true, force: true })
       }
@@ -1127,9 +1131,9 @@ describe('SystemPrompt', () => {
     it('leaves dynamic sections to their providers', async () => {
       const ctx = new Context()
       await ctx.plugin(SystemPrompt, { promptLocale: 'zh' })
-      ctx.systemPrompt.section({ name: 'skills:catalog', order: 1, text: () => 'live catalog' })
+      ctx.systemPrompt.section({ name: 'deployment:error-lessons', order: 1, text: () => 'live lessons' })
       const assembly = await ctx.systemPrompt.assemble()
-      expect(assembly.sections.find(section => section.name === 'skills:catalog')?.text).toBe('live catalog')
+      expect(assembly.sections.find(section => section.name === 'deployment:error-lessons')?.text).toBe('live lessons')
     })
 
     it('carries runtime fragments from the original into the translation', async () => {

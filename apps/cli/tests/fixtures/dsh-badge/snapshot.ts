@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -29,19 +29,26 @@ try {
     send: () => {},
     followup: () => {},
     steer: () => {},
-    inject: () => { throw new Error('dsh-badge snapshot must receive the catalog at the step boundary') },
+    inject: () => { throw new Error('dsh-badge snapshot must receive the retrieval list at the step boundary') },
     cancel: () => {},
     runMaintenance: job => job(new AbortController().signal),
     whenIdle: () => Promise.resolve(),
   }
+  // The retrieval list is ranked against the turn's own user text and injected
+  // into that step's batch, so the probe has to look like a real first step.
+  const messages = [createUserMessage({
+    content: [{ type: 'text', text: 'add the powered-by-dsh badge to my README' }],
+    source: { kind: 'user' },
+  })]
   const decision = await agentEvents(ctx, agent).waterfall(
     'agent/pre-step',
-    { messages: [], turn: 1, step: 1, signal: new AbortController().signal },
-    () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
+    { messages, turn: 1, step: 1, signal: new AbortController().signal },
+    () => Promise.resolve({ kind: 'enter' as const, messages }),
   )
-  const catalog = decision.kind === 'enter'
+  const retrieval = decision.kind === 'enter'
     ? decision.messages.find(message => message.role === 'user'
-      && message.source.kind === 'skill-catalog')?.content
+      && message.source.kind === 'plugin'
+      && message.source.plugin === 'dsh-tool-skill')?.content
     : undefined
   const summary = (await ctx.skills.list()).find(skill => skill.name === 'dsh-badge')
   const result = await ctx.tools.execute({
@@ -50,7 +57,7 @@ try {
     arguments: { name: 'dsh-badge' },
     signal: new AbortController().signal,
   })
-  process.stdout.write(`${JSON.stringify({ catalog: catalog ?? null, summary: summary ?? null, result })}\n`)
+  process.stdout.write(`${JSON.stringify({ retrieval: retrieval ?? null, summary: summary ?? null, result })}\n`)
 } finally {
   await ctx.fiber.dispose()
 }
