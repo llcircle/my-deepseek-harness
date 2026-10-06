@@ -5,12 +5,14 @@
  * start exactly one one-shot subagent carrying the excerpt and the skill
  * writing instructions; a missing subagent runtime fails loudly.
  *
- * The compaction pass: a successful compaction starts ONE curation child
- * carrying the summary plus the skills this deployment owns — in full when the
- * ranking picks them, by name and path otherwise — while a failed compaction, a
- * subagent's own compaction, an unregistered calling agent, an incomplete
- * catalog, a pass already in flight, and `autoCurate: false` all leave the
- * corpus alone.
+ * The compaction pass runs up to TWO children with disjoint jobs and disjoint
+ * permissions. The creation child is asked whether the work deserves a new skill
+ * and may write one new file; it runs at every successful boundary. The
+ * reflection child is asked whether a skill this stretch LOADED was wrong and may
+ * rewrite only the files it was handed; it runs only when something was loaded.
+ * A failed compaction, a subagent's own compaction, an unregistered calling
+ * agent, an incomplete catalog, a pass already in flight, and `autoCurate:
+ * false` all leave the corpus alone.
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -22,9 +24,11 @@ import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
-import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
-import SkillRegistry, { type SkillSummary } from '@deepseek-ai/dsh-skill'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import SkillRegistry, { renderSkillContent, type SkillSummary } from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -51,6 +55,8 @@ interface SkillFixture {
 /** One recorded `subagents.start()` call. */
 interface StartedChild {
   readonly provider: string
+  /** The run's label — how a test tells the two curation jobs apart. */
+  readonly label: string | undefined
   readonly prompt: string
   readonly parent: Agent
   readonly allowTools?: readonly string[]
@@ -91,6 +97,7 @@ function makeSubagents(): SubagentStub {
     }
 
     start(provider: string, request: {
+      label?: string
       prompt: readonly { type: string; text?: string }[]
       parent: Agent
       signal: AbortSignal
@@ -101,6 +108,7 @@ function makeSubagents(): SubagentStub {
       const index = runs.length
       runs.push({
         provider,
+        label: request.label,
         prompt: request.prompt.map(block => block.type === 'text' ? block.text ?? '' : '').join('\n'),
         parent: request.parent,
         signal: request.signal,
@@ -296,6 +304,64 @@ async function waitForChild(subagents: SubagentStub, count = 1): Promise<void> {
 /** Give a pass that must NOT start a child its chance to (not) do so. */
 async function settleNothing(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 20))
+}
+
+/** The labels of the children published so far, in publication order. */
+function labels(subagents: SubagentStub): Array<string | undefined> {
+  return subagents.runs.map(run => run.label)
+}
+
+/** The single text block of a prompt, as the tests read it. */
+function promptText(prompt: ContentBlock[]): string {
+  const block = prompt[0]
+  if (block?.type !== 'text') throw new Error('expected a single text prompt block')
+  return block.text
+}
+
+/**
+ * Record one user-explicit skill invocation.
+ *
+ * The metadata path a real host publishes: the injected message carries the
+ * `skill-invocation` source with the name as a FIELD, so nothing has to be
+ * recovered by re-parsing a rendered body.
+ * @param session - the session the invocation belongs to.
+ * @param name - the invoked skill's name.
+ */
+function loadSkill(session: Session, name: string): void {
+  session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: `/skill ${name}` }],
+    source: { kind: 'skill-invocation', name, form: 'instructions' },
+  }), { surfaceOp: 'append' })
+}
+
+/**
+ * Record one `skill` tool result carrying a rendered body.
+ *
+ * The other path a session can load a skill by: the model called the tool, and
+ * the name survives only inside the wrapper the shared renderer wrote.
+ * @param session - the session the result belongs to.
+ * @param name - the loaded skill's name.
+ * @param body - the skill body the renderer embeds.
+ */
+function openedSkill(session: Session, name: string, body: string): void {
+  session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({
+      callId: ToolCallId(`call-${name}`),
+      content: [{ type: 'text', text: renderSkillContent({ name, provider: 'filesystem', content: body }) }],
+      isError: false,
+    }),
+  }, { surfaceOp: 'append' })
+}
+
+/** A session carrying exactly the events `record` appends, in order. */
+function eventsOf(record: (session: Session) => void): readonly SessionEvent[] {
+  const session = Session.create(SessionId('load-probe'), [], {
+    version: SESSION_FORMAT_VERSION, id: SessionId('load-probe'), createdAt: 0, isSeeded: false,
+  })
+  record(session)
+  return session.snapshotEvents()
 }
 
 describe('the /summarize-skill command', () => {
@@ -584,6 +650,76 @@ describe('the /summarize-skill command', () => {
   })
 })
 
+describe('reading skill loads off the log', () => {
+  const BODY = 'Run pnpm run website:build, then copy dist to the host.'
+
+  it('reads a user-explicit invocation from the message source', () => {
+    const events = eventsOf((session) => {
+      loadSkill(session, 'deploy-docs')
+      // 普通的用户提问不是加载，注入的上下文也不是：只有带来源字段的那条算。
+      session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text: 'now deploy it' }],
+        source: { kind: 'user' },
+      }), { surfaceOp: 'append' })
+    })
+
+    expect(SummarizeSkill.loadedSkillNames(events)).toEqual(['deploy-docs'])
+  })
+
+  it('reads a tool-visible load out of the rendered body', () => {
+    const events = eventsOf((session) => {
+      openedSkill(session, 'deploy-docs', BODY)
+      // 别的工具结果不是技能正文，哪怕它和正文一样长。
+      session.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: createToolResultMessage({
+          callId: ToolCallId('call-read'),
+          content: [{ type: 'text', text: 'a.txt' }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+    })
+
+    expect(SummarizeSkill.loadedSkillNames(events)).toEqual(['deploy-docs'])
+  })
+
+  it('reads nothing out of events that load no skill', () => {
+    const events = eventsOf((session) => {
+      session.append('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: 'done' }],
+          source: { provider: 'mock', model: 'mock' },
+        }),
+        stream: [],
+      }, { surfaceOp: 'append' })
+    })
+
+    expect(SummarizeSkill.loadedSkillNames(events)).toEqual([])
+  })
+
+  it('keeps first-use order and collapses reloads', () => {
+    const events = eventsOf((session) => {
+      loadSkill(session, 'deploy-docs')
+      openedSkill(session, 'pdf-merge', BODY)
+      openedSkill(session, 'deploy-docs', BODY)
+    })
+
+    // 一段工作里第五次打开同一个技能，仍然只算用过它一个。
+    expect(SummarizeSkill.loadedSkillNames(events)).toEqual(['deploy-docs', 'pdf-merge'])
+  })
+
+  it('ignores a recorded name that is empty', () => {
+    const events = eventsOf((session) => {
+      loadSkill(session, '')
+    })
+
+    expect(SummarizeSkill.loadedSkillNames(events)).toEqual([])
+  })
+})
+
 describe('the compaction curation pass', () => {
   const DEPLOY_SKILL: SkillFixture = {
     name: 'deploy-docs',
@@ -591,46 +727,166 @@ describe('the compaction curation pass', () => {
     body: 'Run pnpm run website:build, then copy dist to the host.',
   }
 
-  it('starts one curation child carrying the summary and the owned corpus', async () => {
-    const { session, subagents, skillsHome } = await harness({ skills: [DEPLOY_SKILL] })
+  it('starts one creation child carrying the summary and the corpus listing', async () => {
+    const { agent, session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
 
     compact(session, 'The session rebuilt the docs site and copied dist to the host.')
     await waitForChild(subagents)
 
     const child = subagents.runs[0]!
+    expect(labels(subagents)).toEqual(['skill-creation'])
     expect(child.provider).toBe('spawn')
-    // 子 agent 的活是改写技能文件，工具集与显式命令那条路径一致。
+    expect(child.parent).toBe(agent)
+    // 子 agent 的活是写技能文件，工具集与显式命令那条路径一致。
     expect(child.allowTools).toEqual(['read', 'write'])
     expect(child.prompt).toContain('The session rebuilt the docs site and copied dist to the host.')
     expect(child.prompt).toContain('- `deploy-docs`: Deploy the documentation site to the host.')
-    expect(child.prompt).toContain(join(skillsHome, 'deploy-docs', 'SKILL.md'))
-    expect(child.prompt).toContain('Run pnpm run website:build, then copy dist to the host.')
-    expect(child.prompt).toContain('1. CREATE')
-    expect(child.prompt).toContain('2. REFLECT')
+    expect(child.prompt).toContain('.dsh/skills/<kebab-name>/SKILL.md')
+    expect(child.prompt).toContain('ONE new file at most')
     expect(child.prompt).toContain('nothing to save')
+    // 创建只拿到清单：它判的是"覆盖没覆盖"，看不到正文就不能决定去改它。
+    expect(child.prompt).not.toContain(DEPLOY_SKILL.body)
   })
 
-  it('lists every owned skill but prints only the ranked ones in full', async () => {
-    const { session, subagents } = await harness({
-      skills: [
-        { name: 'pdf-report', description: 'Render a PDF report.', body: 'BODY-PDF-REPORT' },
-        { name: 'pdf-merge', description: 'Merge two PDF files.', body: 'BODY-PDF-MERGE' },
-        { name: 'image-crop', description: 'Crop an image.', body: 'BODY-IMAGE-CROP' },
-      ],
-      config: { curateMaxTargets: 1 },
-    })
+  it('starts the reflection child first when the stretch loaded an owned skill', async () => {
+    const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
 
-    compact(session, 'Rendered the quarterly pdf report and merged the appendix.')
+    openedSkill(session, 'deploy-docs', DEPLOY_SKILL.body)
+    compact(session, 'The session rebuilt the docs site and copied dist to the host.')
     await waitForChild(subagents)
 
-    const prompt = subagents.runs[0]!.prompt
-    // 排名决定谁连正文一起交出去——那是"可以改写"的名额。
-    expect(prompt).toContain('BODY-PDF-REPORT')
-    expect(prompt).not.toContain('BODY-PDF-MERGE')
-    expect(prompt).not.toContain('BODY-IMAGE-CROP')
-    // 但清单是完整的：重复造一个已有技能比不写更糟，所以它必须看得见全部。
-    expect(prompt).toContain('- `image-crop`: Crop an image.')
-    expect(prompt).toContain('- `pdf-merge`: Merge two PDF files.')
+    const reflection = subagents.runs[0]!
+    expect(reflection.label).toBe('skill-reflection')
+    expect(reflection.allowTools).toEqual(['read', 'write'])
+    expect(reflection.prompt).toContain('<loaded_skill name="deploy-docs"')
+    expect(reflection.prompt).toContain(DEPLOY_SKILL.body)
+    expect(reflection.prompt).toContain('Never create a skill')
+    expect(reflection.prompt).toContain('nothing to improve')
+
+    // 反思结算之后创建才起来，而且它拿到的清单是这次改写之后的。
+    subagents.settle('ok')
+    await waitForChild(subagents, 2)
+    expect(labels(subagents)).toEqual(['skill-reflection', 'skill-creation'])
+    expect(subagents.runs[1]?.prompt).toContain('- `deploy-docs`: Deploy the documentation site to the host.')
+    expect(subagents.runs[1]?.prompt).not.toContain(DEPLOY_SKILL.body)
+  })
+
+  it('reads a user-explicit invocation from the metadata instead of a rendered body', async () => {
+    const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    loadSkill(session, 'deploy-docs')
+    compact(session, 'Deployed the docs site.')
+    await waitForChild(subagents)
+
+    // 人主动调用的那条路上技能名是消息源里的一个字段，正文根本没出现过：反思能
+    // 拿到这条技能只可能是读了这个字段。
+    expect(subagents.runs[0]?.label).toBe('skill-reflection')
+    expect(subagents.runs[0]?.prompt).toContain('<loaded_skill name="deploy-docs"')
+  })
+
+  it('never reflects on a loaded skill this deployment does not own', async () => {
+    const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    // 随包发布的技能也会被加载：它被用过，但不是本部署的文件，交出去等于替别人动文件。
+    loadSkill(session, 'bundled-skill')
+    compact(session, 'Deployed the docs site.')
+    await waitForChild(subagents)
+
+    expect(labels(subagents)).toEqual(['skill-creation'])
+  })
+
+  it('prints only the most recently loaded targets and reports the overflow', async () => {
+    const { session, subagents } = await harness({
+      skills: [
+        { name: 'alpha-skill', description: 'Alpha.', body: 'BODY-ALPHA' },
+        { name: 'beta-skill', description: 'Beta.', body: 'BODY-BETA' },
+        { name: 'gamma-skill', description: 'Gamma.', body: 'BODY-GAMMA' },
+      ],
+      config: { curateMaxTargets: 2 },
+    })
+
+    loadSkill(session, 'alpha-skill')
+    loadSkill(session, 'beta-skill')
+    loadSkill(session, 'gamma-skill')
+    compact(session, 'Did three things.')
+    await waitForChild(subagents)
+
+    const reflection = subagents.runs[0]!.prompt
+    // 摘要说的是刚做完的活，所以最近用到的优先。
+    expect(reflection).toContain('<loaded_skill name="beta-skill"')
+    expect(reflection).toContain('<loaded_skill name="gamma-skill"')
+    expect(reflection).not.toContain('<loaded_skill name="alpha-skill"')
+    // 它得知道自己在看子集，否则会把没印出来的那些当成不存在。
+    expect(reflection).toContain('1 earlier loaded skill(s) were left out of this printout')
+  })
+
+  it('collapses a skill reloaded within one window into one target', async () => {
+    const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    loadSkill(session, 'deploy-docs')
+    openedSkill(session, 'deploy-docs', DEPLOY_SKILL.body)
+    compact(session, 'Deployed the docs site.')
+    await waitForChild(subagents)
+
+    const reflection = subagents.runs[0]!.prompt
+    expect(reflection.match(/<loaded_skill /g)).toHaveLength(1)
+    expect(reflection).not.toContain('left out of this printout')
+  })
+
+  it('hands creation a listing taken after the reflection rewrite', async () => {
+    const { ctx, session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    loadSkill(session, 'deploy-docs')
+    compact(session, 'Deployed the docs site.')
+    await waitForChild(subagents)
+    // 反思子 agent 落盘会让目录失效（真实部署里由 provider 的 watcher 完成）。
+    // 注册一个提供者走的是同一条失效路径。
+    ctx.skills.registerProvider(() => ({
+      name: 'late-probe',
+      async list() {
+        return [{
+          name: 'late-skill',
+          description: 'Appeared after reflection.',
+          invocation: { modelInvocable: true, userInvocable: true },
+          source: 'user-dsh',
+          provider: 'late-probe',
+          path: '/skills/late-skill/SKILL.md',
+          rank: 1,
+          locator: 'late-skill',
+        }]
+      },
+      async get() {
+        return undefined
+      },
+    }))
+    subagents.settle('ok')
+
+    await waitForChild(subagents, 2)
+    expect(subagents.runs[1]?.prompt).toContain('- `late-skill`: Appeared after reflection.')
+  })
+
+  it('leaves the corpus alone when the refreshed listing comes back incomplete', async () => {
+    const { ctx, session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    loadSkill(session, 'deploy-docs')
+    compact(session, 'Deployed the docs site.')
+    await waitForChild(subagents)
+    // 同一条失效路径，但这次目录收不齐：没看到的那部分正是"已经有人写过了"的证据。
+    ctx.skills.registerProvider(() => ({
+      name: 'flaky-probe',
+      async list() {
+        throw new Error('temporarily unavailable')
+      },
+      async get() {
+        return undefined
+      },
+    }))
+    subagents.settle('ok')
+
+    await vi.waitFor(() => { expect(subagents.disposals).toHaveLength(1) })
+    await settleNothing()
+    // 反思已经交出去了，但清单不完整就不能据此长出新技能。
+    expect(labels(subagents)).toEqual(['skill-reflection'])
   })
 
   it('caps the listing and reports the overflow', async () => {
@@ -640,7 +896,7 @@ describe('the compaction curation pass', () => {
         { name: 'beta-skill', description: 'Beta.', body: 'BODY-BETA' },
         { name: 'gamma-skill', description: 'Gamma.', body: 'BODY-GAMMA' },
       ],
-      config: { curateMaxListedSkills: 1, curateMaxTargets: 1 },
+      config: { curateMaxListedSkills: 1 },
     })
 
     compact(session, 'Nothing in particular happened.')
@@ -648,10 +904,10 @@ describe('the compaction curation pass', () => {
 
     const prompt = subagents.runs[0]!.prompt
     expect(prompt).toContain('…and 2 more this deployment owns.')
-    expect(prompt.match(/^ {2}file: /gm)).toHaveLength(1)
+    expect(prompt.match(/^- `[a-z-]+`: /gm)).toHaveLength(1)
   })
 
-  it('hands over only the roots this deployment owns', async () => {
+  it('lists only the roots this deployment owns', async () => {
     const { session, subagents } = await harness({
       skills: [DEPLOY_SKILL],
       customSkills: [{ name: 'shared-tool', description: 'Someone else\'s skill.', body: 'BODY-SHARED' }],
@@ -689,7 +945,7 @@ describe('the compaction curation pass', () => {
     expect(subagents.runs).toHaveLength(0)
   })
 
-  it('runs one curation child at a time per session', async () => {
+  it('runs one curation pass at a time per session', async () => {
     const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
 
     compact(session, 'first compaction', 'c1')
@@ -704,6 +960,23 @@ describe('the compaction curation pass', () => {
     compact(session, 'third compaction', 'c3')
     await waitForChild(subagents, 2)
     expect(subagents.runs[1]?.prompt).toContain('third compaction')
+  })
+
+  it('ends the load window at the boundary instead of carrying it forward', async () => {
+    const { session, subagents } = await harness({ skills: [DEPLOY_SKILL] })
+
+    loadSkill(session, 'deploy-docs')
+    compact(session, 'first compaction', 'c1')
+    await waitForChild(subagents)
+    subagents.settle('ok')
+    await waitForChild(subagents, 2)
+    subagents.settle('ok')
+    await vi.waitFor(() => { expect(subagents.disposals).toHaveLength(2) })
+
+    // 第二段一次技能都没加载：上一段的那次不该被重新算一遍。
+    compact(session, 'second compaction', 'c2')
+    await waitForChild(subagents, 3)
+    expect(labels(subagents)).toEqual(['skill-reflection', 'skill-creation', 'skill-creation'])
   })
 
   it('does nothing without a subagent runtime', async () => {
@@ -761,7 +1034,7 @@ describe('the compaction curation pass', () => {
     expect(subagents.runs[0]?.omitSections).toBeUndefined()
   })
 
-  it('lists a skill whose body has vanished without printing it in full', async () => {
+  it('lists an unreadable skill without ever handing it over for rewriting', async () => {
     const { ctx, session, subagents } = await harness({})
     ctx.skills.registerProvider(() => ({
       name: 'ghost-probe',
@@ -782,14 +1055,16 @@ describe('the compaction curation pass', () => {
       },
     }))
 
+    loadSkill(session, 'ghost-skill')
     compact(session, 'Deployed the docs site.')
     await waitForChild(subagents)
 
-    // 正文在清单与加载之间消失时不能交出陈旧内容：它留在清单里（防重复），
-    // 但不占"可以改写"的名额。
+    // 正文在清单与加载之间消失时不能交出陈旧内容：它留在清单里（防重复），但不占
+    // "可以改写"的名额 —— 这次连反思子 agent 都没起。
+    expect(labels(subagents)).toEqual(['skill-creation'])
     const prompt = subagents.runs[0]!.prompt
     expect(prompt).toContain('- `ghost-skill`: Listed but unreadable.')
-    expect(prompt).not.toContain('<existing_skill')
+    expect(prompt).not.toContain('<loaded_skill')
   })
 
   it('does nothing when the calling agent is no longer registered', async () => {
@@ -885,41 +1160,127 @@ describe('curation selection', () => {
     expect(SummarizeSkill.curatableSkills([owned, bundled, virtual])).toEqual([owned])
   })
 
-  it('prints long descriptions as one capped line', async () => {
+  it('prints long descriptions as one capped line', () => {
     const long = summary({ name: 'chatty', description: 'word '.repeat(80), path: '/skills/chatty/SKILL.md' })
 
-    const { owned } = await SummarizeSkill.selectCurationTargets(
-      [long], 'anything', 1, () => Promise.resolve({ name: 'chatty', content: 'body' }),
-    )
+    const { owned } = SummarizeSkill.selectOwnedListing([long], 1)
 
     expect(owned[0]?.description).toHaveLength(200)
     expect(owned[0]?.description.endsWith('...')).toBe(true)
   })
 
+  it('counts the skills a listing cap swallowed', () => {
+    const skills = ['a-skill', 'b-skill', 'c-skill'].map(name => summary({ name, path: `/skills/${name}/SKILL.md` }))
+
+    const { owned, omitted } = SummarizeSkill.selectOwnedListing(skills, 2)
+
+    expect(owned.map(skill => skill.name)).toEqual(['a-skill', 'b-skill'])
+    expect(omitted).toBe(1)
+  })
+
+  it('loads nothing for a used name the owned corpus does not have', async () => {
+    const mine = summary({ name: 'mine', path: '/skills/mine/SKILL.md' })
+    const foreign = summary({ name: 'theirs', source: 'custom', path: '/shared/theirs/SKILL.md' })
+    const load = vi.fn(() => Promise.resolve(undefined))
+
+    const { targets, omitted } = await SummarizeSkill.selectReflectionTargets([mine, foreign], ['theirs'], 1, load)
+
+    // 加载过但不是本部署的文件：不交出去，连读都不读。
+    expect(targets).toEqual([])
+    expect(omitted).toBe(0)
+    expect(load).not.toHaveBeenCalled()
+  })
+
   it('drops a target whose body vanished between the listing and the load', async () => {
     const target = summary({ name: 'gone', path: '/skills/gone/SKILL.md' })
 
-    const { owned, targets } = await SummarizeSkill.selectCurationTargets(
-      [target], 'gone', 1, () => Promise.resolve(undefined),
+    const { targets, omitted } = await SummarizeSkill.selectReflectionTargets(
+      [target], ['gone'], 1, () => Promise.resolve(undefined),
     )
 
-    expect(owned.map(skill => skill.name)).toEqual(['gone'])
     expect(targets).toEqual([])
+    expect(omitted).toBe(0)
   })
 
-  it('tells the child the corpus is empty when nothing is owned', () => {
-    const prompt = SummarizeSkill.buildCurationPrompt({
+  it('keeps the most recent uses and counts the older ones as omitted', async () => {
+    const skills = ['a-skill', 'b-skill', 'c-skill'].map(name => summary({ name, path: `/skills/${name}/SKILL.md` }))
+
+    const { targets, omitted } = await SummarizeSkill.selectReflectionTargets(
+      skills, ['a-skill', 'b-skill', 'c-skill'], 2,
+      name => Promise.resolve({ name, content: `${name} body` }),
+    )
+
+    expect(targets.map(target => target.name)).toEqual(['b-skill', 'c-skill'])
+    expect(targets[1]?.content).toBe('c-skill body')
+    expect(omitted).toBe(1)
+  })
+
+  it('collapses a name loaded twice into one target', async () => {
+    const skill = summary({ name: 'again', path: '/skills/again/SKILL.md' })
+
+    const { targets } = await SummarizeSkill.selectReflectionTargets(
+      [skill], ['again', 'again'], 3, () => Promise.resolve({ name: 'again', content: 'body' }),
+    )
+
+    expect(targets.map(target => target.name)).toEqual(['again'])
+  })
+
+  it('tells the creation child the corpus is empty when nothing is owned', () => {
+    const text = promptText(SummarizeSkill.buildCreationPrompt({
       summary: 'did something',
       skillsDir: '.dsh/skills',
       owned: [],
       omitted: 0,
-      targets: [],
-    })
+    }))
 
-    expect(prompt[0]?.type).toBe('text')
-    if (prompt[0]?.type !== 'text') throw new Error('expected text prompt')
-    expect(prompt[0].text).toContain('owns no skills yet')
-    expect(prompt[0].text).toContain('No existing skill ranked high enough')
+    expect(text).toContain('owns no skills yet')
+    expect(text).not.toContain('already owns:')
+  })
+
+  it('still names the overflow when the cap swallowed the whole listing', () => {
+    const text = promptText(SummarizeSkill.buildCreationPrompt({
+      summary: 'did something',
+      skillsDir: '.dsh/skills',
+      owned: [],
+      omitted: 4,
+    }))
+
+    expect(text).toContain('Skills this deployment already owns:')
+    expect(text).toContain('- …and 4 more this deployment owns.')
+  })
+
+  it('prints each loaded target in full under its own marker', () => {
+    const text = promptText(SummarizeSkill.buildReflectionPrompt({
+      summary: 'did something',
+      targets: [{ name: 'mine', description: 'Mine.', path: '/skills/mine/SKILL.md', content: 'the current body' }],
+      omitted: 0,
+    }))
+
+    expect(text).toContain('<loaded_skill name="mine" path="/skills/mine/SKILL.md">')
+    expect(text).toContain('the current body')
+    expect(text).toContain('</loaded_skill>')
+    expect(text).toContain('Only the files printed above are in scope')
+    expect(text).not.toContain('left out of this printout')
+  })
+
+  it('prints a placeholder rather than an empty printout', () => {
+    const text = promptText(SummarizeSkill.buildReflectionPrompt({
+      summary: 'did something',
+      targets: [],
+      omitted: 0,
+    }))
+
+    expect(text).toContain('No skill was printed.')
+  })
+
+  it('says how many older loaded skills the cap left out', () => {
+    const text = promptText(SummarizeSkill.buildReflectionPrompt({
+      summary: 'did something',
+      targets: [{ name: 'mine', description: 'Mine.', path: '/skills/mine/SKILL.md', content: 'the current body' }],
+      omitted: 2,
+    }))
+
+    expect(text).toContain('2 earlier loaded skill(s) were left out of this printout; they are not in scope.')
   })
 
   it('recognizes only a top-level session as curatable', () => {

@@ -518,18 +518,20 @@ export interface Config {
    */
   childOmitSections?: string[]
   /**
-   * Whether every successful compaction also curates the corpus (default
-   * `true`). Off, only the explicit command captures anything.
+   * Whether a successful compaction also curates the corpus (default `true`).
+   * Off, only the explicit command captures anything — no creation child and no
+   * reflection child.
    */
   autoCurate?: boolean
   /**
-   * How many existing skills one curation child receives IN FULL for
-   * rewriting (default 3). The rest are still listed by name, description, and
-   * file path, so the child can read any of them before changing it.
+   * How many loaded skills the reflection child receives IN FULL for rewriting
+   * (default 3). The most recently loaded ones win, and an overflow line names
+   * how many older ones were left out, so the child knows it is looking at a
+   * subset rather than at everything the stretch touched.
    */
   curateMaxTargets?: number
   /**
-   * How many owned skills the curation child is told about (default 30). The
+   * How many owned skills the creation child is told about (default 30). The
    * listing is the duplicate guard: a skill whose content restates one that
    * already exists is worse than no new skill.
    */
@@ -537,7 +539,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/guard/command-summarize-skill/src/index.ts:59`](../packages/guard/command-summarize-skill/src/index.ts)
+来源：[`packages/guard/command-summarize-skill/src/index.ts:87`](../packages/guard/command-summarize-skill/src/index.ts)
 
 <a id="deepseek-aidsh-command-translate-skills"></a>
 
@@ -2552,7 +2554,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/skill/skill/src/index.ts:478`](../packages/skill/skill/src/index.ts)
+来源：[`packages/skill/skill/src/index.ts:505`](../packages/skill/skill/src/index.ts)
 
 <a id="deepseek-aidsh-skill-filesystem"></a>
 

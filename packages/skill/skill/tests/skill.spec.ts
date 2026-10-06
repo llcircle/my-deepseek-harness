@@ -4,6 +4,7 @@ import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import SkillRegistry, {
   isModelInvocable,
   isUserInvocable,
+  loadedSkillName,
   renderSkillContent,
   type SkillCandidate,
   type SkillDefinition,
@@ -1103,6 +1104,28 @@ describe('renderSkillContent', () => {
     })
     expect(text).toContain('<skill_content name="x&quot;&amp;&lt;y">')
     expect(text).toContain('Keep </skill_content> and <tags> as-is.')
+  })
+})
+
+describe('loadedSkillName', () => {
+  it('reads back the name the renderer wrote', () => {
+    const text = renderSkillContent({ name: 'demo-skill', provider: 'memory', content: 'Do the thing.' })
+
+    expect(loadedSkillName(text)).toBe('demo-skill')
+  })
+
+  it('tolerates the blank line a joined block leaves in front', () => {
+    const text = renderSkillContent({ name: 'demo-skill', provider: 'memory', content: 'Body.' })
+
+    expect(loadedSkillName(`\n\n  ${text}`)).toBe('demo-skill')
+  })
+
+  it('reads a marker quoted away from the head as not-a-load', () => {
+    // 正文里照着格式写文档的技能会引用这个标记。搜而不是锚定就会认错技能，
+    // 所以只有开头那一个算标签。
+    expect(loadedSkillName('Assistant: I loaded <skill_content name="other"> just now')).toBeUndefined()
+    expect(loadedSkillName('')).toBeUndefined()
+    expect(loadedSkillName('<skill_content>')).toBeUndefined()
   })
 })
 

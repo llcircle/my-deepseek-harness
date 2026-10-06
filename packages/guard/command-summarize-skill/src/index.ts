@@ -1,26 +1,54 @@
 /**
  * Learning from a session's own work: the `/summarize-skill` command and the
- * curation pass that runs at every compaction boundary. Both start ONE
- * background one-shot subagent; neither runs model work on the session's own
- * turn, and the child's files land in a skill root the filesystem provider
- * already watches, so a skill written here is discoverable on the next lookup
- * with no manual invalidation.
+ * curation passes that run at a compaction boundary. Every child is a background
+ * one-shot subagent; none runs model work on the session's own turn, and a
+ * child's files land in a skill root the filesystem provider already watches, so
+ * a skill written here is discoverable on the next lookup with no manual
+ * invalidation.
  *
  * ## Two triggers, one job
  *
  * `/summarize-skill` is the explicit form: the human points at a stretch of the
  * conversation and asks for a skill, optionally saying what to capture.
  *
- * The automatic form needs no gesture. Compaction has just produced a summary
- * of the work this session did — that summary IS the experience worth keeping —
- * so it is handed to the same kind of child together with the skills this
- * deployment owns. The child then either CREATES a skill for a procedure the
- * work established, or REFLECTS: it rewrites an existing skill the summary
- * shows to be wrong, incomplete, or ambiguous. Self-modification is why the
- * corpus is narrowed to the roots this deployment can attribute to itself (see
- * {@link CURATABLE_SOURCES}) — a machine-wide `<agentsHome>/skills` belongs to
- * whatever else follows that convention, and rewriting it would be editing
- * another program's files.
+ * The automatic form needs no gesture. Compaction has just produced a summary of
+ * the work this session did — that summary IS the experience worth keeping.
+ *
+ * ## Two children, because the two judgments need different evidence
+ *
+ * A compaction boundary can ask two unrelated questions, and they are asked
+ * separately so that each child gets its own prompt, its own evidence, and its
+ * own permission:
+ *
+ * - {@link buildCreationPrompt} — CREATION. "Did this work establish a procedure
+ *   the corpus does not cover?" The evidence is the summary plus the corpus as a
+ *   listing. The child may write exactly ONE new file and may not touch an
+ *   existing one. It runs at every successful boundary, because the summary is
+ *   always evidence about what the corpus lacks.
+ * - {@link buildReflectionPrompt} — REFLECTION. "Was a skill this session
+ *   actually loaded wrong?" The evidence is the summary plus those skills
+ *   printed IN FULL. The child may rewrite the files it was handed and may not
+ *   create anything. It runs ONLY when the stretch loaded at least one skill
+ *   that this deployment OWNS (see {@link loadedSkillNames} and
+ *   {@link selectReflectionTargets}): a skill nobody opened was never
+ *   exercised, so there is nothing to correct it against, and asking anyway
+ *   would invite edits to text the summary never touched. A loaded skill that
+ *   is not ours fails the same test for the same reason — it was exercised, but
+ *   rewriting it would be editing another program's files.
+ *
+ * Both are why the corpus is narrowed to the roots this deployment can attribute
+ * to itself (see {@link CURATABLE_SOURCES}) — a machine-wide
+ * `<agentsHome>/skills` belongs to whatever else follows that convention, and
+ * rewriting it would be editing another program's files.
+ *
+ * ## Why reflection runs first, and why creation re-reads the corpus
+ *
+ * Reflection corrects what was used; creation then adds only what is still
+ * missing. Running them in that order means the creation child is handed a
+ * listing taken AFTER any rewrite, so the procedure reflection just sharpened is
+ * visible to it as already covered rather than looking absent. The second
+ * listing is taken only when a reflection child actually ran — it is the only
+ * thing that can have changed the corpus.
  *
  * ## Why compaction is the only moment, and why that keeps the cache stable
  *
@@ -43,11 +71,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { isAbsolute, join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolResultBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `compaction/summary` / `compaction/end` event declarations this file gates on.
 import type {} from '@deepseek-ai/dsh-compaction/types'
-import { rankSkillSummaries, type SkillSummary } from '@deepseek-ai/dsh-skill'
+import { loadedSkillName, type SkillSummary } from '@deepseek-ai/dsh-skill'
 // Type-only: pulls the ctx.commands, ctx.subagents, ctx.agents, and ctx.skills service merges.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-subagent'
@@ -75,18 +103,20 @@ export interface Config {
    */
   childOmitSections?: string[]
   /**
-   * Whether every successful compaction also curates the corpus (default
-   * `true`). Off, only the explicit command captures anything.
+   * Whether a successful compaction also curates the corpus (default `true`).
+   * Off, only the explicit command captures anything — no creation child and no
+   * reflection child.
    */
   autoCurate?: boolean
   /**
-   * How many existing skills one curation child receives IN FULL for
-   * rewriting (default 3). The rest are still listed by name, description, and
-   * file path, so the child can read any of them before changing it.
+   * How many loaded skills the reflection child receives IN FULL for rewriting
+   * (default 3). The most recently loaded ones win, and an overflow line names
+   * how many older ones were left out, so the child knows it is looking at a
+   * subset rather than at everything the stretch touched.
    */
   curateMaxTargets?: number
   /**
-   * How many owned skills the curation child is told about (default 30). The
+   * How many owned skills the creation child is told about (default 30). The
    * listing is the duplicate guard: a skill whose content restates one that
    * already exists is worse than no new skill.
    */
@@ -287,6 +317,71 @@ function textOf(content: readonly ContentBlock[]): string {
 }
 
 /**
+ * The text one `tool/result` payload carries.
+ *
+ * A tool-result message nests its payload one level down: the `tool-result`
+ * block holds the content the tool actually produced. {@link textOf} — the flat
+ * reader used for conversation turns — would therefore see nothing here, which
+ * would make every model-visible skill load invisible to the reflection gate.
+ * The message's content is a one-element tuple by construction, so the unwrap
+ * needs no guard.
+ * @param content - the tool-result message's content tuple.
+ * @returns the text the tool produced; `''` when it produced none.
+ */
+function toolResultTextOf(content: readonly [ToolResultBlock]): string {
+  return textOf(content[0].content)
+}
+
+/**
+ * The skill one committed event loaded, or `undefined` when it loaded none.
+ *
+ * The single-event read the live listener needs; {@link loadedSkillNames} is
+ * the same rule applied to a whole log, so the two can never disagree about
+ * what counts as a load.
+ * @param event - one committed session event.
+ * @returns the loaded skill's name, or `undefined`.
+ */
+function loadedSkillIn(event: SessionEvent): string | undefined {
+  if (event.type === 'user/message') {
+    const source = event.data.source
+    return source.kind === 'skill-invocation' ? source.name : undefined
+  }
+  if (event.type !== 'tool/result') return undefined
+  return loadedSkillName(toolResultTextOf(event.data.message.content))
+}
+
+/**
+ * The skills a stretch of conversation actually loaded, in first-use order.
+ *
+ * Two paths can put a skill's body in front of the model, and both are read
+ * from the log rather than tracked live, so a resumed session reports the same
+ * answer as one that never left:
+ *
+ * - A USER-EXPLICIT invocation injects a `user/message` carrying the
+ *   `skill-invocation` source, whose `name` is the skill. Reading the metadata
+ *   is what the source exists for — the alternative is re-parsing the rendered
+ *   body to recover something already recorded as a field.
+ * - The model's `skill` tool returns the body as a `tool/result`, and the name
+ *   is recovered through {@link loadedSkillName}, the inverse of the shared
+ *   renderer. This is the only signal that survives presentation changes: under
+ *   PTC the model calls `run_code` and the sub-dispatch settles as a
+ *   `tool/result` too, so one read covers both faces.
+ *
+ * Duplicates collapse: a stretch that reloaded a skill five times used one
+ * skill, and the reflection child needs the set, not the count.
+ * @param events - committed session events in log order.
+ * @returns the loaded skill names, first use first.
+ */
+export function loadedSkillNames(events: readonly SessionEvent[]): string[] {
+  const names: string[] = []
+  for (const event of events) {
+    const name = loadedSkillIn(event)
+    if (name !== undefined && name !== '' && !names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+/**
  * Render one caught value as the command's error line.
  *
  * An `Error`'s `String()` carries an `Error: ` prefix that reads as noise in a
@@ -395,19 +490,35 @@ export function isCuratableSession(session: Session): boolean {
 }
 
 /**
- * Build the curation child's prompt: the compaction summary, the deployable
- * corpus, and the two changes worth making to it.
+ * The one paragraph both curation prompts share: what a SKILL.md is.
  *
- * The listing is deliberately complete (up to its cap) while only the ranked
- * targets carry their full text. Reflection into a DUPLICATE is the failure
- * mode this shape exists to prevent: the child must be able to see that a
- * procedure is already covered before writing a second skill for it, and it can
- * always read a listed file when the summary suggests a skill the ranking did
- * not surface.
- * @param input - the summary, the skills root, the listed corpus, the omitted count, and the full-text targets.
+ * Kept as one string rather than duplicated so the two children cannot drift
+ * into asking for different file shapes — the corpus is read back by the
+ * filesystem provider, which parses exactly one contract.
+ */
+const SKILL_FILE_CONTRACT = [
+  'Every SKILL.md opens with frontmatter holding `name:` (matching the directory name) and `description:`',
+  '(one sentence saying WHEN to use it — the sentence a request is matched against), followed by the body.',
+  'The body is a procedure for a future session: the concrete steps, the exact commands and arguments, and the',
+  'pitfalls that actually cost time. Do not write a report of what happened, and never mention this session,',
+  'its user, or a date.',
+]
+
+/**
+ * Build the CREATION child's prompt: should this work become a new skill?
+ *
+ * The child is given the corpus as a LISTING, not as bodies, and it may write
+ * exactly one new file. Both are deliberate. The listing is the duplicate guard
+ * — a second skill restating an existing one is worse than no new skill — and
+ * the ban on editing existing files is what keeps this child's permission
+ * disjoint from the reflection child's: two children that may both rewrite the
+ * same path would race, and only reflection has the evidence to judge an
+ * existing body.
+ *
+ * @param input - the summary, the skill root, the listed corpus, and the cap overflow count.
  * @returns the child's prompt blocks.
  */
-export function buildCurationPrompt(input: {
+export function buildCreationPrompt(input: {
   /** The compaction summary: what this session just did. */
   summary: string
   /** Skill root a NEW skill is written under; relative to the child's workspace. */
@@ -416,49 +527,35 @@ export function buildCurationPrompt(input: {
   owned: readonly OwnedSkill[]
   /** How many owned skills the cap left out; `0` renders no overflow line. */
   omitted: number
-  /** The ranked subset printed in full for rewriting. */
-  targets: readonly ReflectionTarget[]
 }): ContentBlock[] {
-  const listing = input.owned.map(skill => `- \`${skill.name}\`: ${skill.description}\n  file: ${skill.path}`)
+  const listing = input.owned.map(skill => `- \`${skill.name}\`: ${skill.description}`)
   if (input.omitted > 0) listing.push(`- …and ${input.omitted} more this deployment owns.`)
-  const printed: string[] = []
-  for (const target of input.targets) {
-    printed.push(
-      `<existing_skill name="${target.name}" path="${target.path}">`,
-      target.content.trim(),
-      '</existing_skill>',
-    )
-  }
   const text = [
-    "You are maintaining this agent's skill corpus: the reusable procedures it loads before acting on a task.",
+    "You are deciding whether a piece of finished work should become a new entry in this agent's skill corpus —",
+    'the reusable procedures it loads before acting on a task.',
     '',
-    'A session has just compacted. Its summary is below, together with the skills this deployment owns.',
-    'Decide, from the summary alone, whether the corpus should change. Only two changes are worth making:',
+    'A session has just compacted. Its summary is below, together with every skill this deployment owns.',
+    'Answer one question: does the summary describe a repeatable procedure that the corpus does NOT already cover?',
     '',
-    `1. CREATE — the work established a repeatable procedure the corpus does not cover. Write it as \`${input.skillsDir}/<kebab-name>/SKILL.md\` (choose a descriptive kebab-case name; the write tool creates missing parent directories).`,
-    "2. REFLECT — one of the skills printed in full below is wrong, incomplete, or ambiguous about something the summary settles. Rewrite that skill's file completely, at the absolute path it was printed with. Keep its name.",
+    `If yes, write it as \`${input.skillsDir}/<kebab-name>/SKILL.md\` — choose a descriptive kebab-case name; the`,
+    'write tool creates missing parent directories. If no, write nothing.',
     '',
-    'Every SKILL.md opens with frontmatter holding `name:` (matching the directory name) and `description:`',
-    '(one sentence saying WHEN to use it — the sentence a request is matched against), followed by the body.',
-    'The body is a procedure for a future session: the concrete steps, the exact commands and arguments, and the',
-    'pitfalls that actually cost time. Do not write a report of what happened, and never mention this session,',
-    'its user, or a date.',
+    ...SKILL_FILE_CONTRACT,
     '',
     'Rules:',
-    '- Write a file only when the summary earns it. A skill whose content restates one that already exists is',
-    '  worse than no new skill: improve that skill instead, at its own path.',
-    '- Rewrite whole files with `write`. Never append, and never leave a placeholder or a TODO.',
+    '- ONE new file at most. This is the only file you may write.',
+    '- Never modify, move, or delete an existing skill. Correcting an existing skill is a different job that',
+    '  someone else does, with evidence you were not given.',
+    '- The listing is your duplicate guard: if a listed skill already covers this procedure — even under a',
+    '  different name — write nothing. A skill whose content restates one that already exists is worse than',
+    '  no new skill.',
+    '- The body is a procedure, not a report. Never append, and never leave a placeholder or a TODO.',
     '- Prefer the specific truth over a general rule: if the procedure only works in this project, say so.',
-    '- If the summary teaches nothing reusable and no existing skill needs correcting, write nothing at all and',
-    '  reply exactly `nothing to save`.',
+    '- If the summary teaches nothing reusable, write nothing at all and reply exactly `nothing to save`.',
     '',
     ...input.owned.length === 0 && input.omitted === 0
       ? ['This deployment owns no skills yet; the corpus starts with whatever you create.']
-      : ['Skills this deployment owns (read any of them before changing it):', ...listing],
-    '',
-    ...printed.length === 0
-      ? ['No existing skill ranked high enough for this work to be printed in full.']
-      : ['Most relevant to this work, in full:', ...printed],
+      : ['Skills this deployment already owns:', ...listing],
     '',
     'Work just summarised:',
     input.summary.trim(),
@@ -467,32 +564,129 @@ export function buildCurationPrompt(input: {
 }
 
 /**
- * Assemble the two prompt halves a curation run needs from one resolved catalog:
- * the owned listing the child sees, and the ranked targets printed in full.
+ * Build the REFLECTION child's prompt: was a skill that this session actually
+ * loaded wrong?
  *
- * Bodies are loaded through the same scoped lookup that produced the summaries,
- * so a skill that vanished between the two calls is dropped rather than handed
- * over as a stale body.
- * @param skills - every winning summary in the calling agent's catalog.
- * @param summary - the compaction summary the targets are ranked against.
- * @param maxTargets - how many skills to load in full.
- * @param load - scoped loader for one skill's complete definition.
- * @returns the owned listing in catalog order, and the full-text targets ranked against the summary.
+ * The evidence shape is the whole point. The child is handed the loaded skills
+ * IN FULL — not a listing, not a ranking — because correcting a body it cannot
+ * read would be guesswork, and it is told which of them the session opened.
+ * That is also why the permission is inverted relative to creation: it may
+ * rewrite the files it was handed and may create nothing. A skill nobody opened
+ * was never exercised, so the caller does not run this child at all; a skill
+ * that WAS opened but held up is a `nothing to improve` answer, not a rewrite.
+ *
+ * An empty target list prints a placeholder instead of an empty section, which
+ * keeps this a total function over its input type. The pass never reaches that
+ * case: an intersection that comes back empty is a decision NOT to run the
+ * child, since there would be nothing to hand over.
+ *
+ * @param input - the summary and the loaded skills printed in full.
+ * @returns the child's prompt blocks.
  */
-export async function selectCurationTargets(
+export function buildReflectionPrompt(input: {
+  /** The compaction summary: what this session just did. */
+  summary: string
+  /** The loaded skills, most recently used last, already capped. */
+  targets: readonly ReflectionTarget[]
+  /** How many older loaded skills the cap left out; `0` renders no overflow line. */
+  omitted: number
+}): ContentBlock[] {
+  const printed: string[] = []
+  for (const target of input.targets) {
+    printed.push(
+      `<loaded_skill name="${target.name}" path="${target.path}">`,
+      target.content.trim(),
+      '</loaded_skill>',
+    )
+  }
+  const text = [
+    "You are correcting this agent's skill corpus — the reusable procedures it loads before acting on a task —",
+    'using the one kind of evidence that can show a skill to be wrong: a session that actually loaded it.',
+    '',
+    'A session has just compacted. Below are the skills it loaded, printed in full, and the summary of what the',
+    'session did with them. Read the summary as the record of following these procedures.',
+    '',
+    'For each skill printed below, ask: did the work show its text to be wrong, incomplete, or ambiguous?',
+    'The failure this exists to catch is a skill that sent the session down a path the summary shows was wrong,',
+    'or left out something the session had to work out the hard way. A skill that held up is not a candidate.',
+    '',
+    ...SKILL_FILE_CONTRACT,
+    '',
+    'Rules:',
+    '- Rewrite whole files with `write`, at the absolute paths printed above. Keep each skill\'s name.',
+    '- Only the files printed above are in scope. Never create a skill, and never touch a file you were not given.',
+    '- Never append, and never leave a placeholder or a TODO.',
+    '- A skill the summary does not contradict is already correct — leave it exactly as it is.',
+    '- If the work showed nothing in need of correction, write nothing at all and reply exactly `nothing to improve`.',
+    '',
+    ...printed.length === 0
+      ? ['No skill was printed.']
+      : ['Loaded by this session, in full:', ...printed],
+    ...input.omitted > 0
+      ? ['', `${input.omitted} earlier loaded skill(s) were left out of this printout; they are not in scope.`]
+      : [],
+    '',
+    'Work just summarised:',
+    input.summary.trim(),
+  ].join('\n')
+  return [{ type: 'text', text }]
+}
+
+/**
+ * Assemble the creation child's corpus listing from one resolved catalog.
+ *
+ * Names, capped one-line descriptions, and — unlike the reflection printout —
+ * no bodies: creation judges coverage, and a body it cannot see is a body it
+ * cannot decide to edit.
+ * @param skills - every winning summary in the calling agent's catalog.
+ * @param maxListed - how many owned skills to name.
+ * @returns the listing in catalog order and how many the cap left out.
+ */
+export function selectOwnedListing(
   skills: readonly SkillSummary[],
-  summary: string,
-  maxTargets: number,
-  load: (name: string) => Promise<{ readonly name: string; readonly content: string } | undefined>,
-): Promise<{ owned: OwnedSkill[]; targets: ReflectionTarget[] }> {
-  const owned = curatableSkills(skills)
-  const listed: OwnedSkill[] = owned.map(skill => ({
+  maxListed: number,
+): { owned: OwnedSkill[]; omitted: number } {
+  const all = curatableSkills(skills).map(skill => ({
     name: skill.name,
     description: oneLine(skill.description, LISTED_DESCRIPTION_MAX),
     path: skill.path,
   }))
+  return { owned: all.slice(0, maxListed), omitted: all.length - Math.min(all.length, maxListed) }
+}
+
+/**
+ * Load, in the order the session used them, the loaded skills this deployment
+ * may rewrite.
+ *
+ * The set is intersected with the owned corpus rather than trusted: a session can
+ * load a bundled or another agent's skill, and neither may be handed over as a
+ * file to rewrite. Bodies come from the same scoped lookup that produced the
+ * summaries, so a skill deleted between the two calls is dropped instead of
+ * handed over stale.
+ *
+ * The cap keeps the MOST RECENT uses, because the summary describes the work
+ * just finished, and reports how many older ones it left out so the child knows
+ * it is looking at a subset.
+ * @param skills - every winning summary in the calling agent's catalog.
+ * @param usedNames - skill names the stretch loaded, in first-use order.
+ * @param maxTargets - how many loaded skills to print in full.
+ * @param load - scoped loader for one skill's complete definition.
+ * @returns the printed targets and how many older loaded skills the cap left out.
+ */
+export async function selectReflectionTargets(
+  skills: readonly SkillSummary[],
+  usedNames: readonly string[],
+  maxTargets: number,
+  load: (name: string) => Promise<{ readonly name: string; readonly content: string } | undefined>,
+): Promise<{ targets: ReflectionTarget[]; omitted: number }> {
+  const owned = new Map(curatableSkills(skills).map(skill => [skill.name, skill]))
+  const loaded = [...new Set(usedNames)].flatMap((name) => {
+    const skill = owned.get(name)
+    return skill === undefined ? [] : [skill]
+  })
+  const printed = loaded.slice(-maxTargets)
   const targets: ReflectionTarget[] = []
-  for (const candidate of rankSkillSummaries(owned, summary, maxTargets)) {
+  for (const candidate of printed) {
     const definition = await load(candidate.name)
     if (definition === undefined) continue
     targets.push({
@@ -502,7 +696,7 @@ export async function selectCurationTargets(
       content: definition.content,
     })
   }
-  return { owned: listed, targets }
+  return { targets, omitted: loaded.length - printed.length }
 }
 
 /** Register the command when the command registry is composed. */
@@ -583,7 +777,15 @@ function registerSummaryCommand(ctx: Context, resolved: ResolvedConfig): void {
 function registerCurationPass(ctx: Context, resolved: ResolvedConfig): void {
   /** The newest compaction summary per session, waiting for its boundary. */
   const pending = new Map<SessionId, string>()
-  /** Sessions whose curation child has not settled yet: one child at a time. */
+  /**
+   * Skills each session loaded since its last boundary, first use first.
+   *
+   * Accumulated as events arrive rather than re-walked at the boundary: a
+   * resumed session replays its log in order, so the same accumulate-then-clear
+   * sequence reproduces the same window a walk would.
+   */
+  const touched = new Map<SessionId, string[]>()
+  /** Sessions whose curation children have not settled yet: one pass at a time. */
   const inFlight = new Set<SessionId>()
   const controllers = new Set<AbortController>()
   ctx.effect(() => () => {
@@ -591,28 +793,39 @@ function registerCurationPass(ctx: Context, resolved: ResolvedConfig): void {
     controllers.clear()
     inFlight.clear()
     pending.clear()
+    touched.clear()
   })
   ctx.on('session/event', (session, event) => {
+    const id = session.header.id
+    const loaded = event.type === 'compaction/end' ? undefined : loadedSkillIn(event)
+    if (loaded !== undefined && loaded !== '') {
+      const seen = touched.get(id) ?? []
+      if (!seen.includes(loaded)) seen.push(loaded)
+      touched.set(id, seen)
+    }
     if (event.type === 'compaction/summary') {
-      pending.set(session.header.id, textOf(event.data.summary))
+      pending.set(id, textOf(event.data.summary))
       return
     }
     if (event.type !== 'compaction/end') return
-    const summary = pending.get(session.header.id)
-    pending.delete(session.header.id)
+    const summary = pending.get(id)
+    pending.delete(id)
+    // 窗口在这里就结束：这一段工作已经总结完，无论下面是否真的起子 agent，
+    // 它加载过的技能都不该被下一段工作重新算一遍。
+    const used = touched.get(id) ?? []
+    touched.delete(id)
     // 压缩失败意味着没有可依据的摘要，而且那一刻会话本身最不可信：放开手让它
     // 改技能语料是双重坏事，所以这一次边界什么都不做。
     if (event.data.error !== undefined) return
     if (summary === undefined || summary.trim() === '') return
     if (!isCuratableSession(session)) return
-    const id = session.header.id
     // 前一个策展子 agent 还没落地就不再起新的：它们会读到同一份语料，同时写
     // 会互相覆盖，而第二次压缩离第一次往往只有几步。
     if (inFlight.has(id)) return
     const controller = new AbortController()
     controllers.add(controller)
     inFlight.add(id)
-    void runCuration(ctx, resolved, session, summary, controller.signal)
+    void runCuration(ctx, resolved, session, summary, used, controller.signal)
       .catch((error: unknown) => {
         ctx.logger.warn(`skill-curation: session ${String(id)} could not be curated: ${String(error)}`)
       })
@@ -624,26 +837,35 @@ function registerCurationPass(ctx: Context, resolved: ResolvedConfig): void {
 }
 
 /**
- * Run one curation pass: rank the owned corpus against the summary, hand the
- * winner set to a background child, and settle only once that child has.
+ * Run one curation pass: reflect on the skills the stretch loaded, then ask
+ * whether the corpus should grow. Settles only once BOTH children have.
  *
  * Every early return here is a decision to leave the corpus alone, not a
  * failure: the pass is opportunistic and the session's own turn never waits on
  * it. The settlement wait is what makes the caller's in-flight mark span the
- * child's WHOLE life — publishing is not finishing, and two children editing
- * one corpus at once would overwrite each other.
+ * children's WHOLE life — publishing is not finishing, and two children editing
+ * one corpus at once would overwrite each other. One mark covers both children
+ * because they share the corpus; a second boundary arriving mid-pass is dropped
+ * rather than queued, the same rule that already governs a single child.
+ *
+ * Reflection runs FIRST and creation is handed a listing taken after it, so the
+ * procedure a rewrite just sharpened reads as already covered rather than
+ * absent. When nothing loaded is ours there is no reflection child, no second
+ * listing, and creation runs against the listing already in hand.
  * @param ctx - owning plugin context.
  * @param resolved - validated configuration.
  * @param session - the session whose compaction just ended.
  * @param summary - the compaction summary text.
+ * @param used - skill names the stretch loaded, first use first.
  * @param signal - aborts the pass when the plugin is disposed.
- * @returns a promise that resolves once the child has settled and been released.
+ * @returns a promise that resolves once both children have settled and been released.
  */
 async function runCuration(
   ctx: Context,
   resolved: ResolvedConfig,
   session: Session,
   summary: string,
+  used: readonly string[],
   signal: AbortSignal,
 ): Promise<void> {
   const subagents = ctx.get('subagents')
@@ -654,42 +876,63 @@ async function runCuration(
   if (subagents === undefined || skills === undefined || agent === undefined) return
   const cwd = session.header.cwd
   const lookup = { ...cwd === undefined ? {} : { cwd }, signal, scope: agent }
-  const snapshot = await skills.snapshot(lookup)
-  signal.throwIfAborted()
+  const load = async (skillName: string): Promise<{ readonly name: string; readonly content: string } | undefined> => {
+    const definition = await skills.get(skillName, lookup)
+    signal.throwIfAborted()
+    return definition === undefined ? undefined : { name: definition.name, content: definition.content }
+  }
+  const start = (label: string, prompt: ContentBlock[]): Promise<{ result: Promise<unknown>; dispose(): Promise<void> }> =>
+    subagents.start(resolved.provider, {
+      label,
+      prompt,
+      parent: agent,
+      signal,
+      ...resolved.childTools.length > 0 ? { allowTools: resolved.childTools } : {},
+      ...resolved.childOmitSections.length > 0 ? { omitSections: resolved.childOmitSections } : {},
+    })
+
   // 不完整的目录不能当依据：没看到的那部分正是"已经有人写过了"的证据，而重复
   // 造一个技能比不写更糟。
-  if (!snapshot.complete) return
-  const { owned, targets } = await selectCurationTargets(
-    snapshot.skills,
-    summary,
-    resolved.curateMaxTargets,
-    async (skillName) => {
-      const definition = await skills.get(skillName, lookup)
-      signal.throwIfAborted()
-      return definition === undefined ? undefined : { name: definition.name, content: definition.content }
-    },
-  )
+  const opening = await skills.snapshot(lookup)
   signal.throwIfAborted()
-  const listed = owned.slice(0, resolved.curateMaxListedSkills)
-  const prompt = buildCurationPrompt({
+  if (!opening.complete) return
+
+  const { targets, omitted } = await selectReflectionTargets(opening.skills, used, resolved.curateMaxTargets, load)
+  signal.throwIfAborted()
+  let corpus = opening
+  // 交不出文件就不起反思子 agent：本段加载过的技能可能一个都不归本部署所有
+  // （随包发布的只读技能、别的工具也在用的共享目录），改写它们等于替别人的程序
+  // 动文件。没有可交付的正文，这次反思就没有依据，也没有活可干。
+  if (targets.length > 0) {
+    await drain(await start('skill-reflection', buildReflectionPrompt({ summary, targets, omitted })))
+    // 反思刚改写过的文件会让目录失效（实际部署里由 provider 的 watcher 触发）。
+    // 重新取一次清单：拿旧清单会让创建把刚被修好的那条当成"尚未覆盖"。
+    corpus = await skills.snapshot(lookup)
+    signal.throwIfAborted()
+    if (!corpus.complete) return
+  }
+
+  const listing = selectOwnedListing(corpus.skills, resolved.curateMaxListedSkills)
+  await drain(await start('skill-creation', buildCreationPrompt({
     summary,
     skillsDir: resolved.skillsDir,
-    owned: listed,
-    omitted: owned.length - listed.length,
-    targets,
-  })
-  const run = await subagents.start(resolved.provider, {
-    label: 'skill-curation',
-    prompt,
-    parent: agent,
-    signal,
-    ...resolved.childTools.length > 0 ? { allowTools: resolved.childTools } : {},
-    ...resolved.childOmitSections.length > 0 ? { omitSections: resolved.childOmitSections } : {},
-  })
-  // 后台子 agent 也需要一个消费者，而且要一直持有到它落地：`dispose()` 是取消
-  // 未完成的工作，所以绝不能在这里直接调用 —— 这个子 agent 还一步都没跑。
-  // 子 agent 自己失败（模型或传输）属于它自己的结果，不是这次边界的事；发布之后
-  // 释放失败才是这里的基础设施故障，得让调用方看见。
+    owned: listing.owned,
+    omitted: listing.omitted,
+  })))
+}
+
+/**
+ * Publish one background child and hold it until it settles.
+ *
+ * `dispose()` cancels unfinished work, so it must never run before the result
+ * has settled — the child has not taken a single step when `start()` returns.
+ * The child's OWN failure (model or transport) is its own result and not this
+ * boundary's business; a disposal failure after publication is infrastructure
+ * trouble the caller has to see.
+ * @param run - the published run.
+ * @returns a promise that resolves once the child has settled and been released.
+ */
+async function drain(run: { result: Promise<unknown>; dispose(): Promise<void> }): Promise<void> {
   await run.result.catch(() => undefined)
   await run.dispose()
 }

@@ -382,6 +382,33 @@ export function renderSkillContent(skill: Pick<SkillDefinition, 'name' | 'provid
   ].join('\n')
 }
 
+/**
+ * The opening tag {@link renderSkillContent} writes, read back at the head.
+ *
+ * Anchored rather than searched: a skill's own body may legitimately quote this
+ * marker — a skill documenting the format, most obviously — and finding that
+ * quote would name the wrong skill. Only the head of a rendered body is the
+ * tag; leading whitespace is tolerated because callers trim and join blocks.
+ */
+const SKILL_CONTENT_OPEN = /^\s*<skill_content name="([^"]*)">/u
+
+/**
+ * Recover the skill name from {@link renderSkillContent} output, or `undefined`
+ * when the text is not a rendered skill body.
+ *
+ * The inverse read lives here, beside the renderer, because the marker is this
+ * module's format: a consumer that has one of these strings — a `tool/result`
+ * payload read back off the log, say — must not hand-roll the pattern and drift
+ * from the writer. Names are validated kebab-case, which `escapeAttr` never
+ * rewrites, so the attribute round-trips verbatim.
+ *
+ * @param text - a model-facing content string, typically a tool result.
+ * @returns the loaded skill's name, or `undefined` when this is not one.
+ */
+export function loadedSkillName(text: string): string | undefined {
+  return SKILL_CONTENT_OPEN.exec(text)?.[1]
+}
+
 function renderResourceHint(skill: Pick<SkillDefinition, 'provider' | 'resourceBase'>): string[] {
   const base = skill.resourceBase
   if (base === undefined) {
